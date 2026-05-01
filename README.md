@@ -13,7 +13,7 @@ A browser-based sampler/sequencer built with React, TypeScript, and the Web Audi
 - **Additive synth engine** — each pad can be sample-based or synth-based (16 sine-wave harmonics with filter envelope and LFO)
 - **Synth patches** — save, load, export/import (.ospatch), drag between library and pads
 - **Pad naming** — editable pad names with reset to default
-- **Pad drag** — move or copy pads across banks (hover bank tabs to switch)
+- **Pad drag** — move, copy, or swap pads across banks (hover bank tabs to switch)
 - **Multi-file drop** — drop multiple audio files on a pad to assign sequentially
 - **Sample assign modes** — replace existing sample or add as multisample layer
 - **Record to pad** — record button on empty pads opens recording dialog targeted to that pad
@@ -66,9 +66,14 @@ A browser-based sampler/sequencer built with React, TypeScript, and the Web Audi
 ### Autosampler
 - Automated sampling of external MIDI gear
 - Configurable note range, velocity, timing, silence threshold
-- Auto-trim, normalize, mix bus routing, choke group assignment
+- **Note modes**: Range, Scale, Custom (MIDI Learn), Device Drumkit (MC-707)
+- **MC-707 Drumkit mode**: fixed 16-pad MIDI mapping with drum names, per-pad choke groups (hi-hat pair), editable kit name
+- Auto-trim and auto-crop (destructive silence removal for smaller files)
+- Normalize, mix bus routing, choke group assignment
+- Velocity layers (1–4 per note) with auto-computed splits
 - Samples grouped with editable metadata (rename, bus, choke) via group edit modal
-- Drag autosample group to pad grid for bulk assignment with metadata
+- Drag autosample group to pad grid or bank tabs for bulk assignment with metadata
+- MIDI output and audio input device selections persisted across sessions
 - Export/import groups as ZIP with metadata
 
 ### Export & Import

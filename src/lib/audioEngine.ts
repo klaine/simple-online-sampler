@@ -427,6 +427,7 @@ export class AudioEngine {
   private _bufferSize: number = Number(localStorage.getItem('audioBufferSize')) || 512
 
   private masterGain: GainNode | null = null
+  private previewSource: AudioBufferSourceNode | null = null
   private masterEffectChain: { input: GainNode; output: GainNode; allNodes: AudioNode[]; slotNodes: (EffectChainNode | null)[] } | null = null
 
   private analyser: AnalyserNode | null = null
@@ -669,6 +670,31 @@ export class AudioEngine {
     return this.buffers.get(sampleId)
   }
 
+  /** Play a sample preview through the master bus. Returns a callback to invoke on ended (for UI cleanup). */
+  playPreview(sampleId: string, onEnded?: () => void): void {
+    this.stopPreview()
+    const ctx = this.getContext()
+    const buffer = this.buffers.get(sampleId)
+    if (!buffer) return
+    const source = ctx.createBufferSource()
+    source.buffer = buffer
+    const dest = this.masterGain ?? ctx.destination
+    source.connect(dest)
+    source.onended = () => {
+      if (this.previewSource === source) this.previewSource = null
+      onEnded?.()
+    }
+    this.previewSource = source
+    source.start()
+  }
+
+  stopPreview(): void {
+    if (this.previewSource) {
+      try { this.previewSource.stop() } catch { /* */ }
+      this.previewSource = null
+    }
+  }
+
   async registerSample(sample: SampleAsset): Promise<void> {
     const ctx = this.getContext()
     const buffer = await sample.blob.arrayBuffer()
@@ -793,11 +819,12 @@ export class AudioEngine {
       const chokeGroup = pad.settings.chokeGroup ?? 0
       if (chokeGroup > 0) {
         const chokeTime = options?.atTimeSec ?? this.getContext().currentTime
+        const chokeDelayMs = Math.max(0, (chokeTime - this.getContext().currentTime) * 1000) + 15
         const toChoke = this.activeVoices.filter((v) => v.chokeGroup === chokeGroup && v.padId !== pad.id)
         for (const v of toChoke) {
           try { v.gain.gain.setValueAtTime(v.gain.gain.value, chokeTime); v.gain.gain.linearRampToValueAtTime(0, chokeTime + 0.005) } catch { /* */ }
           try { v.source.stop(chokeTime + 0.01) } catch { /* */ }
-          this.disposeVoice(v)
+          window.setTimeout(() => this.disposeVoice(v), chokeDelayMs)
         }
       }
 
@@ -829,11 +856,12 @@ export class AudioEngine {
     const chokeGroup = pad.settings.chokeGroup ?? 0
     if (chokeGroup > 0) {
       const chokeTime = options?.atTimeSec ?? this.getContext().currentTime
+      const chokeDelayMs = Math.max(0, (chokeTime - this.getContext().currentTime) * 1000) + 15
       const toChoke = this.activeVoices.filter((v) => v.chokeGroup === chokeGroup && v.padId !== pad.id)
       for (const v of toChoke) {
         try { v.gain.gain.setValueAtTime(v.gain.gain.value, chokeTime); v.gain.gain.linearRampToValueAtTime(0, chokeTime + 0.005) } catch { /* */ }
         try { v.source.stop(chokeTime + 0.01) } catch { /* */ }
-        this.disposeVoice(v)
+        window.setTimeout(() => this.disposeVoice(v), chokeDelayMs)
       }
     }
 
@@ -1026,19 +1054,22 @@ export class AudioEngine {
     const chokeGroup = settings.chokeGroup ?? 0
     if (chokeGroup > 0) {
       const chokeTime = options?.atTimeSec ?? ctx.currentTime
+      const chokeDelayMs = Math.max(0, (chokeTime - ctx.currentTime) * 1000) + 15
       // Choke sample voices
       const toChoke = this.activeVoices.filter((v) => v.chokeGroup === chokeGroup && v.padId !== pad.id)
       for (const v of toChoke) {
         try { v.gain.gain.setValueAtTime(v.gain.gain.value, chokeTime); v.gain.gain.linearRampToValueAtTime(0, chokeTime + 0.005) } catch { /* */ }
         try { v.source.stop(chokeTime + 0.01) } catch { /* */ }
-        this.disposeVoice(v)
+        window.setTimeout(() => this.disposeVoice(v), chokeDelayMs)
       }
       // Choke synth voices
       const toChokeSynth = this.activeSynthVoices.filter((v) => v.chokeGroup === chokeGroup && v.padId !== pad.id)
       for (const sv of toChokeSynth) {
-        stopSynthVoice(ctx, sv.nodes, 0.005)
-        sv.disposed = true
-        window.setTimeout(() => disposeSynthVoice(sv.nodes), 20)
+        window.setTimeout(() => {
+          stopSynthVoice(ctx, sv.nodes, 0.005)
+          sv.disposed = true
+          window.setTimeout(() => disposeSynthVoice(sv.nodes), 20)
+        }, Math.max(0, (chokeTime - ctx.currentTime) * 1000))
       }
       this.activeSynthVoices = this.activeSynthVoices.filter((v) => !toChokeSynth.includes(v))
     }

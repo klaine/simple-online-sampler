@@ -884,7 +884,6 @@ const _transportScheduler = new TransportScheduler()
 let _transportWorker: Worker | null = null
 let _projectSaveDebounce: number | null = null
 let _pendingPersist = false
-let _previewAudio: HTMLAudioElement | null = null
 const _sequencedPadHitTimers = new Map<string, number>()
 let _dragHistoryCaptured = false
 let _trimDirty = false
@@ -959,8 +958,6 @@ export const storeRefs = {
   set draggedPatternId(v: string | null) { _draggedPatternId = v },
   get draggedChainEntryId() { return _draggedChainEntryId },
   set draggedChainEntryId(v: string | null) { _draggedChainEntryId = v },
-  get previewAudio() { return _previewAudio },
-  set previewAudio(v: HTMLAudioElement | null) { _previewAudio = v },
   get frozenZoomRange() { return _frozenZoomRange },
   set frozenZoomRange(v: { start: number; end: number } | null) { _frozenZoomRange = v },
 }
@@ -2501,33 +2498,24 @@ export const useStore = create<AppState>()(
       // --- Library ---
 
       previewSample: async (sample: SampleAsset) => {
-        if (_previewAudio) {
-          _previewAudio.pause()
-          URL.revokeObjectURL(_previewAudio.src)
-          _previewAudio = null
+        // Stop any current preview
+        audioEngine.stopPreview()
+
+        // If same sample is already previewing, just stop (toggle off)
+        if (get().previewSampleId === sample.id) {
+          set((s) => { s.previewSampleId = null })
+          return
         }
 
-        const url = URL.createObjectURL(sample.blob)
-        const audio = new Audio(url)
-
-        // Respect audio output device selection
-        const outputDeviceId = get().audioOutputDeviceId
-        if (outputDeviceId && 'setSinkId' in audio) {
-          try {
-            await (audio as unknown as { setSinkId: (id: string) => Promise<void> }).setSinkId(outputDeviceId)
-          } catch { /* fallback to default */ }
+        // Ensure buffer is loaded
+        if (!audioEngine.hasSample(sample.id)) {
+          await audioEngine.registerSample(sample)
         }
 
-        audio.onended = () => {
+        set((s) => { s.previewSampleId = sample.id })
+        audioEngine.playPreview(sample.id, () => {
           set((s) => { if (s.previewSampleId === sample.id) s.previewSampleId = null })
-          URL.revokeObjectURL(url)
-          if (_previewAudio === audio) _previewAudio = null
-        }
-        _previewAudio = audio
-        set((s) => {
-          s.previewSampleId = sample.id
         })
-        await audio.play()
       },
 
       deleteSampleFromLibrary: async (sample: SampleAsset) => {
