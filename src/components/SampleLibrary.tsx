@@ -537,6 +537,7 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
               if (item.type === 'group') {
                 const isGroupExpanded = expandedGroups.has(item.key)
                 const isMpcGroup = item.samples.some((s) => s.autosampleMpc === true)
+                const isPresetGroup = item.samples.some((s) => s.autosamplePreset === true)
                 return (
                   <div key={`grp-${item.key}`} className="sample-group">
                     <div
@@ -559,6 +560,7 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
                         onClick={() => toggleGroupExpand(item.key)}
                       >
                         {isMpcGroup && <span className="sample-group-badge">MPC</span>}
+                        {isPresetGroup && <span className="sample-group-badge">Preset</span>}
                         {item.label}
                       </span>
                       <div className="sample-group-actions">

@@ -98,6 +98,7 @@ export const exportProjectPackage = async (project: Project, allSamples?: Sample
       autosampleBus: s.autosampleBus,
       autosampleChokeGroup: s.autosampleChokeGroup,
       autosampleMpc: s.autosampleMpc,
+      autosamplePreset: s.autosamplePreset,
     })),
     synthPatches: synthPatches ?? [],
   }
@@ -175,7 +176,8 @@ const normalizeImportedSamples = async (zip: JSZip, manifest: PackageManifest): 
           existing.autosampleTrim = meta.autosampleTrim
           existing.autosampleBus = meta.autosampleBus
           existing.autosampleChokeGroup = meta.autosampleChokeGroup
-          existing.autosampleMpc = meta.autosampleMpc
+           existing.autosampleMpc = meta.autosampleMpc
+           existing.autosamplePreset = meta.autosamplePreset
           updated = true
         }
         if (!existing.chopPoints && meta.chopPoints) {
@@ -204,7 +206,8 @@ const normalizeImportedSamples = async (zip: JSZip, manifest: PackageManifest): 
         autosampleTrim: meta.autosampleTrim,
         autosampleBus: meta.autosampleBus,
         autosampleChokeGroup: meta.autosampleChokeGroup,
-        autosampleMpc: meta.autosampleMpc,
+         autosampleMpc: meta.autosampleMpc,
+         autosamplePreset: meta.autosamplePreset,
       }),
     }
     const persisted = await dedupeSampleByHash(sample)

@@ -163,6 +163,7 @@ export interface SampleAsset {
   autosampleChokeGroup?: number   // choke group for group pads (0=off, 1–8)
   autosamplePadIndex?: number     // original pad index from imported program file (MPC .pgm, etc.)
   autosampleMpc?: boolean         // true only when imported via .pgm program file
+  autosamplePreset?: boolean      // true for factory preset samples
 }
 
 export interface SequenceEvent {
@@ -231,6 +232,6 @@ export interface PackageManifest {
   exportedAt: number
   project: Project
   usedSampleIds: string[]
-  sampleMeta?: { id: string; name: string; chopPoints?: number[]; autosampleRunId?: string; autosampleRunLabel?: string; autosamplePadIndex?: number; autosampleTrim?: TrimSettings; autosampleBus?: BusId; autosampleChokeGroup?: number; autosampleMpc?: boolean }[]
+  sampleMeta?: { id: string; name: string; chopPoints?: number[]; autosampleRunId?: string; autosampleRunLabel?: string; autosamplePadIndex?: number; autosampleTrim?: TrimSettings; autosampleBus?: BusId; autosampleChokeGroup?: number; autosampleMpc?: boolean; autosamplePreset?: boolean }[]
   synthPatches?: SynthPatch[]
 }

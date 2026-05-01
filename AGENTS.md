@@ -194,6 +194,7 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - `SampleAsset.autosampleChokeGroup?: number` — choke group for group pads (0=off, 1–8)
 - `SampleAsset.autosamplePadIndex?: number` — original pad index from imported program file (MPC .pgm), used for ordered assignment
 - `SampleAsset.autosampleMpc?: boolean` — true only when imported via .pgm program file
+- `SampleAsset.autosamplePreset?: boolean` — true for factory preset samples loaded on first launch
 - `Project.swing: number` (0–100)
 - `Project.mixBuses: [MixBus, MixBus, MixBus, MixBus]` — 4 mix buses with gain, pan, mute, solo, effects
 - `Project.masterBus: MasterBus` — master gain + 3 effect slots
@@ -306,6 +307,13 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - Toggle + device dropdown + bus selector in Mixer panel
 - `startInputMonitor`/`stopInputMonitor` in audioEngine.ts
 - `getUserMedia` with `echoCancellation: false`, `noiseSuppression: false`, `autoGainControl: false`
+
+### Preset Kits
+- On first launch (no samples in IndexedDB), `loadPresetKits()` fetches ZIP files from `/public`: `TR7x7ISH_Kit.zip`, `TR8x8ISH_Kit.zip`, `TR9x9ISH_Kit.zip`
+- Each ZIP is imported as an autosample group with `autosamplePreset: true`
+- Preset groups show a "Preset" badge in the SampleLibrary sidebar (same pattern as MPC badge)
+- `PRESET_KITS` array in `src/store/index.ts` defines which ZIPs to load
+- Preset flag preserved through project export/import via `PackageManifest.sampleMeta`
 
 ### Confirm Dialog
 - All destructive actions use `showConfirm()` (promise-based) instead of `window.confirm()`

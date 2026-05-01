@@ -880,6 +880,7 @@ function updateGateEventRange(
 // ---------------------------------------------------------------------------
 let _playbackSnapshot: PlaybackSnapshot = buildPlaybackSnapshot(createDefaultProject(), 0)
 let _playbackVersion = 1
+let _hydratePromise: Promise<void> | null = null
 const _transportScheduler = new TransportScheduler()
 let _transportWorker: Worker | null = null
 let _projectSaveDebounce: number | null = null
@@ -998,6 +999,67 @@ async function importFileAsSample(
   }
 
   return sample
+}
+
+const PRESET_KITS = ['TR7x7ISH_Kit.zip', 'TR8x8ISH_Kit.zip', 'TR9x9ISH_Kit.zip']
+
+/** Load factory preset drumkit ZIPs from /public on first launch */
+async function loadPresetKits(
+  _getState: () => AppState,
+  setState: (fn: (s: AppState) => void) => void,
+): Promise<void> {
+  for (const filename of PRESET_KITS) {
+    try {
+      const resp = await fetch(`/${filename}`)
+      if (!resp.ok) continue
+      const buf = await resp.arrayBuffer()
+      const zip = await JSZip.loadAsync(buf)
+      const metaFile = zip.file('metadata.json')
+      const meta = metaFile ? JSON.parse(await metaFile.async('text')) as {
+        label?: string;
+        samples?: { name: string; autosampleTrim?: { start: number; end: number } | null;
+          autosampleBus?: BusId | null; autosampleChokeGroup?: number | null;
+          autosamplePadIndex?: number | null; autosampleMpc?: boolean }[]
+      } : null
+      const runId = `preset-${filename.replace(/\.zip$/i, '')}`
+      const runLabel = meta?.label || filename.replace(/\.zip$/i, '')
+      const metaMap = new Map((meta?.samples || []).map((m) => [m.name, m]))
+      for (const [path, entry] of Object.entries(zip.files)) {
+        if (entry.dir || path === 'metadata.json') continue
+        if (!path.match(/\.(wav|mp3|ogg|flac|aiff?|m4a|webm)$/i)) continue
+        const blob = await entry.async('blob')
+        const file = new File([blob], entry.name, { type: 'audio/wav' })
+        const raw = await file.arrayBuffer()
+        const hash = await arrayBufferToHex(raw)
+        const m = metaMap.get(entry.name)
+        // Build the complete sample with all preset metadata upfront
+        const sample: SampleAsset = {
+          id: uid(),
+          name: file.name,
+          mimeType: file.type || 'audio/wav',
+          size: file.size,
+          createdAt: Date.now(),
+          hash,
+          blob: file,
+          autosampleRunId: runId,
+          autosampleRunLabel: runLabel,
+          autosampleTrim: m?.autosampleTrim ?? undefined,
+          autosampleBus: m?.autosampleBus ?? undefined,
+          autosampleChokeGroup: m?.autosampleChokeGroup ?? undefined,
+          autosamplePadIndex: m?.autosamplePadIndex ?? undefined,
+          autosamplePreset: true,
+        }
+        await db.putSample(sample)
+        await audioEngine.registerSample(sample)
+        setState((s) => {
+          s.samples.push(sample)
+          s.sampleMap.set(sample.id, sample)
+        })
+      }
+    } catch (e) {
+      console.warn('Failed to load preset kit', filename, e)
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1176,6 +1238,9 @@ export const useStore = create<AppState>()(
       // =================================================================
 
       hydrate: async () => {
+        // Guard against double-invoke (React Strict Mode)
+        if (_hydratePromise) return _hydratePromise
+        _hydratePromise = (async () => {
         const existing = await db.getLatestProject()
         const loadedProject = normalizeProject(existing ?? createDefaultProject('Sketch 01'))
         if (!existing) {
@@ -1196,6 +1261,13 @@ export const useStore = create<AppState>()(
         audioEngine.setBpm(loadedProject.bpm)
         audioEngine.setPolyphony(loadedProject.polyphony)
         rebuildPlaybackSnapshot(loadedProject)
+
+        // Load factory preset kits on first launch (no samples in DB)
+        if (allSamples.length === 0) {
+          await loadPresetKits(get, set)
+        }
+        })()
+        return _hydratePromise
       },
 
       saveProject: async (next: Project) => {
