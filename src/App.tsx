@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
+import { Analytics } from '@vercel/analytics/react'
 import './App.css'
 import { audioEngine } from './lib/audioEngine'
 import { useResizableColumns } from './lib/useResizableColumns'
@@ -1388,6 +1389,7 @@ function App() {
       {showAutosampleDialog && <AutosampleDialog />}
       <ConfirmDialog />
       <ChopModal />
+      <Analytics />
     </main>
   )
 }
