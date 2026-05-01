@@ -205,6 +205,7 @@ export interface Project {
   songLoopEnd: number | null
   mixBuses: [MixBus, MixBus, MixBus, MixBus]
   masterBus: MasterBus
+  bankNames?: string[]  // custom bank names (length = BANK_COUNT), undefined entries use default "Bank N"
   createdAt: number
   updatedAt: number
 }

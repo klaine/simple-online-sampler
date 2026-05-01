@@ -1,4 +1,4 @@
-import { useCallback, useRef, useSyncExternalStore } from 'react'
+import { useCallback, useRef, useState, useSyncExternalStore } from 'react'
 import { audioEngine } from '../lib/audioEngine'
 import { releaseMidiNote } from '../lib/midiOut'
 import { parseMpcPgm, matchMpcSamplesToFiles } from '../lib/mpcImport'
@@ -49,6 +49,9 @@ export function PadGrid() {
 
   // Bank tab drag-switch: hovering over a bank button while dragging a pad switches banks after 300ms
   const bankSwitchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [editingBank, setEditingBank] = useState<number | null>(null)
+  const [bankDraft, setBankDraft] = useState('')
+  const bankNames = useStore((s) => s.project?.bankNames)
 
   const clearBankSwitchTimer = useCallback(() => {
     if (bankSwitchTimer.current) {
@@ -66,11 +69,36 @@ export function PadGrid() {
       <div className="bank-nav-row">
         <div className="bank-nav">
           {Array.from({ length: BANK_COUNT }, (_, i) => (
+          editingBank === i ? (
+            <input
+              key={i}
+              className="bank-name-input"
+              value={bankDraft}
+              autoFocus
+              onChange={(e) => setBankDraft(e.target.value)}
+              onBlur={() => {
+                const trimmed = bankDraft.trim()
+                if (trimmed && trimmed !== `Bank ${i + 1}`) {
+                  useStore.getState().setBankName(i, trimmed)
+                }
+                setEditingBank(null)
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                if (e.key === 'Escape') setEditingBank(null)
+              }}
+            />
+          ) : (
           <button
             key={i}
             type="button"
             className={i === activeBank ? 'active' : ''}
             onClick={() => useStore.setState({ activeBank: i })}
+            onDoubleClick={() => {
+              const name = bankNames?.[i] ?? `Bank ${i + 1}`
+              setBankDraft(name)
+              setEditingBank(i)
+            }}
             onDragOver={(e) => {
               // Allow pad drags to hover over bank tabs
               if (e.dataTransfer.types.includes('application/x-online-sampler-pad-id')) {
@@ -99,8 +127,9 @@ export function PadGrid() {
               }
             }}
           >
-            Bank {i + 1}
+            {bankNames?.[i] ?? `Bank ${i + 1}`}
           </button>
+          )
         ))}
         </div>
         <button

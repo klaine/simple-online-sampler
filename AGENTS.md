@@ -330,6 +330,7 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - Self-sidechain (bus sidechaining itself) is prevented in both UI and engine
 - Bus effect chain rebuilds use **structural key** (type + enabled + sidechainSource + reverb decay) — param-only changes update existing AudioParams in-place via `updateBusEffectParams`/`updateMasterEffectParams`
 - Bus names editable via double-click in Mixer panel; `setBusName` action persists via `saveProjectLight`
+- Bank names editable via double-click on bank buttons in PadGrid; `setBankName` action persists via `saveProjectLight`; stored as `Project.bankNames?: string[]`
 
 ## UI Defaults / Persistence
 

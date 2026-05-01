@@ -29,7 +29,7 @@ export const getDefaultEffectParams = (type: EffectType): Record<string, number>
 }
 
 import { arrayBufferToHex, clampSequenceLength, midiToName, uid } from '../lib/utils'
-import { PADS_PER_BANK } from '../lib/constants'
+import { BANK_COUNT, PADS_PER_BANK } from '../lib/constants'
 import { parseMpcPgm, matchMpcSamplesToFiles } from '../lib/mpcImport'
 import JSZip from 'jszip'
 import TransportClockWorker from '../workers/transportClock.worker?worker'
@@ -609,6 +609,7 @@ export interface AppState {
 
   // Mixer
   setBusName: (busId: BusId, name: string) => void
+  setBankName: (bankIndex: number, name: string) => void
   setBusGain: (busId: BusId, gain: number) => void
   setBusPan: (busId: BusId, pan: number) => void
   setBusMute: (busId: BusId, mute: boolean) => void
@@ -1172,7 +1173,7 @@ export const useStore = create<AppState>()(
       selectedPadId: null,
       selectedLayerId: null,
       hideEmptyLanes: true,
-      altLayout: localStorage.getItem('altLayout') === 'true',
+      altLayout: localStorage.getItem('altLayout') !== 'false',
       showSongChain: false,
       padEditorCollapsed: false,
       showLibraryWaveforms: true,
@@ -4182,6 +4183,14 @@ export const useStore = create<AppState>()(
             b.id === busId ? { ...b, name } : b,
           ) as [any, any, any, any],
         })
+      },
+
+      setBankName: (bankIndex: number, name: string) => {
+        const s = get()
+        if (!s.project) return
+        const names = [...(s.project.bankNames ?? Array.from({ length: BANK_COUNT }, (_, i) => `Bank ${i + 1}`))]
+        names[bankIndex] = name
+        s.saveProjectLight({ ...s.project, bankNames: names })
       },
 
       setBusGain: (busId: BusId, gain: number) => {

@@ -1327,6 +1327,18 @@ select.tb-led-value {
   color: var(--text);
 }
 
+.bank-name-input {
+  background: var(--surface-inset);
+  border: 1px solid var(--accent);
+  color: var(--text);
+  font-weight: 500;
+  font-size: 0.78rem;
+  text-align: center;
+  outline: none;
+  padding: 0.15rem 0.25rem;
+  min-width: 0;
+}
+
 .grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
