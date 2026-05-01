@@ -189,7 +189,8 @@ export function PadGrid() {
                   releaseMidiNote(pad.id)
                 }
               }}
-              onTouchStart={() => {
+              onTouchStart={(e) => {
+                e.preventDefault()
                 useStore.setState({ selectedPadId: pad.id })
                 if (padHoldRecordEnabled && !pad.settings.sampleId) {
                   startPadHoldRecord(pad.id)
@@ -197,7 +198,8 @@ export function PadGrid() {
                   triggerPad(pad, 0.9)
                 }
               }}
-              onTouchEnd={() => {
+              onTouchEnd={(e) => {
+                e.preventDefault()
                 if (padHoldRecordingPadId === pad.id) {
                   stopPadHoldRecord()
                 } else {
