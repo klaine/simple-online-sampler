@@ -792,10 +792,11 @@ export class AudioEngine {
       // Choke group: once before all voices
       const chokeGroup = pad.settings.chokeGroup ?? 0
       if (chokeGroup > 0) {
+        const chokeTime = options?.atTimeSec ?? this.getContext().currentTime
         const toChoke = this.activeVoices.filter((v) => v.chokeGroup === chokeGroup && v.padId !== pad.id)
         for (const v of toChoke) {
-          try { v.gain.gain.linearRampToValueAtTime(0, this.getContext().currentTime + 0.005) } catch { /* */ }
-          try { v.source.stop(this.getContext().currentTime + 0.01) } catch { /* */ }
+          try { v.gain.gain.setValueAtTime(v.gain.gain.value, chokeTime); v.gain.gain.linearRampToValueAtTime(0, chokeTime + 0.005) } catch { /* */ }
+          try { v.source.stop(chokeTime + 0.01) } catch { /* */ }
           this.disposeVoice(v)
         }
       }
@@ -827,10 +828,11 @@ export class AudioEngine {
     // Choke group: stop all voices in the same group
     const chokeGroup = pad.settings.chokeGroup ?? 0
     if (chokeGroup > 0) {
+      const chokeTime = options?.atTimeSec ?? this.getContext().currentTime
       const toChoke = this.activeVoices.filter((v) => v.chokeGroup === chokeGroup && v.padId !== pad.id)
       for (const v of toChoke) {
-        try { v.gain.gain.linearRampToValueAtTime(0, this.getContext().currentTime + 0.005) } catch { /* */ }
-        try { v.source.stop(this.getContext().currentTime + 0.01) } catch { /* */ }
+        try { v.gain.gain.setValueAtTime(v.gain.gain.value, chokeTime); v.gain.gain.linearRampToValueAtTime(0, chokeTime + 0.005) } catch { /* */ }
+        try { v.source.stop(chokeTime + 0.01) } catch { /* */ }
         this.disposeVoice(v)
       }
     }
@@ -1023,11 +1025,12 @@ export class AudioEngine {
     // Choke group
     const chokeGroup = settings.chokeGroup ?? 0
     if (chokeGroup > 0) {
+      const chokeTime = options?.atTimeSec ?? ctx.currentTime
       // Choke sample voices
       const toChoke = this.activeVoices.filter((v) => v.chokeGroup === chokeGroup && v.padId !== pad.id)
       for (const v of toChoke) {
-        try { v.gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.005) } catch { /* */ }
-        try { v.source.stop(ctx.currentTime + 0.01) } catch { /* */ }
+        try { v.gain.gain.setValueAtTime(v.gain.gain.value, chokeTime); v.gain.gain.linearRampToValueAtTime(0, chokeTime + 0.005) } catch { /* */ }
+        try { v.source.stop(chokeTime + 0.01) } catch { /* */ }
         this.disposeVoice(v)
       }
       // Choke synth voices
