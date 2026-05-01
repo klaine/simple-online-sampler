@@ -121,7 +121,7 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - WAV filenames include BPM.
 - Playback mode rules:
   - `one-shot`: attack ramp only, plays full trimmed sample. Not step/gate-clamped.
-  - `adsr`: ADSR envelope — attack ramps to peak, decay ramps to sustain level (peak * sustain), release ramps to zero. In sequencer, ADSR respects step gate duration (`forceDuration`). On synth pads, this is the amplitude envelope; ADSR hold/release is used for live keyboard playing.
+  - `adsr`: ADSR envelope — attack ramps to peak, decay ramps to sustain level (peak * sustain), release ramps to zero. In sequencer, ADSR respects step gate duration (`forceDuration`). For live pad hold (sample and synth pads), voice holds at sustain level until `releasePad` triggers the release phase using the pad's actual release time.
 - Envelope shaping (gain automation via `linearRampToValueAtTime`) applied in both live and offline paths.
 - Choke groups: voices in same group (1–8) cut each other. Applied in both live (5ms fade, time-aligned with `atTimeSec`) and offline (gain ramp-down) paths.
 - Multisample: layer resolution happens in both live and offline paths.

@@ -16,6 +16,7 @@ interface ActiveVoice {
   disposed: boolean
   filterBaseFreq?: number
   filterRelease?: number
+  release?: number
 }
 
 interface ActiveSynthVoice {
@@ -942,9 +943,44 @@ export class AudioEngine {
     // forceDuration: attack ramp + hold at peak, release fade-out on stop
     // One-shot: attack ramp only, plays full sample
 
+    const hold = options?.hold ?? false
+
     if (settings.mode === 'adsr') {
-      // ADSR envelope: attack→peak, decay→sustain level, release→zero
+      // ADSR envelope: attack→peak, decay→sustain level
       const sustainGain = linearGain * sustain
+
+      if (hold && !options?.forceDuration) {
+        // Live hold: schedule attack+decay, hold at sustain until releasePad
+        gainNode.gain.setValueAtTime(0, startTimeSec)
+        const actualAttack = Math.min(attack, playbackDuration)
+        if (actualAttack > 0) {
+          gainNode.gain.linearRampToValueAtTime(linearGain, startTimeSec + actualAttack)
+        } else {
+          gainNode.gain.linearRampToValueAtTime(linearGain, startTimeSec + 0.0015)
+        }
+        const actualDecay = Math.min(decay, playbackDuration - actualAttack)
+        if (actualDecay > 0) {
+          gainNode.gain.linearRampToValueAtTime(sustainGain, startTimeSec + actualAttack + actualDecay)
+        }
+        // Hold at sustain — releasePad will schedule the release ramp
+
+        // Filter envelope: schedule attack+decay, hold at sustain freq — release deferred to releasePad
+        if (hasFilterEnv) {
+          // Filter A+D already scheduled above; sustain freq will hold until releasePad
+        }
+
+        source.start(startTimeSec, startOffset, playbackDuration)
+        const voice: ActiveVoice = {
+          source, gain: gainNode, filters: filterNodes, startedAt: Date.now(),
+          hold: true, padId: pad.id, chokeGroup, disposed: false,
+          release, filterBaseFreq: hasFilterEnv ? filterBaseFreqHz : undefined,
+          filterRelease: hasFilterEnv ? fEnv!.release : undefined,
+        }
+        this.activeVoices.push(voice)
+        return
+      }
+
+      // Non-hold ADSR (sequencer without forceDuration): self-terminating envelope
       const adsrDuration = Math.max(0.05, attack + decay + release)
       const noteDuration = Math.min(playbackDuration, adsrDuration)
 
@@ -1210,8 +1246,37 @@ export class AudioEngine {
     const playbackDuration = Math.max(0.01, endOffset - startOffset)
     const delayMs = Math.max(0, (startTimeSec - ctx.currentTime) * 1000)
 
+    const holdS = options?.hold ?? false
+
     if (settings.mode === 'adsr') {
       const sustainGain = linearGain * sustain
+
+      if (holdS && !options?.forceDuration) {
+        // Live hold: schedule attack+decay, hold at sustain until releasePad
+        gainNode.gain.setValueAtTime(0, startTimeSec)
+        const actualAttack = Math.min(attack, playbackDuration)
+        if (actualAttack > 0) {
+          gainNode.gain.linearRampToValueAtTime(linearGain, startTimeSec + actualAttack)
+        } else {
+          gainNode.gain.linearRampToValueAtTime(linearGain, startTimeSec + 0.0015)
+        }
+        const actualDecay = Math.min(decay, playbackDuration - actualAttack)
+        if (actualDecay > 0) {
+          gainNode.gain.linearRampToValueAtTime(sustainGain, startTimeSec + actualAttack + actualDecay)
+        }
+
+        source.start(startTimeSec, startOffset, playbackDuration)
+        const voice: ActiveVoice = {
+          source, gain: gainNode, filters: filterNodes, startedAt: Date.now(),
+          hold: true, padId: pad.id, chokeGroup, disposed: false,
+          release, filterBaseFreq: hasFilterEnvS ? filterBaseS : undefined,
+          filterRelease: hasFilterEnvS ? fEnvS!.release : undefined,
+        }
+        this.activeVoices.push(voice)
+        return
+      }
+
+      // Non-hold ADSR: self-terminating
       const adsrDuration = Math.max(0.05, attack + decay + release)
       const noteDuration = Math.min(playbackDuration, adsrDuration)
 
@@ -1371,7 +1436,7 @@ export class AudioEngine {
   releasePad(padId: string): void {
     const holdVoices = this.activeVoices.filter((voice) => voice.padId === padId && voice.hold)
     holdVoices.forEach((voice) => {
-      const releaseSec = 0.02 // short fade to avoid click
+      const releaseSec = Math.max(0.02, voice.release ?? 0.02)
       const ctx = this.getContext()
       const now = ctx.currentTime
       voice.gain.gain.cancelScheduledValues(now)

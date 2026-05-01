@@ -1004,12 +1004,15 @@ async function importFileAsSample(
 
 const PRESET_KITS = ['TR7x7ISH_Kit.zip', 'TR8x8ISH_Kit.zip', 'TR9x9ISH_Kit.zip']
 
-/** Load factory preset drumkit ZIPs from /public on first launch */
+/** Load factory preset drumkit ZIPs from /public on first launch.
+ *  Returns array of { runId, bankIndex } for pad assignment. */
 async function loadPresetKits(
   _getState: () => AppState,
   setState: (fn: (s: AppState) => void) => void,
-): Promise<void> {
-  for (const filename of PRESET_KITS) {
+): Promise<{ runId: string; bank: number }[]> {
+  const loaded: { runId: string; bank: number }[] = []
+  for (let ki = 0; ki < PRESET_KITS.length; ki++) {
+    const filename = PRESET_KITS[ki]
     try {
       const resp = await fetch(`/${filename}`)
       if (!resp.ok) continue
@@ -1057,10 +1060,12 @@ async function loadPresetKits(
           s.sampleMap.set(sample.id, sample)
         })
       }
+      loaded.push({ runId, bank: ki })
     } catch (e) {
       console.warn('Failed to load preset kit', filename, e)
     }
   }
+  return loaded
 }
 
 // ---------------------------------------------------------------------------
@@ -1265,7 +1270,10 @@ export const useStore = create<AppState>()(
 
         // Load factory preset kits on first launch (no samples in DB)
         if (allSamples.length === 0) {
-          await loadPresetKits(get, set)
+          const loaded = await loadPresetKits(get, set)
+          for (const { runId, bank } of loaded) {
+            await get().assignGroupToPads(runId, bank)
+          }
         }
         })()
         return _hydratePromise
