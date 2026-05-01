@@ -1,0 +1,349 @@
+# Agent Instructions
+
+Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer state management, raw Web Audio API (no Tone.js).
+
+## Primary Goals
+
+- Keep sequencer playback behavior and offline export behavior aligned.
+- Preserve a compact, dense UI layout (especially sequencer + center column).
+- Avoid regressions in trim, pitch, mode-specific playback, multisample, and per-pad filter behavior.
+
+## Dev Commands
+
+- Install: `npm install`
+- Dev server: `npm run dev`
+- Build/typecheck: `npm run build`
+
+## Architecture
+
+### State Management
+- Single Zustand store with immer middleware: `src/store/index.ts` (~4070 lines)
+- All state, actions, and selectors live in the store
+- App.tsx (~1160 lines) is a thin shell: effects, drag handlers, export callbacks, layout, computer keyboard chromatic input handler, per-synth MIDI channel routing
+- Sequencer render is optimized with pre-computed `Map<padId, Map<step, event>>` selectors
+- Module-level `storeRefs` object exposes mutable refs (not reactive) for drag state, frozen zoom range, etc.
+- **Transport visual state** (`playheadStep`, `sequencedPadHits`) lives in a lightweight `transportVisualStore` (not immer) — subscribed via `useSyncExternalStore` for performance
+- **Confirm dialogs** use a promise-based `showConfirm()` helper with module-level resolver — no native `window.confirm()` calls
+
+### Audio
+- Raw Web Audio API — single lazy `AudioContext`, `AudioBufferSourceNode` + `GainNode` per voice
+- `AnalyserNode` for VU meter
+- Per-pad `BiquadFilterNode` (LP/HP/BP)
+- Multisample: round-robin, random, velocity-layer, stacked modes with `SampleLayer[]` per pad
+- Round-robin counters are module-level Maps in audioEngine.ts / audioExport.ts (not in store)
+- 4 mix buses (A/B/C/D) with gain, pan, mute/solo, 3 effect slots each
+- Master bus with gain and 3 effect slots
+- Per-bus `AnalyserNode` for level metering
+- Effects: Compressor, Sidechain Compressor (AudioWorklet), EQ3, Delay, Reverb, Chorus
+- Sidechain compressor uses `AudioWorkletNode` with 2 inputs (audio + key signal from another bus)
+- Choke groups (1–8): voices in same group cut each other with 5ms fade-out
+- ADSR envelope model: attack ramps to peak gain, decay ramps to sustain level (peak * sustain), release ramps to zero
+- **Bus/master gain/pan changes use `setTargetAtTime` with 5ms tau** — no instantaneous `.value =` writes (prevents clicks on mute/solo)
+- **Effect param changes use `setTargetAtTime` with 10ms tau** via `updateBusEffectParams`/`updateMasterEffectParams` — no graph rebuild for knob turns
+- **Additive synth engine**: `synthEngine.ts` generates sine-wave voices from 16 harmonics, with filter envelope (ADSR+depth), LFO (sine/ramp-up/ramp-down/square with per-target depth for pitch/filter/gain, free Hz or tempo-synced)
+- **Per-pad filter envelope**: sample pads can have `filterEnvelope` (ADSR+depth) modulating filter cutoff — same model as synth filter envelope. Applied in both live and offline paths.
+- **Audio buffer size**: configurable (128/256/512/768/1024) via settings popover; `setBufferSize()` tears down and rebuilds AudioContext; persisted in localStorage
+
+### Transport
+- `TransportScheduler` with worker-based clock (`transportClock.worker.ts`)
+- `PlaybackSnapshot` carries pad/pattern/swing data for the scheduler (NOT mixer data)
+- Snapshot rebuild is guarded — skips when only mixer/effect fields changed
+- Swing: offsets odd steps forward by `swing/100 * 0.5 * stepDuration` (MPC-style)
+- Sequencer live recording: record arm + quantize + overdub/replace modes
+- MIDI out timing accounts for `audioContext.outputLatency` to align with audio
+- **Metronome**: synthesized click (sine oscillator burst) on quarter-note boundaries, accent on beat 1; `playMetronomeClick` in audioEngine.ts
+- **Count-in**: when `seqRecordArmed` + `countdownBars > 0` + metronome enabled, N bars of metronome play before transport starts
+- `metronomeBeats` array in `SchedulerTickResult` carries `{ atTimeSec, accent }` per quarter-note step
+
+## Important Files
+
+### Core
+- `src/store/index.ts` — Zustand store: all state, actions, selectors, `transportVisualStore`, `showConfirm`/`resolveConfirmDialog` (~4070 lines)
+- `src/App.tsx` — App shell: effects, drag handlers, export callbacks, layout (~1160 lines)
+- `src/App.css` — All styling (single file, ~3500 lines)
+- `src/types.ts` — Core types: Pad, PadSettings, SampleLayer, SampleAsset, Project, BusId, EffectSlot, MixBus, MasterBus, TrimSettings, MidiOutConfig, PadSource, SynthParams, LfoSettings, FilterEnvelopeSettings, SynthPatch, etc.
+
+### Components (`src/components/`)
+- `KnobControl.tsx` — Drag knob with optional `logScale` power-curve mapping (for envelope time knobs: 50%→20% of range, 0-5s with ms/s auto-format display) and optional `freqScale` exponential mapping (equal knob travel per octave, for filter frequency knobs, auto-formats as Hz/kHz)
+- `MiniWaveform.tsx` — Memoized canvas waveform
+- `SequencerStep.tsx` — Memoized step with drag interactions
+- `ExportDialog.tsx` — Export format chooser with spinner
+- `ImportDialog.tsx` — Import dialog
+- `ConfirmDialog.tsx` — Promise-based confirm overlay (replaces all `window.confirm` calls)
+- `SampleLibrary.tsx` — Sample library sidebar with file drop, chop/spread buttons, "Remove Unassigned" cleanup, record button, autosample group UI (rename/delete/export/drag/assign-to-pads), group edit modal (name/bus/choke), manual sample grouping (multi-select + group button), per-sample ungroup, MPC badge on .pgm-imported groups, ZIP import support, synth patches section (list/assign/export/import/delete), sidebar collapse button
+- `PadEditor.tsx` — Collapsible pad settings, waveform trim with zoom (gain-scaled, layer-aware), filter knobs (LP12/LP24/HP/BP), MC-909 style AMP and FILTER envelope sections (vertical faders + ADSR curve visualization), filter envelope for both sample and synth pads, multisample layer UI, per-layer editing, stacked timeline (canvas waveforms + drag offset), bus selector, choke group selector, pan knob (with random pan toggle), MIDI Out section, source toggle (Sample/Synth), SynthEditor integration, per-pad effect slots (2 slots, synth pads), synth MIDI input section (channel/device), Crop button (destructively trims sample to trim markers), Normalize button (peak normalize to -0.3 dBFS), Reset Pad button (resets to defaults + clears sequencer events)
+- `EnvelopeSection.tsx` — Reusable MC-909 style envelope section with ADSR curve SVG visualization, vertical faders (with log-scale support), level/depth fader, used for both AMP and FILTER envelopes in PadEditor
+- `PadGrid.tsx` — Pad grid with bank nav, pad drag (move/copy), record button overlay on empty pads, MIDI debug display, autosample group drop with metadata (trim/bus/choke), MPC .pgm import on file drop, synth pad display ("~ Synth"), synth patch drop from library
+- `TopBar.tsx` — Header with transport, BPM, swing, tap tempo, VU meter, metronome toggle, sequencer record arm/quantize/overdub/count-in buttons, MIDI input cluster, Audio Out device selector, drag-to-adjust BPM/Swing inputs, settings popover (buffer size, metronome volume, wide layout toggle)
+- `Sequencer.tsx` — Pattern strip, song chain, sequencer matrix, inline ColorPicker (8×8 grid popover), performance stats overlay (FPS + tick drift)
+- `PianoRollLane.tsx` — Memoized inline piano roll for synth pad lanes: 24-row (2 octave) grid, click-to-toggle notes, velocity drag (Shift+drag), octave scroll buttons, note length drag (left/right edges adjust gate), aligned with sequencer step columns via shared CSS grid template
+- `Mixer.tsx` — Mix bus panel: custom drag faders, per-bus/master level meters (canvas), pan knobs, mute/solo, 3 effect slots per channel, sidechain source selector for SC Comp, input monitor strip, double-click bus name to rename
+- `Toasts.tsx` — Toast notification container
+- `VuMeter.tsx` — Canvas-based VU meter with rAF
+- `RecordDialog.tsx` — 3-phase recording modal (ready/recording/review) with AudioWorklet, trim/crop, WAV save, normalize checkbox
+- `ChopModal.tsx` — Sample chop modal: waveform canvas, click to add/remove markers, quick divide (÷2/÷4/÷8/÷16), preview per chop, bank+pad assignment
+- `AutosampleDialog.tsx` — Full autosample UI: MIDI out config, audio input, note range, timing, pad assignment, normalize, mix bus routing, choke group config
+- `SynthEditor.tsx` — Additive synth editor: canvas-based harmonic bar editor (16 partials), waveform preview (one-cycle additive waveform), LFO section (waveform/rate with per-target depth knobs for pitch/filter/gain, free Hz or tempo-sync), base note selector, "Export Synth WAV" button
+
+### Library (`src/lib/`)
+- `audioEngine.ts` — Web Audio voice pool, multisample resolution, per-pad filter (LP12/LP24/HP/BP with live param updates), choke groups, ADSR envelope shaping, AnalyserNode, `mergeLayerSettings`, `resolveFilterType`, `updateActiveFilters`, bus routing, effect chains (with sidechain compressor worklet), `buildEffectChain`, `buildEffectNode`, `updateEffectNodeParams`, `updateBusEffectParams`, `updateMasterEffectParams`, `getOutputLatency`, input monitor, `setOutputDevice`, `playSynthPad`, `setBufferSize`
+- `audioExport.ts` — Offline WAV render with swing, layer resolution, per-pad filter, choke groups, ADSR envelope shaping, bus routing + effects, `mergeLayerSettings`
+- `wavEncode.ts` — Shared WAV encoding: `encodeWav` (AudioBuffer), `encodeWavFromChannels` (raw Float32)
+- `transportScheduler.ts` — Step scheduler with swing offset
+- `playbackSnapshot.ts` — Snapshot builder (carries swing, pads, sequences — NOT mixer data)
+- `standaloneHtml.ts` — Standalone HTML page builder
+- `packageIO.ts` — Import/export packages (.zip), maps layer sample IDs, preserves all sample metadata (groups, chop points) and synth patches
+- `db.ts` — IndexedDB layer
+- `project.ts` — Default project factory (includes mixBuses + masterBus)
+- `utils.ts` — uid, midiToName, createDefaultPads, createDefaultMixBuses, createDefaultMasterBus, createDefaultEffectSlot, createDefaultSynthParams
+- `midiOut.ts` — MIDI output registry, `sendMidiNote` (with `delayMs` + Web MIDI timestamp scheduling), `sendMidiNoteOff`, `registerActiveNote`, `releaseMidiNote`, `isMidiEcho`, `cancelPendingNoteOff`
+- `autotrim.ts` — `computeSilenceTrim()` + `normalizePcm()` (peak normalize to -0.3 dBFS)
+- `pcmRecorder.ts` — Shared PCM capture with disabled browser audio processing, system-default sample rate
+- `synthEngine.ts` — `createSynthVoice`, `stopSynthVoice`, `disposeSynthVoice`, `renderSynthToBuffer`
+- `midiExport.ts` — MIDI export
+- `mpcImport.ts` — MPC1000/MPC2500 `.pgm` program file parser: `parseMpcPgm` (extracts pad-to-sample mapping from binary), `matchMpcSamplesToFiles` (matches mapping to dropped audio files)
+- `drumKitMap.ts` — Drum category classifier (`classifyDrumSample`, `looksLikeDrumKit`) and standard 16-pad layout mapper (`mapToStandardKit`)
+- `constants.ts` — Constants (`BANK_COUNT=8`, `PADS_PER_BANK=16`, `TOTAL_PADS=128`)
+
+### Workers (`src/workers/`)
+- `transportClock.worker.ts` — Transport clock worker
+- `recorderWorklet.ts` — Reference AudioWorklet processor (actual worklet inlined as Blob URL in RecordDialog)
+- `sidechainCompressor.worklet.ts` — Reference sidechain compressor AudioWorklet (actual worklet inlined as Blob URL string in audioEngine.ts)
+
+## Behavior Contract (Keep In Sync)
+
+- Sequencer step pitch editing: `Alt+Shift+drag` on lit step, stored as `event.semitones`.
+- MIDI export transposes by step semitones.
+- Audio export supports: active pattern WAV, song chain WAV (full chain once).
+- Pattern WAV export renders 2 cycles with WAV `smpl` loop markers around cycle 2.
+- WAV filenames include BPM.
+- Playback mode rules:
+  - `one-shot`: attack ramp only, plays full trimmed sample. Not step/gate-clamped.
+  - `adsr`: ADSR envelope — attack ramps to peak, decay ramps to sustain level (peak * sustain), release ramps to zero. In sequencer, ADSR respects step gate duration (`forceDuration`). On synth pads, this is the amplitude envelope; ADSR hold/release is used for live keyboard playing.
+- Envelope shaping (gain automation via `linearRampToValueAtTime`) applied in both live and offline paths.
+- Choke groups: voices in same group (1–8) cut each other. Applied in both live (5ms fade) and offline (gain ramp-down) paths.
+- Multisample: layer resolution happens in both live and offline paths.
+- Per-pad filter: LP12 (single BiquadFilter), LP24 (two chained BiquadFilters), HP, BP. Applied in both live and offline paths. Live param updates via `updateActiveFilters` (setTargetAtTime with 10ms tau).
+- Per-pad pan: `StereoPannerNode` per voice, inserted between filter chain (or gain node) and bus destination. `randomPan` mode: pan value = `random(-1,1) * panWidth`. Applied in both live and offline paths.
+- Per-pad filter envelope (sample pads): `filterEnvelope` (ADSR+depth) modulates filter cutoff in semitones. Same model as synth filter envelope. Applied in both live (`audioEngine.ts` playPad/playVoice) and offline (`audioExport.ts`) paths. Gate hold release deferred to `releasePad`.
+- Swing: applied to odd steps in both `TransportScheduler.tick()` and `audioExport.ts`.
+- Mix bus routing: pads route to buses A–D via `PadSettings.bus`, applied in both live and offline paths.
+- Bus effects: applied in both live and offline paths (sidechain compressor uses AudioWorklet in both live and offline contexts).
+- Bus gain/pan/mute/solo: applied in both live and offline paths.
+- Sequencer MIDI out: time-aligned with Web Audio via `delayMs` + `audioContext.outputLatency` compensation.
+- Pads with `midiOut.enabled` are considered non-empty for "hide empty lanes" filter.
+- Stacked mode: all layers play simultaneously with per-layer `stackOffsetMs` timing offset. Applied in both live and offline paths.
+- Synth pads: `playSynthPad` in audioEngine, `renderSynthToBuffer` in audioExport. Synth events separated and scheduled in both live and offline paths. Synth pads with `source === 'synth'` are considered non-empty for "hide empty lanes" filter.
+- Per-pad effects (synth pads): 2 insert effect slots routed between synth voice output and bus input. Persistent per-pad effect chains in audioEngine (`padEffectChains` Map). Applied in both live and offline paths. Same effect types as mixer (no sidechain compressor). Structural changes rebuild chain; param changes update in-place.
+- Piano roll events: `SequenceEvent.note` field (MIDI note number). At playback, `semitoneOffset = note - (baseNote + settings.semitones)`. Handled in both store tick handler and `audioExport.ts`.
+- Piano roll note length: drag left/right edges of note blocks to adjust `gate` (steps). Left edge moves start step + adjusts gate to keep end fixed. Store actions: `setPianoRollNoteGate`, `setPianoRollNoteStartAndGate`.
+- Envelope time faders: MC-909 style vertical faders with logarithmic power curve (exponent ≈ 2.322), range 0–5s, display auto-formats as ms/s.
+- Filter frequency knobs: exponential mapping (`freqScale`) — equal knob travel per octave, auto-formats as Hz/kHz.
+- Synth filter envelope release: for ADSR mode without `forceDuration`, release is deferred to `stopSynthVoice` (not pre-scheduled). `stopSynthVoice` cancels+reschedules filter frequency automation alongside gain release.
+
+**When changing playback logic, update both:**
+1. `src/lib/audioEngine.ts` (live playback)
+2. `src/lib/audioExport.ts` (offline export)
+
+**When changing effect chain logic, update all three:**
+1. `buildEffectNode()` in `src/lib/audioEngine.ts` (construction)
+2. `updateEffectNodeParams()` in `src/lib/audioEngine.ts` (live param updates)
+3. The offline render section in `src/lib/audioExport.ts`
+
+## Keyboard Shortcuts
+
+- `Space` — Play/stop
+- `S` — Stop
+- `T` — Tap tempo
+- `1`–`8` — Switch pad bank
+- `Escape` — Close open dialog/panel
+- `Cmd+Z` / `Ctrl+Z` — Undo (sequencer)
+- `Cmd+Shift+Z` / `Ctrl+Shift+Z` — Redo (sequencer)
+- `Cmd+D` / `Ctrl+D` — Duplicate pattern
+- `Alt+Shift+drag` on lit step — Edit step pitch (semitones)
+
+## Data Model Notes
+
+- `PadSettings.layers: SampleLayer[]` — each layer has `sampleId`, `velocityMin`, `velocityMax`
+- `SampleLayer` extended with nullable override fields: `gain`, `semitones`, `fineCents`, `trimStart`, `trimEnd`, `attack`, `decay`, `release`, `filterType`, `filterFreq`, `filterQ`, `stackOffsetMs` — `null` means inherit from pad
+- `PadSettings.multiMode: 'single' | 'round-robin' | 'random' | 'velocity' | 'stacked'`
+- `PadSettings.filterType: 'off' | 'lp12' | 'lp24' | 'highpass' | 'bandpass'`
+- `PadSettings.filterFreq` (Hz), `PadSettings.filterQ` (resonance)
+- `PadSettings.filterKeyTrack?: number` — filter key tracking (-100 to +100, 0=off, +100=filter fully tracks pitch, -100=inverse tracking). Applied per-voice in `createSynthVoice` — offsets filter frequency by `semitoneOffset * keyTrack/100` semitones. Works in both live and offline paths.
+- `PadSettings.bus: BusId` — mix bus routing ('A' | 'B' | 'C' | 'D')
+- `PadSettings.chokeGroup: number` — 0=off, 1–8
+- `PadSettings.pan?: number` — per-pad pan (-1 left to +1 right, undefined = 0 center)
+- `PadSettings.randomPan?: boolean` — when true, pan value controls random pan width per note
+- `PadSettings.mode: 'one-shot' | 'adsr'`
+- `PadSettings.envelope: EnvelopeSettings` — `{ attack, decay, sustain, release }` (ADSR model: decay ramps to sustain level, release ramps to zero)
+- `PadSettings.midiOut?: MidiOutConfig` — optional MIDI out config (undefined = disabled)
+- `PadSettings.source: PadSource` — `'sample'` (default) or `'synth'`
+- `PadSettings.synthParams?: SynthParams` — additive synth parameters (harmonics, baseNote, filterEnvelope, lfo)
+- `PadSettings.synthMidiChannel?: number` — per-synth-pad MIDI input channel (1–16, undefined = disabled)
+- `PadSettings.synthMidiDevice?: string` — per-synth-pad MIDI input device ID (undefined = any)
+- `PadSettings.filterEnvelope?: FilterEnvelopeSettings` — filter envelope for sample pads (undefined = no filter envelope modulation)
+- `PadSettings.padEffects?: [EffectSlot, EffectSlot]` — per-pad effect slots (synth pads, same effect types as mixer)
+- `SequenceEvent.note?: number` — MIDI note number for piano roll events (overrides pad base note at playback)
+- `SampleAsset.chopPoints?: number[]` — sorted fractional positions (0–1) for chop markers
+- `SampleAsset.autosampleRunId?: string` — groups samples from the same autosample session
+- `SampleAsset.autosampleRunLabel?: string` — user-editable group name
+- `SampleAsset.autosampleTrim?: TrimSettings` — trim computed during autosample, applied on pad assignment
+- `SampleAsset.autosampleBus?: BusId` — bus routing for group pads
+- `SampleAsset.autosampleChokeGroup?: number` — choke group for group pads (0=off, 1–8)
+- `SampleAsset.autosamplePadIndex?: number` — original pad index from imported program file (MPC .pgm), used for ordered assignment
+- `SampleAsset.autosampleMpc?: boolean` — true only when imported via .pgm program file
+- `Project.swing: number` (0–100)
+- `Project.mixBuses: [MixBus, MixBus, MixBus, MixBus]` — 4 mix buses with gain, pan, mute, solo, effects
+- `Project.masterBus: MasterBus` — master gain + 3 effect slots
+- `EffectSlot.sidechainSource?: BusId` — only used when `type === 'sidechain-compressor'`
+- `EffectType: 'off' | 'compressor' | 'sidechain-compressor' | 'eq3' | 'delay' | 'reverb' | 'chorus'`
+- `MidiOutConfig: { enabled, deviceId, channel, note, velocity }` — per-pad MIDI output config
+- `TrimSettings: { start, end }` — fractional positions (0–1)
+- Runtime migration handled in `normalizeProject()` in `src/store/index.ts` (only runs on load/import, NOT in hot path)
+- `HTMLAudioElement` stored as `_previewAudio` uses `as any` to bypass immer draft restrictions
+- `mergeLayerSettings()` in audioEngine.ts / audioExport.ts merges layer overrides onto pad defaults
+- `getDefaultEffectParams()` in store returns default knob values per effect type
+
+## Feature Notes
+
+### Library Drop (F1)
+- Drop files anywhere on the sidebar to add samples
+- Shared `importFileAsSample` helper (module-level async function in store)
+- `addSamplesToLibrary(files: File[])` action processes files and shows toast
+- ZIP files are detected and imported as autosample groups (reads `metadata.json` for trim/bus/choke metadata)
+- **MPC .pgm import**: when a `.pgm` file is among dropped files, it is parsed for pad-to-sample mapping; matched WAV files are imported as a group with `autosamplePadIndex` metadata preserving the original pad order
+- **Multi-file drop auto-grouping**: when ≥2 audio files are dropped at once, they are automatically grouped with a label derived from the common filename prefix
+- **Folder drop**: dropping a folder recursively reads all audio files using `webkitGetAsEntry`. If files look like a drum kit (≥40% match known categories), a confirm dialog offers to map them to a standard 16-pad MPC-style layout (kick→1, snare→2, clap→3, CH→4, OH→5, perc→6, toms→7-9, crash→10, ride→11, shaker→12, cowbell→13, conga→14, snap→15, other→16). Uses `autosamplePadIndex` for ordering on pad assignment. Folder name is used as group label (instead of common filename prefix).
+
+### Sample Grouping
+- Grouping is implicit: samples sharing the same `autosampleRunId` form a group
+- `groupSamples(sampleIds, label?)` — assigns a shared `autosampleRunId` + label to existing samples
+- `ungroupSample(sampleId)` — removes all group fields from a single sample
+- Multi-select checkboxes on ungrouped library samples; "Group N Samples" button appears when ≥2 selected
+- Per-sample "Remove from group" (⊟) button on samples inside groups
+- Multi-file drop to library auto-groups (common prefix label)
+- Multi-file drop to pad grid auto-groups (common prefix label)
+
+### Chop Modal (F2)
+- `chopPoints: number[]` stored on `SampleAsset` in IndexedDB — sorted fractional positions (0–1)
+- Chops reuse parent sample with trim markers on pad (no new blobs)
+- Library shows virtual chop entries (collapsible indented list) under parent sample
+- Assignment auto-assigns first unused choke group
+
+### Pad Drag (F3)
+- Cross-bank drag via hovering bank tabs (300ms delay to switch)
+- Move/Copy/Cancel modal with replace warning
+- Move transfers sequencer events, resets source pad to defaults
+- Pads use `<div role="button">` (not `<button>`) to avoid nested button HTML violation
+
+### Sequencer Live Recording (F4)
+- Record arm + quantize (Q, default on) + overdub/replace (OVR/REP) buttons in TopBar
+- `recordPadHit(padId, velocity, note?)` action called from `triggerPad` when armed+playing
+- Optional `note` parameter records piano roll events for synth pads (computer keyboard + MIDI chromatic input)
+- `recordPadRelease(padId, note?)` computes gate length from note-on step to note-off step, updates the recorded event
+- Active recording notes tracked in module-level `_activeRecordingNotes` Map (cleared on transport stop)
+- Records into `playingPatternId` pattern; replace mode uses `_seqRecordCleared` Set
+
+### Chromatic Spread
+- 🎹 button on library sample row opens inline popover
+- Bank, Start Pad, Count (default 12), Choke Group (Off or 1-8) selectors
+- `spreadSampleChromatically()` assigns sample to N consecutive pads with semitones 0, +1, +2...
+
+### Remove Unassigned Samples
+- "Remove Unassigned" button in library panel removes samples not referenced by any pad (primary sampleId or layer sampleId)
+- Confirms with count before deleting from IndexedDB and store
+
+### Waveform Zoom
+- Full-res `Float32Array` channel data cached in module-level `_waveformChannelCache` per sample
+- Zoom-trim mode computes peaks from raw data at pixel resolution
+- Frozen zoom range (`storeRefs.frozenZoomRange`) prevents feedback loop during trim drag
+- Auto-scroll: when dragging handle past 95%/5% of waveform edge, viewport expands at 3%/frame
+- **Gain-scaled display**: waveform peaks are multiplied by effective gain (layer gain override ?? pad gain) so the visual matches audible output
+- **Layer-aware trim**: when a layer is selected, trim draft and drag handle commits route to the layer's trim override (via `updatePadSettings` → `LAYER_FIELDS` routing), not the pad-level trim
+
+### MIDI Input / Output
+- MIDI note-on sets `selectedPadId` (updates pad editor — disabled during playback)
+- MIDI note-on calls `flashSequencedPadHit` (same visual flash as sequencer hits)
+- Per-pad MIDI out: configurable device/channel/note/velocity in PadEditor
+- MIDI loop prevention via `isMidiEcho` with 80ms suppression window (converts incoming channel 0-indexed → 1-indexed)
+- Gate/ADSR note-off managed via `_activeGateNotes` Map in `midiOut.ts`
+- Sequencer MIDI out: time-aligned via `delayMs` + `outputLatency` compensation; noteOffKey includes transposed note to avoid stuck notes
+- **Pad MIDI channel**: global filter (`padMidiChannel` state) restricts which MIDI channel triggers pads (null = all)
+- **Per-synth MIDI channel**: synth pads can receive chromatic note input on their own `synthMidiChannel` (1–16) and optional `synthMidiDevice`, independent of global pad triggering
+- **Computer keyboard chromatic input**: Ableton-style 2-octave layout (Z-M = lower octave, Q-U = upper octave), toggle via TopBar button, -/= shift octave
+
+### Autosampler
+- `AutosampleDialog.tsx` — Full autosample workflow: MIDI out → audio capture → auto-trim → normalize → pad assignment
+- Configurable: MIDI device/channel, audio input device, note range/step/velocity, timing, threshold, name pattern, normalize, mix bus, choke group
+- **Note mode toggle**: Range (start/count/step), Scale (root + major/minor + octave range), Custom (manual note list + MIDI Learn)
+- Scale mode: Major `[0,2,4,5,7,9,11]` and Minor `[0,2,3,5,7,8,10]` intervals, configurable root (C–B), start octave, octave count; adds top root note
+- Custom mode: add notes by number input or MIDI Learn (listens on all MIDI inputs for note-on, appends unique notes); notes sorted ascending before sampling
+- `computeNoteList()` returns `number[]` for all modes; sampling loop iterates this array instead of arithmetic
+- **Velocity layers**: 1–4 layers per note; `computeVelocitySplits()` divides 1–127 range evenly, sends appropriate MIDI velocity per layer; creates `SampleLayer[]` with `velocityLow`/`velocityHigh` ranges and sets `multiMode: 'velocity'` on the pad
+- 150ms settle delay after `startPcmCapture` before first note (avoids hardware init glitch)
+- Samples stored with group metadata: `autosampleRunId`, `autosampleRunLabel`, `autosampleTrim`, `autosampleBus`, `autosampleChokeGroup`
+- Library shows collapsible autosample groups with rename/delete/export-zip/drag support
+- Group edit modal (✎ button): rename + change bus + change choke group for all group samples + assigned pads
+- Group drop on PadGrid: assigns samples to sequential pads with metadata (trim/bus/choke) applied, sorted by name with numeric locale comparison
+- Group assignment (`assignGroupToPads` and PadGrid drop): sorts by `autosamplePadIndex` when present (kit-mapped groups), otherwise by name (numeric locale)
+- Group assignment detects velocity layers by `_vNN` filename suffix — groups samples by base name, assigns all velocity layers to a single pad with `multiMode: 'velocity'` and proper `SampleLayer[]`
+- ZIP export includes `metadata.json` (label + per-sample trim/bus/choke/padIndex)
+- ZIP import restores group with metadata from `metadata.json` (including `autosamplePadIndex` for ordered assignment)
+
+### Audio Input Monitor
+- Toggle + device dropdown + bus selector in Mixer panel
+- `startInputMonitor`/`stopInputMonitor` in audioEngine.ts
+- `getUserMedia` with `echoCancellation: false`, `noiseSuppression: false`, `autoGainControl: false`
+
+### Confirm Dialog
+- All destructive actions use `showConfirm()` (promise-based) instead of `window.confirm()`
+- `ConfirmDialog.tsx` renders as DOM overlay with ESC/Enter keyboard support
+- Used by: initialize project, clear lane, duplicate/halve pattern, delete sample, remove unassigned, delete group, delete synth patch
+
+## Mix Bus / Mixer Notes
+
+- Mixer panel is a separate grid section from the sequencer, using shared panel styling
+- Custom `Fader` component (pointer-drag based, not native `<input type="range">`) for vertical volume faders
+- Per-bus and master `LevelMeter` components use canvas + `AnalyserNode` + rAF (same pattern as VuMeter.tsx)
+- Sidechain compressor worklet source is inlined as a JS string in `audioEngine.ts` and registered via Blob URL on context init
+- Sidechain compressor is not available on the master bus (filtered from the effect type dropdown)
+- Self-sidechain (bus sidechaining itself) is prevented in both UI and engine
+- Bus effect chain rebuilds use **structural key** (type + enabled + sidechainSource + reverb decay) — param-only changes update existing AudioParams in-place via `updateBusEffectParams`/`updateMasterEffectParams`
+- Bus names editable via double-click in Mixer panel; `setBusName` action persists via `saveProjectLight`
+
+## UI Defaults / Persistence
+
+- Song Chain panel collapsed by default, persisted in localStorage.
+- Hide Empty Lanes defaults to on (unless persisted setting exists). When enabled, only lanes with events **in the active pattern** are shown (pad content alone is not sufficient).
+- Audio output device persisted in localStorage (`audioOutputDeviceId`), restored on app init, fallback to system default.
+- Sequencer is intentionally compact; avoid increasing vertical spacing without strong reason.
+- Sequencer/Mixer vertical split is draggable via horizontal divider; ratio (0.2–0.85) persisted in localStorage (`layout-seq-mixer-split`), default 60% sequencer.
+- Mixer channels use `flex: 1` to fill available horizontal space evenly.
+- **Wide layout** (alt layout): toggle in settings popover, persisted in localStorage (`altLayout`). Eliminates center column; sequencer fills top, mixer + pad editor + pad grid share the bottom row horizontally. Uses `studio-col-main` and `alt-bottom-row` CSS classes.
+
+## Performance Notes
+
+- **Playback snapshot rebuild is guarded**: `rebuildPlaybackSnapshot` tracks references to snapshot-relevant fields (`pads`, `sequences`, `bpm`, `swing`, `songChain`, loop markers) and skips when only mixer/effect fields changed. This prevents expensive snapshot reconstruction during fader/knob drags.
+- **`saveProjectLight` skips `normalizeProject`**: The hot path only calls `touchProject` (sets `updatedAt`), preserving sub-object reference identity for the snapshot guard. `normalizeProject` only runs on initial load/import.
+- **Effect param updates are graph-safe**: `updateEffectNodeParams` writes to existing AudioParams via `setTargetAtTime(value, now, 0.01)` — no node disconnection, no clicks. Full graph rebuild only happens on structural changes (type/enabled/sidechain source/reverb decay).
+- **Transport visual state bypasses immer**: `playheadStep` and `sequencedPadHits` are managed by `transportVisualStore` (a lightweight pub/sub) instead of Zustand's immer middleware. Components subscribe via `useSyncExternalStore`. This eliminates ~90 immer produces/sec during active playback.
+- **Performance stats overlay**: Toggle via "Show Performance Stats" button in Sequencer help panel. Shows FPS, tick count, late notes, max drift, P95 drift.
+
+## Coding Notes
+
+- **Always update AGENTS.md** after completing new features or major changes. This includes: new files, new store actions, new types, changed component descriptions, updated line counts, new behavior contract entries, new feature notes sections. Do this as part of the task — not as a separate step the user has to request.
+- **Update README.md** when user-facing features are added or changed (feature lists, keyboard shortcuts, architecture notes). Keep it in sync with AGENTS.md where relevant.
+- Prefer minimal targeted changes over broad refactors.
+- Preserve existing naming/style conventions in touched files.
+- For export/download features, keep click-download behavior as reliable fallback.
+- `tone` has been removed from `package.json` — raw Web Audio API is used exclusively.
+- Keep single `App.css` file — no CSS splitting.
+- immer + DOM elements don't mix — use `as any` cast when storing DOM refs in store.
+- AudioWorklet processors are inlined as Blob URLs (not imported as modules) to avoid build/path issues.
+- Pads use `<div role="button" tabIndex={0}>` instead of `<button>` to avoid nested button violations.
+- `storeRefs` is the pattern for sharing mutable non-reactive state between App.tsx and components.
+- `audioEngine.getBuffer(sampleId)` exposes private buffer map for ChopModal preview.
+- NEVER use `window.confirm()` / `window.alert()` / `window.prompt()` — use `showConfirm()` from the store instead.
+- Use `saveProjectLight` (not `saveProject`) for per-pad edits — prevents async round-trip UI flicker.
+- Use `setTargetAtTime` (not direct `.value =`) for all AudioParam changes during playback to prevent clicks.
+- `PCM_RECORDER_SAMPLE_RATE` is `let` (not `const`) — updated at runtime from actual AudioContext sample rate.

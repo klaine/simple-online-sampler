@@ -1,0 +1,775 @@
+import { useRef, useEffect, useCallback, type RefObject } from 'react'
+import type { FilterType, MultiSampleMode, Pad, PadSettings, PadSource, BusId, SampleLayer, FilterEnvelopeSettings } from '../types'
+import { BUS_IDS } from '../types'
+import {
+  useStore,
+  selectSelectedPad,
+  selectSelectedLayer,
+  storeRefs,
+} from '../store'
+import { KnobControl } from './KnobControl'
+import { EnvelopeSection } from './EnvelopeSection'
+import { SynthHarmonicsEditor, SynthLfoEditor } from './SynthEditor'
+import { EffectSlotUI } from './Mixer'
+import { midiToName, createDefaultSynthParams } from '../lib/utils'
+import { audioEngine } from '../lib/audioEngine'
+
+interface PadEditorProps {
+  waveformRef: RefObject<HTMLDivElement | null>
+  waveformCanvasRef: RefObject<HTMLCanvasElement | null>
+  dragTargetRef: RefObject<'start' | 'end' | null>
+}
+
+/** Merge layer overrides onto pad settings for display */
+function effectiveSettings(pad: Pad, layer: ReturnType<typeof selectSelectedLayer>): PadSettings {
+  if (!layer) return pad.settings
+  return {
+    ...pad.settings,
+    gain: layer.gain ?? pad.settings.gain,
+    semitones: layer.semitones ?? pad.settings.semitones,
+    fineCents: layer.fineCents ?? pad.settings.fineCents,
+    trim: layer.trim ?? pad.settings.trim,
+    envelope: layer.envelope ?? pad.settings.envelope,
+    filterType: layer.filterType ?? pad.settings.filterType,
+    filterFreq: layer.filterFreq ?? pad.settings.filterFreq,
+    filterQ: layer.filterQ ?? pad.settings.filterQ,
+  }
+}
+
+/* ---- Stacked lane waveform canvas ---- */
+const LANE_COLORS = ['#4fc3f7', '#f06292', '#aed581', '#ffb74d', '#ba68c8', '#4dd0e1', '#ff8a65', '#9575cd']
+
+function StackedLaneCanvas({ sampleId, color, trimStart, trimEnd }: { sampleId: string; color: string; trimStart: number; trimEnd: number }) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null)
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const bar = canvas.parentElement
+    if (!bar) return
+
+    const draw = () => {
+      const buf = audioEngine.getBuffer(sampleId)
+      if (!buf) return
+      const cssW = bar.clientWidth
+      const cssH = bar.clientHeight
+      if (cssW < 1 || cssH < 1) return
+      const pr = window.devicePixelRatio || 1
+      canvas.width = Math.floor(cssW * pr)
+      canvas.height = Math.floor(cssH * pr)
+      canvas.style.width = cssW + 'px'
+      canvas.style.height = cssH + 'px'
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return
+      ctx.setTransform(pr, 0, 0, pr, 0, 0)
+      ctx.clearRect(0, 0, cssW, cssH)
+      const data = buf.getChannelData(0)
+      const sampleStart = Math.floor(trimStart * data.length)
+      const sampleEnd = Math.floor(trimEnd * data.length)
+      const trimLen = sampleEnd - sampleStart
+      if (trimLen < 1) return
+      const step = trimLen / cssW
+      const mid = cssH / 2
+      ctx.fillStyle = 'rgba(0,0,0,0.45)'
+      ctx.globalAlpha = 1
+      for (let x = 0; x < cssW; x++) {
+        const s = sampleStart + Math.floor(x * step)
+        const e = Math.min(sampleEnd, sampleStart + Math.floor((x + 1) * step))
+        let peak = 0
+        for (let i = s; i < e; i++) peak = Math.max(peak, Math.abs(data[i]))
+        const h = Math.max(1, peak * cssH * 0.45)
+        ctx.fillRect(x, mid - h, 1, h * 2)
+      }
+    }
+
+    const ro = new ResizeObserver(() => draw())
+    ro.observe(bar)
+    draw()
+    return () => ro.disconnect()
+  }, [sampleId, color, trimStart, trimEnd])
+
+  return <canvas ref={canvasRef} className="stacked-lane-canvas" />
+}
+
+/** Get effective trim for a layer (layer override ?? pad settings) */
+function getLayerTrim(padSettings: PadSettings, layer: SampleLayer): { start: number; end: number } {
+  const trim = layer.trim ?? padSettings.trim
+  return { start: trim?.start ?? 0, end: trim?.end ?? 1 }
+}
+
+/** Get trimmed duration in ms for a layer */
+function getTrimmedDurationMs(sampleId: string, trimStart: number, trimEnd: number): number {
+  const buf = audioEngine.getBuffer(sampleId)
+  if (!buf) return 500
+  return buf.duration * (trimEnd - trimStart) * 1000
+}
+
+/* ---- Stacked timeline with drag ---- */
+function StackedTimeline({ layers, padSettings, sampleMap: sm }: { layers: SampleLayer[]; padSettings: PadSettings; sampleMap: Map<string, { name: string }> }) {
+  const timelineRef = useRef<HTMLDivElement | null>(null)
+  const dragRef = useRef<{ layerId: string; startX: number; startOffsetMs: number; maxEnd: number } | null>(null)
+
+  const lanes = layers.map((layer) => {
+    const trim = getLayerTrim(padSettings, layer)
+    const durationMs = getTrimmedDurationMs(layer.sampleId, trim.start, trim.end)
+    const offsetMs = layer.stackOffsetMs ?? 0
+    return { offsetMs, durationMs, endMs: offsetMs + durationMs, trimStart: trim.start, trimEnd: trim.end }
+  })
+  const maxEnd = Math.max(100, ...lanes.map((l) => l.endMs))
+
+  const onPointerDown = useCallback((e: React.PointerEvent, layerId: string, offsetMs: number) => {
+    e.preventDefault()
+    e.stopPropagation()
+    ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+    const tl = timelineRef.current
+    if (!tl) return
+    const currentLanes = layers.map((layer) => {
+      const trim = getLayerTrim(padSettings, layer)
+      const dur = getTrimmedDurationMs(layer.sampleId, trim.start, trim.end)
+      const off = layer.stackOffsetMs ?? 0
+      return off + dur
+    })
+    dragRef.current = { layerId, startX: e.clientX, startOffsetMs: offsetMs, maxEnd: Math.max(100, ...currentLanes) }
+  }, [layers, padSettings])
+
+  const onPointerMove = useCallback((e: React.PointerEvent) => {
+    const d = dragRef.current
+    const tl = timelineRef.current
+    if (!d || !tl) return
+    const tlWidth = tl.clientWidth
+    if (tlWidth <= 0) return
+    const pxPerMs = tlWidth / d.maxEnd
+    const deltaPx = e.clientX - d.startX
+    const deltaMs = deltaPx / pxPerMs
+    const newOffset = Math.max(0, Math.round(d.startOffsetMs + deltaMs))
+    useStore.getState().updateLayerSettings(d.layerId, { stackOffsetMs: newOffset || null })
+  }, [])
+
+  const onPointerUp = useCallback(() => {
+    dragRef.current = null
+  }, [])
+
+  return (
+    <div className="stacked-timeline" ref={timelineRef}>
+      <div className="stacked-timeline-scale">
+        <span>0ms</span>
+        <span>{Math.round(maxEnd / 2)}ms</span>
+        <span>{Math.round(maxEnd)}ms</span>
+      </div>
+      {layers.map((layer, idx) => {
+        const l = lanes[idx]
+        const leftPct = (l.offsetMs / maxEnd) * 100
+        const widthPct = (l.durationMs / maxEnd) * 100
+        const color = LANE_COLORS[idx % LANE_COLORS.length]
+        const sample = sm.get(layer.sampleId)
+        return (
+          <div key={layer.id} className="stacked-lane">
+            <div
+              className="stacked-lane-bar"
+              style={{ left: `${leftPct}%`, width: `${widthPct}%`, backgroundColor: color, cursor: 'ew-resize' }}
+              title={`${sample?.name ?? 'Layer ' + (idx + 1)}: ${Math.round(l.offsetMs)}ms offset, ${Math.round(l.durationMs)}ms duration — drag to adjust`}
+              onPointerDown={(e) => onPointerDown(e, layer.id, l.offsetMs)}
+              onPointerMove={onPointerMove}
+              onPointerUp={onPointerUp}
+            >
+              <StackedLaneCanvas sampleId={layer.sampleId} color={color} trimStart={l.trimStart} trimEnd={l.trimEnd} />
+              <span className="stacked-lane-label">{idx + 1}</span>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+export function PadEditor({ waveformRef, waveformCanvasRef, dragTargetRef }: PadEditorProps) {
+  const selectedPad = useStore(selectSelectedPad)
+  const selectedLayer = useStore(selectSelectedLayer)
+  const selectedLayerId = useStore((s) => s.selectedLayerId)
+  const collapsed = useStore((s) => s.padEditorCollapsed)
+  const trimDraft = useStore((s) => s.trimDraft)
+  const waveformZoom = useStore((s) => s.waveformZoom)
+  const sampleMap = useStore((s) => s.sampleMap)
+
+  const {
+    updatePadSettings,
+    assignFileToPad,
+    renamePad,
+    resetSelectedPadName,
+    addLayerFile,
+    removeLayer,
+    updateLayerVelocity,
+    updateLayerSettings,
+    selectLayer,
+    updatePadMidiOut,
+    setPadEffectType,
+    setPadEffectEnabled,
+    setPadEffectParam,
+  } = useStore.getState()
+
+  const midiOutputs = useStore((s) => s.midiOutputs)
+  const midiInputs = useStore((s) => s.midiInputs)
+
+  const eff = selectedPad ? effectiveSettings(selectedPad, selectedLayer) : null
+
+  const toggleCollapse = () => useStore.setState((s) => ({ padEditorCollapsed: !s.padEditorCollapsed }))
+
+  return (
+    <section className={`pad-editor-panel${collapsed ? ' collapsed' : ''}`}>
+      <div className="pad-editor-head">
+        <h2>Pad Editor</h2>
+        {selectedPad && collapsed && <span className="pad-editor-head-name">{selectedPad.name}</span>}
+        <button type="button" className="pad-editor-toggle" onClick={toggleCollapse} title={collapsed ? 'Expand' : 'Collapse'}>
+          {collapsed ? '▸' : '▾'}
+        </button>
+      </div>
+      {selectedPad ? (
+        <>
+          {/* --- Top row: only in expanded --- */}
+          {!collapsed && (
+            <div className="editor-top-row">
+              <label>
+                Pad Name
+                <input type="text" value={selectedPad.name} onChange={(e) => void renamePad(e.target.value)} />
+              </label>
+              <button type="button" className="pad-name-reset" onClick={() => void resetSelectedPadName()}>
+                Reset Name
+              </button>
+              <button type="button" className="pad-name-reset" onClick={() => void useStore.getState().resetPad(selectedPad.id)}>
+                Reset Pad
+              </button>
+              <label>
+                Source
+                <select
+                  value={selectedPad.settings.source ?? 'sample'}
+                  onChange={(e) => {
+                    const source = e.target.value as PadSource
+                    const update: Partial<PadSettings> = { source }
+                    if (source === 'synth' && !selectedPad.settings.synthParams) {
+                      update.synthParams = createDefaultSynthParams()
+                    }
+                    void updatePadSettings(update)
+                  }}
+                >
+                  <option value="sample">Sample</option>
+                  <option value="synth">Synth</option>
+                </select>
+              </label>
+              <label>
+                Mode
+                <select
+                  value={selectedPad.settings.mode}
+                  onChange={(e) => void updatePadSettings({ mode: e.target.value as Pad['settings']['mode'] })}
+                >
+                  <option value="one-shot">One Shot</option>
+                  <option value="adsr">ADSR</option>
+                </select>
+              </label>
+              <label>
+                Bus
+                <select
+                  value={selectedPad.settings.bus ?? 'A'}
+                  onChange={(e) => void updatePadSettings({ bus: e.target.value as BusId })}
+                >
+                  {BUS_IDS.map((id) => <option key={id} value={id}>{id}</option>)}
+                </select>
+              </label>
+              <label>
+                Choke
+                <select
+                  value={selectedPad.settings.chokeGroup ?? 0}
+                  onChange={(e) => void updatePadSettings({ chokeGroup: Number(e.target.value) })}
+                >
+                  <option value={0}>Off</option>
+                  {[1, 2, 3, 4, 5, 6, 7, 8].map((g) => <option key={g} value={g}>{g}</option>)}
+                </select>
+              </label>
+              {(selectedPad.settings.source ?? 'sample') !== 'synth' && (
+              <>
+              <label className="file-input-styled">
+                Assign Sample File
+                <span className="file-input-btn">Browse...</span>
+                <input
+                  type="file"
+                  accept="audio/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (file) void assignFileToPad(selectedPad, file)
+                  }}
+                />
+              </label>
+              {selectedPad.settings.sampleId && (selectedPad.settings.trim.start > 0 || selectedPad.settings.trim.end < 1) && (
+                <button
+                  type="button"
+                  className="file-input-btn"
+                  onClick={() => void useStore.getState().cropSampleToTrim(selectedPad.id)}
+                >
+                  Crop
+                </button>
+              )}
+              {selectedPad.settings.sampleId && (
+                <button
+                  type="button"
+                  className="file-input-btn"
+                  onClick={() => void useStore.getState().normalizeSample(selectedPad.id)}
+                >
+                  Normalize
+                </button>
+              )}
+              </>
+              )}
+            </div>
+          )}
+
+          {/* --- Waveform + collapsed knobs row (shared waveform block) --- */}
+          {(selectedPad.settings.source ?? 'sample') !== 'synth' && (
+          <div className={collapsed ? 'collapsed-waveform-row' : 'waveform-block'}>
+            {!collapsed && (
+              <div className="waveform-head">
+                <strong>Waveform</strong>
+                <span>{`${trimDraft.start.toFixed(2)} - ${trimDraft.end.toFixed(2)}`}</span>
+                <button
+                  type="button"
+                  className={`waveform-zoom-btn ${waveformZoom === 'trim' ? 'active' : ''}`}
+                  onClick={() => useStore.setState((s) => ({ waveformZoom: s.waveformZoom === 'full' ? 'trim' : 'full' }))}
+                >
+                  {waveformZoom === 'trim' ? 'Full' : 'Zoom Trim'}
+                </button>
+              </div>
+            )}
+            <div className="waveform" ref={waveformRef}>
+              <canvas ref={waveformCanvasRef} className="wave-canvas" />
+              {(() => {
+                // In zoom-trim mode, remap positions to the visible range
+                // Use frozen range during drag to keep viewport stable
+                const zoomRange = storeRefs.frozenZoomRange ?? trimDraft
+                const viewStart = waveformZoom === 'trim' ? zoomRange.start : 0
+                const viewEnd = waveformZoom === 'trim' ? zoomRange.end : 1
+                const viewSpan = Math.max(0.001, viewEnd - viewStart)
+                const toView = (v: number) => ((v - viewStart) / viewSpan) * 100
+                const trimLeft = toView(trimDraft.start)
+                const trimRight = toView(trimDraft.end)
+                return (
+                  <>
+                    <div
+                      className="trim-zone"
+                      style={{ left: `${trimLeft}%`, width: `${trimRight - trimLeft}%` }}
+                    />
+                    <button type="button" className="trim-handle" style={{ left: `${trimLeft}%` }} onPointerDown={() => { dragTargetRef.current = 'start'; waveformRef.current?.classList.add('trim-dragging') }} />
+                    <button type="button" className="trim-handle" style={{ left: `${trimRight}%` }} onPointerDown={() => { dragTargetRef.current = 'end'; waveformRef.current?.classList.add('trim-dragging') }} />
+                  </>
+                )
+              })()}
+            </div>
+            {collapsed && (
+              <div className="collapsed-knobs">
+                <KnobControl label="Gain" value={eff!.gain} min={0} max={2} step={0.01} onChange={(v) => void updatePadSettings({ gain: v })} />
+                <KnobControl label="Semi" value={eff!.semitones ?? 0} min={-24} max={24} step={1} precision={0} onChange={(v) => void updatePadSettings({ semitones: Math.round(v) })} />
+              </div>
+            )}
+          </div>
+          )}
+          {!collapsed && (
+            <>
+              {selectedLayerId && <span className="editing-layer-badge">Editing Layer</span>}
+              <div className="knob-row" style={{ gridTemplateColumns: 'repeat(4, minmax(0, 1fr))' }}>
+                <KnobControl label="Semitones" value={eff!.semitones ?? 0} min={-24} max={24} step={1} precision={0} onChange={(v) => void updatePadSettings({ semitones: Math.round(v) })} />
+                <KnobControl label="Fine (ct)" value={eff!.fineCents ?? 0} min={-100} max={100} step={1} precision={0} onChange={(v) => void updatePadSettings({ fineCents: Math.round(v) })} />
+                <KnobControl label={selectedPad.settings.randomPan ? 'Spread' : 'Pan'} value={selectedPad.settings.pan ?? 0} min={selectedPad.settings.randomPan ? 0 : -1} max={1} step={0.01} onChange={(v) => void updatePadSettings({ pan: v })} />
+                <div className="pan-random-toggle">
+                  <label title="Randomize pan position per note (Pan knob controls width)">
+                    <input
+                      type="checkbox"
+                      checked={selectedPad.settings.randomPan ?? false}
+                      onChange={(e) => {
+                        const on = e.target.checked
+                        void updatePadSettings({ randomPan: on, pan: on ? Math.abs(selectedPad.settings.pan ?? 0) || 0.5 : selectedPad.settings.pan ?? 0 })
+                      }}
+                    />
+                    Rnd Pan
+                  </label>
+                </div>
+              </div>
+
+              {(selectedPad.settings.source ?? 'sample') !== 'synth' && (
+              <div className="envelope-sections-row">
+                {/* AMP envelope (MC-909 style) */}
+                <EnvelopeSection
+                  title="AMP"
+                  levelLabel="Level"
+                  levelValue={eff!.gain}
+                  levelMin={0}
+                  levelMax={2}
+                  levelStep={0.01}
+                  onLevelChange={(v) => void updatePadSettings({ gain: v })}
+                  formatLevel={(v) => `${Math.round(v * 100)}%`}
+                  attack={eff!.envelope.attack}
+                  decay={eff!.envelope.decay}
+                  sustain={eff!.envelope.sustain ?? 0}
+                  release={eff!.envelope.release}
+                  onAttackChange={(v) => void updatePadSettings({ envelope: { ...eff!.envelope, attack: v } })}
+                  onDecayChange={(v) => void updatePadSettings({ envelope: { ...eff!.envelope, decay: v } })}
+                  onSustainChange={(v) => void updatePadSettings({ envelope: { ...eff!.envelope, sustain: v } })}
+                  onReleaseChange={(v) => void updatePadSettings({ envelope: { ...eff!.envelope, release: v } })}
+                  adsrDisabled={selectedPad.settings.mode === 'one-shot'}
+                />
+
+                {/* FILTER section (MC-909 style) */}
+                <div className="envelope-section">
+                  <div className="envelope-section-header">FILTER</div>
+                  {eff!.filterType !== 'off' && (() => {
+                    const defaultFEnv: FilterEnvelopeSettings = { attack: 0.01, decay: 0.3, sustain: 0.4, release: 0.3, depth: 0 }
+                    const fEnv = selectedPad.settings.filterEnvelope ?? defaultFEnv
+                    const updateFEnv = (partial: Partial<FilterEnvelopeSettings>) => {
+                      const cur = selectedPad.settings.filterEnvelope ?? defaultFEnv
+                      void updatePadSettings({ filterEnvelope: { ...cur, ...partial } })
+                    }
+                    return (
+                      <EnvelopeSection
+                        title=""
+                        levelLabel="Dep"
+                        levelValue={fEnv.depth}
+                        levelMin={0}
+                        levelMax={96}
+                        levelStep={1}
+                        onLevelChange={(v) => updateFEnv({ depth: v })}
+                        formatLevel={(v) => `${Math.round(v)}st`}
+                        attack={fEnv.attack}
+                        decay={fEnv.decay}
+                        sustain={fEnv.sustain}
+                        release={fEnv.release}
+                        onAttackChange={(v) => updateFEnv({ attack: v })}
+                        onDecayChange={(v) => updateFEnv({ decay: v })}
+                        onSustainChange={(v) => updateFEnv({ sustain: v })}
+                        onReleaseChange={(v) => updateFEnv({ release: v })}
+                      />
+                    )
+                  })()}
+                  <div className="filter-controls-row">
+                    <label>
+                      Type
+                      <select
+                        value={eff!.filterType}
+                        onChange={(e) => void updatePadSettings({ filterType: e.target.value as FilterType })}
+                      >
+                        <option value="off">Off</option>
+                        <option value="lp12">LP12</option>
+                        <option value="lp24">LP24</option>
+                        <option value="highpass">HP</option>
+                        <option value="bandpass">BP</option>
+                      </select>
+                    </label>
+                    {eff!.filterType !== 'off' && (
+                      <>
+                        <KnobControl label="Freq" value={eff!.filterFreq} min={20} max={20000} step={1} precision={0} freqScale onChange={(v) => void updatePadSettings({ filterFreq: Math.round(v) })} />
+                        <KnobControl label="Q" value={eff!.filterQ} min={0.1} max={20} step={0.1} onChange={(v) => void updatePadSettings({ filterQ: v })} />
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+              )}
+
+              {/* --- Synth: Harmonics + Base Note --- */}
+              {(selectedPad.settings.source ?? 'sample') === 'synth' && <SynthHarmonicsEditor />}
+
+              {/* --- Synth: Envelope sections (AMP + FILTER) --- */}
+              {(selectedPad.settings.source ?? 'sample') === 'synth' && (
+              <div className="envelope-sections-row">
+                <EnvelopeSection
+                  title="AMP"
+                  levelLabel="Level"
+                  levelValue={eff!.gain}
+                  levelMin={0}
+                  levelMax={2}
+                  levelStep={0.01}
+                  onLevelChange={(v) => void updatePadSettings({ gain: v })}
+                  formatLevel={(v) => `${Math.round(v * 100)}%`}
+                  attack={eff!.envelope.attack}
+                  decay={eff!.envelope.decay}
+                  sustain={eff!.envelope.sustain ?? 0}
+                  release={eff!.envelope.release}
+                  onAttackChange={(v) => void updatePadSettings({ envelope: { ...eff!.envelope, attack: v } })}
+                  onDecayChange={(v) => void updatePadSettings({ envelope: { ...eff!.envelope, decay: v } })}
+                  onSustainChange={(v) => void updatePadSettings({ envelope: { ...eff!.envelope, sustain: v } })}
+                  onReleaseChange={(v) => void updatePadSettings({ envelope: { ...eff!.envelope, release: v } })}
+                  adsrDisabled={selectedPad.settings.mode === 'one-shot'}
+                />
+                <div className="envelope-section">
+                  <div className="envelope-section-header">FILTER</div>
+                  {eff!.filterType !== 'off' && (() => {
+                    const fEnv = (selectedPad.settings.synthParams ?? createDefaultSynthParams()).filterEnvelope
+                    const updateFEnv = (partial: Partial<FilterEnvelopeSettings>) => {
+                      const synth = selectedPad.settings.synthParams ?? createDefaultSynthParams()
+                      void updatePadSettings({ synthParams: { ...synth, filterEnvelope: { ...synth.filterEnvelope, ...partial } } })
+                    }
+                    return (
+                      <EnvelopeSection
+                        title=""
+                        levelLabel="Dep"
+                        levelValue={fEnv.depth}
+                        levelMin={0}
+                        levelMax={96}
+                        levelStep={1}
+                        onLevelChange={(v) => updateFEnv({ depth: v })}
+                        formatLevel={(v) => `${Math.round(v)}st`}
+                        attack={fEnv.attack}
+                        decay={fEnv.decay}
+                        sustain={fEnv.sustain}
+                        release={fEnv.release}
+                        onAttackChange={(v) => updateFEnv({ attack: v })}
+                        onDecayChange={(v) => updateFEnv({ decay: v })}
+                        onSustainChange={(v) => updateFEnv({ sustain: v })}
+                        onReleaseChange={(v) => updateFEnv({ release: v })}
+                      />
+                    )
+                  })()}
+                  <div className="filter-controls-row">
+                    <label>
+                      Type
+                      <select
+                        value={eff!.filterType}
+                        onChange={(e) => void updatePadSettings({ filterType: e.target.value as FilterType })}
+                      >
+                        <option value="off">Off</option>
+                        <option value="lp12">LP12</option>
+                        <option value="lp24">LP24</option>
+                        <option value="highpass">HP</option>
+                        <option value="bandpass">BP</option>
+                      </select>
+                    </label>
+                    {eff!.filterType !== 'off' && (
+                      <>
+                        <KnobControl label="Freq" value={eff!.filterFreq} min={20} max={20000} step={1} precision={0} freqScale onChange={(v) => void updatePadSettings({ filterFreq: Math.round(v) })} />
+                        <KnobControl label="Q" value={eff!.filterQ} min={0.1} max={20} step={0.1} onChange={(v) => void updatePadSettings({ filterQ: v })} />
+                        <KnobControl label="Key" value={eff!.filterKeyTrack ?? 0} min={-100} max={100} step={1} precision={0} onChange={(v) => void updatePadSettings({ filterKeyTrack: Math.round(v) })} />
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+              )}
+
+              {/* --- Synth: LFO + Export --- */}
+              {(selectedPad.settings.source ?? 'sample') === 'synth' && <SynthLfoEditor />}
+
+              {/* --- Per-pad effect slots (synth pads) --- */}
+              {(selectedPad.settings.source ?? 'sample') === 'synth' && (
+                <div className="pad-effects-section">
+                  <strong>Pad Effects</strong>
+                  {(selectedPad.settings.padEffects ?? [
+                    { id: 'tmp0', type: 'off' as const, enabled: false, params: {} },
+                    { id: 'tmp1', type: 'off' as const, enabled: false, params: {} },
+                  ]).map((slot, i) => (
+                    <EffectSlotUI
+                      key={slot.id}
+                      slot={slot}
+                      onTypeChange={(type) => setPadEffectType(selectedPad.id, i, type)}
+                      onEnabledChange={(enabled) => setPadEffectEnabled(selectedPad.id, i, enabled)}
+                      onParamChange={(name, value) => setPadEffectParam(selectedPad.id, i, name, value)}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {/* --- Synth MIDI Input section --- */}
+              {(selectedPad.settings.source ?? 'sample') === 'synth' && (
+                <div className="synth-midi-section">
+                  <strong>Synth MIDI Input</strong>
+                  <div className="synth-midi-controls">
+                    <label>
+                      Device
+                      <select
+                        value={selectedPad.settings.synthMidiDevice ?? ''}
+                        onChange={(e) => updatePadSettings({ synthMidiDevice: e.target.value || undefined })}
+                      >
+                        <option value="">Any device</option>
+                        {midiInputs.map((d) => (
+                          <option key={d.id} value={d.id}>{d.name}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Channel
+                      <select
+                        value={selectedPad.settings.synthMidiChannel ?? ''}
+                        onChange={(e) => updatePadSettings({ synthMidiChannel: e.target.value ? Number(e.target.value) : undefined })}
+                      >
+                        <option value="">Off</option>
+                        {Array.from({ length: 16 }, (_, i) => (
+                          <option key={i + 1} value={i + 1}>Ch {i + 1}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {(selectedPad.settings.source ?? 'sample') !== 'synth' && (<>
+              <div className="multisample-section">
+                <div className="multisample-head">
+                  <strong>Multi-Sample</strong>
+                  <select
+                    value={selectedPad.settings.multiMode}
+                    onChange={(e) => void updatePadSettings({ multiMode: e.target.value as MultiSampleMode })}
+                  >
+                    <option value="single">Single</option>
+                    <option value="round-robin">Round Robin</option>
+                    <option value="random">Random</option>
+                    <option value="velocity">Velocity</option>
+                    <option value="stacked">Stacked</option>
+                  </select>
+                  <label className="layer-add-btn">
+                    + Layer
+                    <input
+                      type="file"
+                      accept="audio/*"
+                      multiple
+                      style={{ display: 'none' }}
+                      onChange={(e) => {
+                        const files = e.target.files
+                        if (!files) return
+                        for (let i = 0; i < files.length; i++) {
+                          void addLayerFile(files[i])
+                        }
+                        e.target.value = ''
+                      }}
+                    />
+                  </label>
+                </div>
+                {selectedPad.settings.layers.length > 0 && (
+                  <div className="layer-list">
+                    {selectedPad.settings.layers.map((layer, idx) => {
+                      const sample = sampleMap.get(layer.sampleId)
+                      return (
+                        <div key={layer.id} className={`layer-row${selectedLayerId === layer.id ? ' selected' : ''}`} onClick={() => selectLayer(selectedLayerId === layer.id ? null : layer.id)}>
+                          <span className="layer-idx">{idx + 1}</span>
+                          <span className="layer-name" title={sample?.name ?? layer.sampleId}>
+                            {sample?.name ?? 'Unknown'}
+                          </span>
+                          {selectedPad.settings.multiMode === 'velocity' && (
+                            <span className="layer-vel">
+                              <input
+                                type="number"
+                                min={1}
+                                max={127}
+                                value={layer.velocityLow}
+                                onChange={(e) => void updateLayerVelocity(layer.id, Number(e.target.value), layer.velocityHigh)}
+                              />
+                              –
+                              <input
+                                type="number"
+                                min={1}
+                                max={127}
+                                value={layer.velocityHigh}
+                                onChange={(e) => void updateLayerVelocity(layer.id, layer.velocityLow, Number(e.target.value))}
+                              />
+                            </span>
+                          )}
+                          {selectedPad.settings.multiMode === 'stacked' && (
+                            <span className="layer-offset" title="Offset in ms">
+                              <input
+                                type="number"
+                                min={0}
+                                max={5000}
+                                step={1}
+                                value={layer.stackOffsetMs ?? 0}
+                                onClick={(e) => e.stopPropagation()}
+                                onChange={(e) => void updateLayerSettings(layer.id, { stackOffsetMs: Math.max(0, Number(e.target.value)) || null })}
+                              />
+                              <span className="layer-offset-unit">ms</span>
+                            </span>
+                          )}
+                          <button type="button" className="layer-remove" onClick={(e) => { e.stopPropagation(); void removeLayer(layer.id) }}>×</button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* --- Stacked Timeline --- */}
+              {selectedPad.settings.multiMode === 'stacked' && selectedPad.settings.layers.length > 0 && (
+                <StackedTimeline layers={selectedPad.settings.layers} padSettings={selectedPad.settings} sampleMap={sampleMap} />
+              )}
+              </>)}
+
+              {/* --- MIDI Out section --- */}
+              <div className="midi-out-section">
+                <div className="midi-out-head">
+                  <strong>MIDI Out</strong>
+                  <label className="midi-out-enable">
+                    <input
+                      type="checkbox"
+                      checked={selectedPad.settings.midiOut?.enabled ?? false}
+                      onChange={(e) => void updatePadMidiOut(selectedPad.id, { enabled: e.target.checked })}
+                    />
+                    Enable
+                  </label>
+                </div>
+                {selectedPad.settings.midiOut?.enabled && (
+                  <div className="midi-out-body">
+                    <label>
+                      Device
+                      <select
+                        value={selectedPad.settings.midiOut?.deviceId ?? ''}
+                        onChange={(e) => void updatePadMidiOut(selectedPad.id, { deviceId: e.target.value || null })}
+                      >
+                        <option value="">Default (first available)</option>
+                        {midiOutputs.map((o) => (
+                          <option key={o.id} value={o.id}>{o.name}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Channel
+                      <input
+                        type="number"
+                        min={1}
+                        max={16}
+                        value={selectedPad.settings.midiOut?.channel ?? 1}
+                        onChange={(e) => void updatePadMidiOut(selectedPad.id, { channel: Math.max(1, Math.min(16, Number(e.target.value))) })}
+                      />
+                    </label>
+                    <label>
+                      Note
+                      <span className="midi-out-note-name">{midiToName(selectedPad.settings.midiOut?.note ?? selectedPad.midiNote)}</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={127}
+                        value={selectedPad.settings.midiOut?.note ?? selectedPad.midiNote}
+                        onChange={(e) => void updatePadMidiOut(selectedPad.id, { note: Math.max(0, Math.min(127, Number(e.target.value))) })}
+                      />
+                    </label>
+                    <label title="Fixed velocity (1–127), or -1 to follow trigger velocity">
+                      Velocity
+                      <select
+                        value={selectedPad.settings.midiOut?.velocity === -1 ? 'follow' : 'fixed'}
+                        onChange={(e) => void updatePadMidiOut(selectedPad.id, { velocity: e.target.value === 'follow' ? -1 : 100 })}
+                      >
+                        <option value="follow">Follow trigger</option>
+                        <option value="fixed">Fixed</option>
+                      </select>
+                      {(selectedPad.settings.midiOut?.velocity ?? -1) >= 0 && (
+                        <input
+                          type="number"
+                          min={1}
+                          max={127}
+                          value={selectedPad.settings.midiOut?.velocity ?? 100}
+                          onChange={(e) => void updatePadMidiOut(selectedPad.id, { velocity: Math.max(1, Math.min(127, Number(e.target.value))) })}
+                        />
+                      )}
+                    </label>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </>
+      ) : (
+        !collapsed && <p>Select a pad.</p>
+      )}
+    </section>
+  )
+}

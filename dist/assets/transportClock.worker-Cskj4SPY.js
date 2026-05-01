@@ -1,0 +1,1 @@
+(function(){let e=null,t=()=>{e!==null&&(self.clearInterval(e),e=null)};self.onmessage=n=>{let r=n.data;if(r.type===`stop`){t();return}t();let i=Math.max(5,Math.round(r.intervalMs));e=self.setInterval(()=>{self.postMessage({type:`tick`,nowMs:performance.now()})},i)}})();
