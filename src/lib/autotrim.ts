@@ -9,16 +9,16 @@ import type { TrimSettings } from '../types'
  * @param pcm             Mono or first-channel Float32 PCM data
  * @param sampleRate      Sample rate in Hz (used to compute pre-roll)
  * @param thresholdDb     Absolute silence threshold in dBFS (e.g. -60), used as floor
- * @param preRollMs       Pre-roll in ms to preserve before the first loud sample (default 5)
- * @param peakRelativeDb  Threshold relative to peak in dB (default -30, i.e. onset must be within 30dB of peak)
+ * @param preRollMs       Pre-roll in ms to preserve before the first loud sample (default 2)
+ * @param peakRelativeDb  Threshold relative to peak in dB (default -40, i.e. onset must be within 40dB of peak)
  * @returns               TrimSettings with start/end as fractions 0–1
  */
 export function computeSilenceTrim(
   pcm: Float32Array,
   sampleRate: number,
   thresholdDb = -60,
-  preRollMs = 5,
-  peakRelativeDb = -30,
+  preRollMs = 2,
+  peakRelativeDb = -40,
 ): TrimSettings {
   const len = pcm.length
   if (len === 0) return { start: 0, end: 1 }

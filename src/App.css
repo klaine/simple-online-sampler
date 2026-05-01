@@ -3979,6 +3979,44 @@ select.tb-led-value {
   letter-spacing: 0.03em;
 }
 
+/* --- Velocity Subgroups --- */
+
+.velo-subgroup {
+  margin-left: 10px;
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.velo-subgroup-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  font-size: 10px;
+  color: var(--muted);
+  cursor: default;
+  border-radius: var(--radius-sm);
+}
+
+.velo-subgroup-head:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.velo-subgroup-label {
+  cursor: pointer;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.velo-subgroup-count {
+  margin-left: 0.3rem;
+  font-size: 0.58rem;
+  color: rgba(255, 255, 255, 0.25);
+  font-weight: 600;
+}
+
 /* --- Synth Patches in Library --- */
 
 .synth-patches-section {

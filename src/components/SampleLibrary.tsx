@@ -22,6 +22,7 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
   const [dropActive, setDropActive] = useState(false)
   const [expandedChops, setExpandedChops] = useState<Set<string>>(new Set())
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
+  const [expandedVeloGroups, setExpandedVeloGroups] = useState<Set<string>>(new Set())
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null)
   const [editingGroupName, setEditingGroupName] = useState('')
   const [editingGroupBus, setEditingGroupBus] = useState<BusId>('A')
@@ -210,8 +211,73 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
     })
   }, [])
 
+  const toggleVeloGroupExpand = useCallback((key: string) => {
+    setExpandedVeloGroups((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }, [])
+
   // Group samples by autosampleRunId into collapsible batches
-  type LibItem = { type: 'single'; sample: SampleAsset } | { type: 'group'; key: string; label: string; samples: SampleAsset[] }
+  type VeloSubgroup = { baseName: string; samples: SampleAsset[] }
+  type LibItem = { type: 'single'; sample: SampleAsset } | { type: 'group'; key: string; label: string; samples: SampleAsset[]; veloSubgroups: VeloSubgroup[] }
+
+  const veloRegex = /^(.+?)_v(\d+)(\.[^.]+)$/
+
+  const buildVeloSubgroups = (samples: SampleAsset[]): VeloSubgroup[] => {
+    const subgroupMap = new Map<string, VeloSubgroup>()
+    const ordered: (VeloSubgroup | SampleAsset)[] = []
+    const singleBucket: SampleAsset[] = []
+
+    for (const sample of samples) {
+      const m = veloRegex.exec(sample.name)
+      if (m) {
+        const baseKey = m[1] + m[3]
+        let sg = subgroupMap.get(baseKey)
+        if (!sg) {
+          sg = { baseName: baseKey, samples: [] }
+          subgroupMap.set(baseKey, sg)
+          // Flush any accumulated singles before this subgroup
+          if (singleBucket.length > 0) {
+            for (const s of singleBucket) ordered.push(s)
+            singleBucket.length = 0
+          }
+          ordered.push(sg)
+        }
+        sg.samples.push(sample)
+      } else {
+        singleBucket.push(sample)
+      }
+    }
+    // Flush remaining singles
+    for (const s of singleBucket) ordered.push(s)
+
+    // Sort samples within each subgroup by velocity ascending
+    for (const sg of subgroupMap.values()) {
+      sg.samples.sort((a, b) => {
+        const ma = veloRegex.exec(a.name)
+        const mb = veloRegex.exec(b.name)
+        return (ma ? Number(ma[2]) : 0) - (mb ? Number(mb[2]) : 0)
+      })
+    }
+
+    // Only return subgroups that have ≥2 samples; demote singles back
+    // Build final list preserving order
+    const result: VeloSubgroup[] = []
+    for (const entry of ordered) {
+      if ('baseName' in entry) {
+        if (entry.samples.length >= 2) {
+          result.push(entry)
+        }
+        // Singles within a subgroup with <2 entries are not included here;
+        // they stay in the flat samples list
+      }
+    }
+    return result
+  }
+
   const libraryItems: LibItem[] = useMemo(() => {
     // Collect run groups
     const runGroups = new Map<string, SampleAsset[]>()
@@ -245,9 +311,10 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
         const customLabel = samples[0].autosampleRunLabel
         const fallback = `${samples[0].name.replace(/\.wav$/i, '')}…${samples[samples.length - 1].name.replace(/\.wav$/i, '')}`
         const label = customLabel ? `${customLabel} (${samples.length})` : `${fallback} (${samples.length})`
+        const veloSubgroups = buildVeloSubgroups(samples)
         positioned.push({
           index: runFirstIndex.get(runId)!,
-          item: { type: 'group', key: runId, label, samples },
+          item: { type: 'group', key: runId, label, samples, veloSubgroups },
         })
       } else {
         positioned.push({ index: runFirstIndex.get(runId)!, item: { type: 'single', sample: samples[0] } })
@@ -532,7 +599,52 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
                         </button>
                       </div>
                     </div>
-                    {isGroupExpanded && item.samples.map((sample) => renderSampleRow(sample, true))}
+                    {isGroupExpanded && (() => {
+                      if (item.veloSubgroups.length === 0) {
+                        // No velocity subgroups — render flat
+                        return item.samples.map((sample) => renderSampleRow(sample, true))
+                      }
+                      // Build set of sample IDs that belong to a velocity subgroup
+                      const veloSampleIds = new Set(item.veloSubgroups.flatMap((sg) => sg.samples.map((s) => s.id)))
+                      const flatSamples = item.samples.filter((s) => !veloSampleIds.has(s.id))
+                      return (
+                        <>
+                          {item.veloSubgroups.map((sg) => {
+                            const veloKey = `${item.key}:${sg.baseName}`
+                            const isVeloExpanded = expandedVeloGroups.has(veloKey)
+                            return (
+                              <div key={veloKey} className="velo-subgroup">
+                                <div
+                                  className="velo-subgroup-head"
+                                  draggable
+                                  onDragStart={(e) => {
+                                    e.dataTransfer.effectAllowed = 'copy'
+                                    e.dataTransfer.setData('application/x-online-sampler-velo-subgroup', JSON.stringify(sg.samples.map((s) => s.id)))
+                                  }}
+                                >
+                                  <button
+                                    type="button"
+                                    className="sample-group-toggle"
+                                    onClick={() => toggleVeloGroupExpand(veloKey)}
+                                  >
+                                    <span className="sample-group-chevron">{isVeloExpanded ? '▾' : '▸'}</span>
+                                  </button>
+                                  <span
+                                    className="velo-subgroup-label"
+                                    onClick={() => toggleVeloGroupExpand(veloKey)}
+                                  >
+                                    {sg.baseName.replace(/\.[^.]+$/, '')}
+                                    <span className="velo-subgroup-count">{sg.samples.length} layers</span>
+                                  </span>
+                                </div>
+                                {isVeloExpanded && sg.samples.map((sample) => renderSampleRow(sample, true))}
+                              </div>
+                            )
+                          })}
+                          {flatSamples.map((sample) => renderSampleRow(sample, true))}
+                        </>
+                      )
+                    })()}
                   </div>
                 )
               }

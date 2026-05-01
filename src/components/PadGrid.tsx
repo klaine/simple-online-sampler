@@ -39,6 +39,7 @@ export function PadGrid() {
     showPadDragPrompt,
     executePadMove,
     executePadCopy,
+    executePadSwap,
     cancelPadDragPrompt,
     togglePadHoldRecord,
     startPadHoldRecord,
@@ -81,9 +82,22 @@ export function PadGrid() {
                   }, 300)
                 }
               }
+              // Allow group drops on bank tabs
+              if (e.dataTransfer.types.includes('application/x-online-sampler-group-id')) {
+                e.preventDefault()
+                e.dataTransfer.dropEffect = 'copy'
+              }
             }}
             onDragLeave={clearBankSwitchTimer}
-            onDrop={clearBankSwitchTimer}
+            onDrop={(e) => {
+              clearBankSwitchTimer()
+              const groupId = e.dataTransfer.getData('application/x-online-sampler-group-id')
+              if (groupId) {
+                e.preventDefault()
+                e.stopPropagation()
+                void useStore.getState().assignGroupToPads(groupId, i)
+              }
+            }}
           >
             Bank {i + 1}
           </button>
@@ -185,6 +199,73 @@ export function PadGrid() {
                     void assignSampleToPad(draggedSample, pad.id)
                     return
                   }
+                }
+
+                // Check for velocity subgroup drag (assign all layers to single pad)
+                const veloSubgroupData = e.dataTransfer.getData('application/x-online-sampler-velo-subgroup')
+                if (veloSubgroupData) {
+                  try {
+                    const veloSampleIds = JSON.parse(veloSubgroupData) as string[]
+                    const veloSamples = veloSampleIds
+                      .map((id) => samples.find((s) => s.id === id))
+                      .filter((s): s is SampleAsset => s != null)
+                    if (veloSamples.length === 0) return
+
+                    // Sort by _vNN velocity value ascending
+                    const veloRegex = /^(.+?)_v(\d+)(\.[^.]+)$/
+                    veloSamples.sort((a, b) => {
+                      const ma = veloRegex.exec(a.name)
+                      const mb = veloRegex.exec(b.name)
+                      return (ma ? Number(ma[2]) : 0) - (mb ? Number(mb[2]) : 0)
+                    })
+
+                    // Compute velocity splits
+                    const count = veloSamples.length
+                    const splits: Array<{ velocityLow: number; velocityHigh: number }> = []
+                    for (let i = 0; i < count; i++) {
+                      const low = i === 0 ? 1 : splits[i - 1].velocityHigh + 1
+                      const high = i === count - 1 ? 127 : Math.round(((i + 1) / count) * 127)
+                      splits.push({ velocityLow: low, velocityHigh: high })
+                    }
+
+                    const layers: SampleLayer[] = veloSamples.map((sample, i) => ({
+                      id: uid(),
+                      sampleId: sample.id,
+                      velocityLow: splits[i].velocityLow,
+                      velocityHigh: splits[i].velocityHigh,
+                      gain: null, semitones: null, fineCents: null,
+                      trim: sample.autosampleTrim ?? null,
+                      envelope: null, filterType: null, filterFreq: null, filterQ: null,
+                      stackOffsetMs: null,
+                    }))
+
+                    const baseName = veloSamples[0].name.replace(veloRegex, '$1$3').replace(/\.[^.]+$/, '')
+                    const s = useStore.getState()
+                    if (!s.project) return
+
+                    const updatedPads = s.project.pads.map((p) => {
+                      if (p.id !== pad.id) return p
+                      return {
+                        ...p,
+                        name: baseName,
+                        settings: {
+                          ...p.settings,
+                          sampleId: veloSamples[0].id,
+                          source: 'sample' as const,
+                          layers,
+                          multiMode: 'velocity' as const,
+                          trim: { start: 0, end: 1 },
+                          bus: veloSamples[0].autosampleBus ?? p.settings.bus,
+                          chokeGroup: veloSamples[0].autosampleChokeGroup ?? 0,
+                        },
+                      }
+                    })
+
+                    const updated = { ...s.project, pads: updatedPads }
+                    useStore.setState({ selectedPadId: pad.id })
+                    void useStore.getState().saveProjectLight(updated)
+                    return
+                  } catch { /* ignore parse error */ }
                 }
 
                 // Check for autosample group drag
@@ -430,12 +511,15 @@ export function PadGrid() {
               <strong>{promptSource.name}</strong> → <strong>{promptTarget.name}</strong>
               {' '}(Bank {promptTarget.bank + 1}, Pad {promptTarget.slot + 1})
             </p>
-            {promptTarget.settings.sampleId && (
-              <p className="pad-drag-warning">This will replace <strong>{promptTarget.name}</strong></p>
+            {(promptTarget.settings.sampleId || promptTarget.settings.source === 'synth') && (
+              <p className="pad-drag-warning">Target pad <strong>{promptTarget.name}</strong> has content — Move/Copy will replace it</p>
             )}
             <div className="pad-drag-buttons">
               <button type="button" onClick={() => void executePadMove(padDragPrompt.sourcePadId, padDragPrompt.targetPadId)}>Move</button>
               <button type="button" onClick={() => void executePadCopy(padDragPrompt.sourcePadId, padDragPrompt.targetPadId)}>Copy</button>
+              {(promptTarget.settings.sampleId || promptTarget.settings.source === 'synth') && (
+                <button type="button" onClick={() => void executePadSwap(padDragPrompt.sourcePadId, padDragPrompt.targetPadId)}>Swap</button>
+              )}
               <button type="button" onClick={cancelPadDragPrompt}>Cancel</button>
             </div>
           </div>

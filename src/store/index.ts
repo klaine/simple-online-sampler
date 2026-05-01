@@ -545,6 +545,7 @@ export interface AppState {
   showPadDragPrompt: (sourcePadId: string, targetPadId: string) => void
   executePadMove: (sourcePadId: string, targetPadId: string) => Promise<void>
   executePadCopy: (sourcePadId: string, targetPadId: string) => Promise<void>
+  executePadSwap: (sourcePadId: string, targetPadId: string) => Promise<void>
   cancelPadDragPrompt: () => void
 
   // Sequencer Recording
@@ -568,7 +569,7 @@ export interface AppState {
   updatePadMidiOut: (padId: string, patch: Partial<import('../types').MidiOutConfig>) => Promise<void>
 
   // Auto-sample helpers
-  createSampleFromPcm: (channels: Float32Array[], sampleRate: number, name: string, meta?: { autosampleRunId?: string; autosampleRunLabel?: string; autosampleTrim?: TrimSettings; autosampleBus?: BusId; autosampleChokeGroup?: number }) => Promise<string>
+  createSampleFromPcm: (channels: Float32Array[], sampleRate: number, name: string, meta?: { autosampleRunId?: string; autosampleRunLabel?: string; autosampleTrim?: TrimSettings; autosampleBus?: BusId; autosampleChokeGroup?: number; autosamplePadIndex?: number }) => Promise<string>
   assignSampleIdToPad: (padId: string, sampleId: string, padName?: string) => Promise<void>
   showAutosampleDialog: boolean
   openAutosampleDialog: () => void
@@ -582,7 +583,7 @@ export interface AppState {
   // Sample group management
   groupSamples: (sampleIds: string[], label?: string) => void
   ungroupSample: (sampleId: string) => void
-  assignGroupToPads: (runId: string) => Promise<void>
+  assignGroupToPads: (runId: string, startBank?: number) => Promise<void>
   renameAutosampleGroup: (runId: string, newLabel: string) => void
   updateAutosampleGroupSettings: (runId: string, patch: { bus?: BusId; chokeGroup?: number }) => void
   deleteAutosampleGroup: (runId: string) => Promise<void>
@@ -3241,6 +3242,38 @@ export const useStore = create<AppState>()(
         get().addToast(`Copied pad to ${tgt.bank + 1}-${tgt.slot + 1}`)
       },
 
+      executePadSwap: async (sourcePadId: string, targetPadId: string) => {
+        const s = get()
+        if (!s.project) return
+        const src = s.project.pads.find((p) => p.id === sourcePadId)
+        const tgt = s.project.pads.find((p) => p.id === targetPadId)
+        if (!src || !tgt) return
+
+        const pads = s.project.pads.map((p) => {
+          if (p.id === targetPadId) {
+            return { ...p, name: src.name, settings: { ...src.settings } }
+          }
+          if (p.id === sourcePadId) {
+            return { ...p, name: tgt.name, settings: { ...tgt.settings } }
+          }
+          return p
+        })
+
+        // Swap sequencer events
+        const sequences = s.project.sequences.map((seq) => ({
+          ...seq,
+          events: seq.events.map((ev) => {
+            if (ev.padId === sourcePadId) return { ...ev, padId: targetPadId }
+            if (ev.padId === targetPadId) return { ...ev, padId: sourcePadId }
+            return ev
+          }),
+        }))
+
+        await s.saveProject({ ...s.project, pads, sequences })
+        set((d) => { d.padDragPrompt = null })
+        get().addToast(`Swapped pads ${src.bank + 1}-${src.slot + 1} ↔ ${tgt.bank + 1}-${tgt.slot + 1}`)
+      },
+
       cancelPadDragPrompt: () => {
         set((d) => { d.padDragPrompt = null })
       },
@@ -3608,7 +3641,7 @@ export const useStore = create<AppState>()(
 
       // --- Auto-sample helpers ---
 
-      createSampleFromPcm: async (channels: Float32Array[], sampleRate: number, name: string, meta?: { autosampleRunId?: string; autosampleRunLabel?: string; autosampleTrim?: TrimSettings; autosampleBus?: BusId; autosampleChokeGroup?: number }) => {
+      createSampleFromPcm: async (channels: Float32Array[], sampleRate: number, name: string, meta?: { autosampleRunId?: string; autosampleRunLabel?: string; autosampleTrim?: TrimSettings; autosampleBus?: BusId; autosampleChokeGroup?: number; autosamplePadIndex?: number }) => {
         const wavBlob = encodeWavFromChannels(channels, sampleRate)
         const raw = await wavBlob.arrayBuffer()
         const hash = await arrayBufferToHex(raw)
@@ -3625,6 +3658,7 @@ export const useStore = create<AppState>()(
           ...(meta?.autosampleTrim ? { autosampleTrim: meta.autosampleTrim } : {}),
           ...(meta?.autosampleBus ? { autosampleBus: meta.autosampleBus } : {}),
           ...(meta?.autosampleChokeGroup ? { autosampleChokeGroup: meta.autosampleChokeGroup } : {}),
+          ...(meta?.autosamplePadIndex != null ? { autosamplePadIndex: meta.autosamplePadIndex } : {}),
         }
         await db.putSample(sample)
         await audioEngine.registerSample(sample)
@@ -3694,7 +3728,7 @@ export const useStore = create<AppState>()(
         if (sample) void db.putSample(sample)
       },
 
-      assignGroupToPads: async (runId) => {
+      assignGroupToPads: async (runId, startBank) => {
         const s = get()
         if (!s.project) return
         const groupSamples = s.samples.filter((sam) => sam.autosampleRunId === runId)
@@ -3738,9 +3772,15 @@ export const useStore = create<AppState>()(
           group.samples.sort((a, b) => a.velocity - b.velocity)
         }
 
-        // Find starting pad: use selected pad, or first pad in current bank
+        // Find starting pad: use explicit startBank, selected pad, or first pad in current bank
         const padsSorted = [...s.project.pads].sort((a, b) => a.bank !== b.bank ? a.bank - b.bank : a.slot - b.slot)
-        let startIdx = s.selectedPadId ? padsSorted.findIndex((p) => p.id === s.selectedPadId) : -1
+        let startIdx = -1
+        if (startBank != null) {
+          startIdx = padsSorted.findIndex((p) => p.bank === startBank && p.slot === 0)
+        }
+        if (startIdx === -1 && s.selectedPadId) {
+          startIdx = padsSorted.findIndex((p) => p.id === s.selectedPadId)
+        }
         if (startIdx === -1) {
           startIdx = padsSorted.findIndex((p) => p.bank === s.activeBank)
         }

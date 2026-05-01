@@ -7,8 +7,10 @@ import { sendMidiNote, sendMidiNoteOff } from '../lib/midiOut'
 import { computeSilenceTrim, normalizePcm } from '../lib/autotrim'
 import { midiToName, uid } from '../lib/utils'
 import { BANK_COUNT, PADS_PER_BANK } from '../lib/constants'
+import { DEVICE_DRUMKITS, getDeviceDrumkit, getDrumName, getDrumChokeGroup, getDrumPadIndex } from '../lib/deviceDrumkits'
+import type { DeviceDrumkit } from '../lib/deviceDrumkits'
 
-type NoteMode = 'range' | 'scale' | 'custom'
+type NoteMode = 'range' | 'scale' | 'custom' | 'drumkit'
 type ScaleType = 'major' | 'minor'
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const
@@ -70,6 +72,8 @@ interface AutosampleConfig {
   startSlot: number
   namePattern: string
   normalize: boolean
+  autoTrim: boolean
+  autoCrop: boolean
   bus: BusId
   chokeEnabled: boolean
   chokeGroup: number
@@ -91,6 +95,8 @@ const DEFAULT_CONFIG: AutosampleConfig = {
   startSlot: 0,
   namePattern: 'AS_{seq}_{note}',
   normalize: true,
+  autoTrim: true,
+  autoCrop: false,
   bus: 'A' as BusId,
   chokeEnabled: false,
   chokeGroup: 1,
@@ -129,6 +135,8 @@ const STORAGE_KEY = 'autosampleSettings'
 interface PersistedAutosampleState {
   config: Partial<AutosampleConfig>
   noteMode: NoteMode
+  drumkitId?: string
+  drumkitLabel?: string
   scaleRoot: number
   scaleType: ScaleType
   scaleOctaveStart: number
@@ -146,9 +154,7 @@ function loadPersistedState(): PersistedAutosampleState | null {
 
 function savePersistedState(state: PersistedAutosampleState): void {
   try {
-    // Don't persist device IDs — they may change between sessions
-    const { outputId: _, inputDeviceId: __, ...configToSave } = state.config as AutosampleConfig
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, config: configToSave }))
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
   } catch { /* */ }
 }
 
@@ -162,8 +168,8 @@ export function AutosampleDialog() {
   const [config, setConfig] = useState<AutosampleConfig>(() => ({
     ...DEFAULT_CONFIG,
     ...persisted?.config,
-    outputId: midiOutputs[0]?.id ?? '',
-    inputDeviceId: '',
+    outputId: persisted?.config?.outputId || midiOutputs[0]?.id || '',
+    inputDeviceId: persisted?.config?.inputDeviceId || '',
   }))
   const [inputDevices, setInputDevices] = useState<MediaDeviceInfo[]>([])
   const [progress, setProgress] = useState(0)
@@ -176,6 +182,8 @@ export function AutosampleDialog() {
 
   // Note mode state
   const [noteMode, setNoteMode] = useState<NoteMode>(persisted?.noteMode ?? 'range')
+  const [drumkitId, setDrumkitId] = useState<string>(persisted?.drumkitId ?? 'mc707')
+  const [drumkitLabel, setDrumkitLabel] = useState<string>(persisted?.drumkitLabel ?? '')
   const [scaleRoot, setScaleRoot] = useState(persisted?.scaleRoot ?? 0)
   const [scaleType, setScaleType] = useState<ScaleType>(persisted?.scaleType ?? 'major')
   const [scaleOctaveStart, setScaleOctaveStart] = useState(persisted?.scaleOctaveStart ?? 3)
@@ -189,6 +197,9 @@ export function AutosampleDialog() {
   const previewCanvasRef = useRef<HTMLCanvasElement>(null)
   const midiAccessRef = useRef<MIDIAccess | null>(null)
   const midiListenersRef = useRef<Array<{ input: MIDIInput; handler: (e: MIDIMessageEvent) => void }>>([])
+
+  // Active drumkit (if in drumkit mode)
+  const activeKit: DeviceDrumkit | undefined = noteMode === 'drumkit' ? getDeviceDrumkit(drumkitId) : undefined
 
   // Compute the note list based on current mode
   const computeNoteList = useCallback((): number[] => {
@@ -205,8 +216,12 @@ export function AutosampleDialog() {
         return buildScaleNotes(scaleRoot, scaleType, scaleOctaveStart, scaleOctaves)
       case 'custom':
         return [...customNotes].sort((a, b) => a - b)
+      case 'drumkit': {
+        const kit = getDeviceDrumkit(drumkitId)
+        return kit ? kit.pads.map((p) => p.note) : []
+      }
     }
-  }, [noteMode, config.startNote, config.noteCount, config.noteStep, scaleRoot, scaleType, scaleOctaveStart, scaleOctaves, customNotes])
+  }, [noteMode, config.startNote, config.noteCount, config.noteStep, scaleRoot, scaleType, scaleOctaveStart, scaleOctaves, customNotes, drumkitId])
 
   // Enumerate audio input devices
   useEffect(() => {
@@ -308,8 +323,8 @@ export function AutosampleDialog() {
 
   // Persist settings to localStorage on change
   useEffect(() => {
-    savePersistedState({ config, noteMode, scaleRoot, scaleType, scaleOctaveStart, scaleOctaves, customNotes })
-  }, [config, noteMode, scaleRoot, scaleType, scaleOctaveStart, scaleOctaves, customNotes])
+    savePersistedState({ config, noteMode, drumkitId, drumkitLabel, scaleRoot, scaleType, scaleOctaveStart, scaleOctaves, customNotes })
+  }, [config, noteMode, drumkitId, drumkitLabel, scaleRoot, scaleType, scaleOctaveStart, scaleOctaves, customNotes])
 
   const resetSettings = useCallback(() => {
     setConfig({ ...DEFAULT_CONFIG, outputId: midiOutputs[0]?.id ?? '', inputDeviceId: config.inputDeviceId })
@@ -345,7 +360,9 @@ export function AutosampleDialog() {
     setCompletedCount(0)
 
     const runId = uid()
-    const runLabel = config.namePattern.replace(/\{note\}/g, '').replace(/\{seq\}/g, '').replace(/_+$/, '').replace(/_+/g, '_') || 'Autosample'
+    const runLabel = noteMode === 'drumkit' && activeKit
+      ? (drumkitLabel.trim() || activeKit.label)
+      : config.namePattern.replace(/\{note\}/g, '').replace(/\{seq\}/g, '').replace(/_+$/, '').replace(/_+/g, '_') || 'Autosample'
 
     // Start audio capture
     let session: PcmRecorderSession
@@ -392,7 +409,9 @@ export function AutosampleDialog() {
 
         setCurrentLayer(useVeloLayers ? v + 1 : null)
 
-        // Clear PCM buffer
+        // Clear PCM buffer and wait briefly to discard any residual audio
+        session.pcmChunks.length = 0
+        await sleep(50)
         session.pcmChunks.length = 0
 
         // Send note-on
@@ -411,22 +430,41 @@ export function AutosampleDialog() {
 
         const pcm = session.flush()
         if (config.normalize) normalizePcm(pcm)
-        const trim = computeSilenceTrim(pcm, RECORDER_SAMPLE_RATE, config.thresholdDb)
+        const rawTrim = config.autoTrim || config.autoCrop
+          ? computeSilenceTrim(pcm, RECORDER_SAMPLE_RATE, config.thresholdDb)
+          : { start: 0, end: 1 }
+
+        // Auto-crop: slice PCM to trim boundaries, discard silent head/tail
+        let finalPcm = pcm
+        let trim = rawTrim
+        if (config.autoCrop && (rawTrim.start > 0 || rawTrim.end < 1)) {
+          const cropStart = Math.floor(rawTrim.start * pcm.length)
+          const cropEnd = Math.ceil(rawTrim.end * pcm.length)
+          finalPcm = pcm.slice(cropStart, cropEnd)
+          trim = { start: 0, end: 1 }
+        }
         lastTrim = trim
 
-        const peaks = computePeaks(pcm, 200)
+        const peaks = computePeaks(finalPcm, 200)
         setLastPeaks(peaks)
 
         try {
           const veloLabel = useVeloLayers ? `_v${split.velocity}` : ''
-          const padName = getPadName(config.namePattern, note, i + 1)
-          const sampleName = `${padName}${veloLabel}.wav`
-          const sampleId = await createSampleFromPcm([pcm], RECORDER_SAMPLE_RATE, sampleName, {
+          // Drumkit mode: use drum name; other modes: use name pattern
+          const drumName = activeKit ? getDrumName(activeKit, note) : undefined
+          const baseName = drumName
+            ? `${runLabel}_${drumName}`
+            : getPadName(config.namePattern, note, i + 1)
+          const sampleName = `${baseName}${veloLabel}.wav`
+          const drumPadIndex = activeKit ? getDrumPadIndex(activeKit, note) : undefined
+          const drumChokeGroup = activeKit ? getDrumChokeGroup(activeKit, note) : undefined
+          const sampleId = await createSampleFromPcm([finalPcm], RECORDER_SAMPLE_RATE, sampleName, {
             autosampleRunId: runId,
             autosampleRunLabel: runLabel,
             autosampleTrim: trim,
             autosampleBus: config.bus,
-            autosampleChokeGroup: config.chokeEnabled ? config.chokeGroup : 0,
+            autosampleChokeGroup: drumChokeGroup ?? (config.chokeEnabled ? config.chokeGroup : 0),
+            ...(drumPadIndex != null && drumPadIndex >= 0 ? { autosamplePadIndex: drumPadIndex } : {}),
           })
 
           if (v === 0) firstSampleId = sampleId
@@ -445,16 +483,20 @@ export function AutosampleDialog() {
       // Assign to pad
       if (noteCompleted && firstSampleId) {
         try {
-          const padName = getPadName(config.namePattern, note, i + 1)
-          await assignSampleIdToPad(pad.id, firstSampleId, padName)
+          const drumName = activeKit ? getDrumName(activeKit, note) : undefined
+          const padLabel = drumName
+            ? `${runLabel}_${drumName}`
+            : getPadName(config.namePattern, note, i + 1)
+          await assignSampleIdToPad(pad.id, firstSampleId, padLabel)
 
           const st = useStore.getState()
           if (st.project) {
+            const drumChokeGroup = activeKit ? getDrumChokeGroup(activeKit, note) : undefined
             const padSettings: Record<string, unknown> = {
               trim: useVeloLayers ? { start: 0, end: 1 } : lastTrim,  // layers carry per-layer trim
               semitones: 0,
               bus: config.bus,
-              chokeGroup: config.chokeEnabled ? config.chokeGroup : 0,
+              chokeGroup: drumChokeGroup ?? (config.chokeEnabled ? config.chokeGroup : 0),
             }
             if (useVeloLayers) {
               padSettings.layers = layers
@@ -486,7 +528,7 @@ export function AutosampleDialog() {
     if (!cancelRef.current) {
       addToast(`Auto-sample complete: ${completed} note(s) assigned`, 'success')
     }
-  }, [project, config, getEffectiveNotes, createSampleFromPcm, assignSampleIdToPad, addToast])
+  }, [project, config, noteMode, activeKit, getEffectiveNotes, createSampleFromPcm, assignSampleIdToPad, addToast])
 
   const handleCancel = useCallback(() => {
     cancelRef.current = true
@@ -592,6 +634,14 @@ export function AutosampleDialog() {
                   <input type="checkbox" checked={config.normalize} onChange={(e) => cfg({ normalize: e.target.checked })} />
                   Normalize volume
                 </label>
+                <label className="autosample-checkbox">
+                  <input type="checkbox" checked={config.autoTrim} onChange={(e) => cfg({ autoTrim: e.target.checked, ...(e.target.checked ? {} : { autoCrop: false }) })} />
+                  Auto-trim silence
+                </label>
+                <label className="autosample-checkbox" title="Destructively remove silent head/tail from samples to reduce memory usage">
+                  <input type="checkbox" checked={config.autoCrop} onChange={(e) => cfg({ autoCrop: e.target.checked, ...(e.target.checked ? { autoTrim: false } : {}) })} />
+                  Auto-crop silence (smaller files)
+                </label>
               </fieldset>
 
               {/* Note Selection */}
@@ -608,6 +658,16 @@ export function AutosampleDialog() {
                       onClick={() => setNoteMode(m)}
                     >
                       {m === 'range' ? 'Range' : m === 'scale' ? 'Scale' : 'Custom'}
+                    </button>
+                  ))}
+                  {DEVICE_DRUMKITS.map((dk) => (
+                    <button
+                      key={dk.id}
+                      type="button"
+                      className={`autosample-mode-btn${noteMode === 'drumkit' && drumkitId === dk.id ? ' active' : ''}`}
+                      onClick={() => { setNoteMode('drumkit'); setDrumkitId(dk.id); cfg({ autoTrim: true }) }}
+                    >
+                      {dk.label}
                     </button>
                   ))}
                 </div>
@@ -717,6 +777,24 @@ export function AutosampleDialog() {
                       <p className="autosample-hint">Add notes manually or use MIDI Learn to input them from a controller.</p>
                     )}
                   </>
+                )}
+
+                {/* Drumkit mode */}
+                {noteMode === 'drumkit' && activeKit && (
+                  <div className="autosample-drumkit-summary">
+                    <label>
+                      Kit name
+                      <input type="text" value={drumkitLabel} onChange={(e) => setDrumkitLabel(e.target.value)} placeholder={activeKit.label} />
+                    </label>
+                    <p className="autosample-hint">{activeKit.pads.length} pads — fixed MIDI mapping:</p>
+                    <div className="autosample-drumkit-pads">
+                      {activeKit.pads.map((p) => (
+                        <span key={p.pad} className="autosample-note-tag" title={`MIDI ${p.note} (${midiToName(p.note)})${p.chokeGroup ? ` — Choke ${p.chokeGroup}` : ''}`}>
+                          {p.pad}. {p.name}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
                 )}
 
                 {/* Velocity */}

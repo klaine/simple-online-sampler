@@ -82,7 +82,7 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - `VuMeter.tsx` — Canvas-based VU meter with rAF
 - `RecordDialog.tsx` — 3-phase recording modal (ready/recording/review) with AudioWorklet, trim/crop, WAV save, normalize checkbox
 - `ChopModal.tsx` — Sample chop modal: waveform canvas, click to add/remove markers, quick divide (÷2/÷4/÷8/÷16), preview per chop, bank+pad assignment
-- `AutosampleDialog.tsx` — Full autosample UI: MIDI out config, audio input, note range, timing, pad assignment, normalize, mix bus routing, choke group config
+- `AutosampleDialog.tsx` — Full autosample UI: MIDI out config, audio input, note range, timing, pad assignment, normalize, auto-trim toggle, mix bus routing, choke group config, device drumkit modes (MC-707)
 - `SynthEditor.tsx` — Additive synth editor: canvas-based harmonic bar editor (16 partials), waveform preview (one-cycle additive waveform), LFO section (waveform/rate with per-target depth knobs for pitch/filter/gain, free Hz or tempo-sync), base note selector, "Export Synth WAV" button
 
 ### Library (`src/lib/`)
@@ -98,6 +98,7 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - `utils.ts` — uid, midiToName, createDefaultPads, createDefaultMixBuses, createDefaultMasterBus, createDefaultEffectSlot, createDefaultSynthParams
 - `midiOut.ts` — MIDI output registry, `sendMidiNote` (with `delayMs` + Web MIDI timestamp scheduling), `sendMidiNoteOff`, `registerActiveNote`, `releaseMidiNote`, `isMidiEcho`, `cancelPendingNoteOff`
 - `autotrim.ts` — `computeSilenceTrim()` + `normalizePcm()` (peak normalize to -0.3 dBFS)
+- `deviceDrumkits.ts` — Extensible device drumkit mapping system: `DeviceDrumkit` interface, `MC707_DRUMKIT` (16 pads with MIDI notes, drum names, choke groups), `DEVICE_DRUMKITS` registry, lookup helpers
 - `pcmRecorder.ts` — Shared PCM capture with disabled browser audio processing, system-default sample rate
 - `synthEngine.ts` — `createSynthVoice`, `stopSynthVoice`, `disposeSynthVoice`, `renderSynthToBuffer`
 - `midiExport.ts` — MIDI export
@@ -223,6 +224,9 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - Per-sample "Remove from group" (⊟) button on samples inside groups
 - Multi-file drop to library auto-groups (common prefix label)
 - Multi-file drop to pad grid auto-groups (common prefix label)
+- **Velocity subgroups**: within groups, samples with `_vNN` filename suffix (e.g. `Kick_v32.wav`, `Kick_v127.wav`) are automatically detected and displayed as collapsible subgroups showing base name + layer count. Requires ≥2 samples with matching base name to form a subgroup. Ungrouped samples are NOT auto-detected (must be grouped first).
+- **Velocity subgroup drag**: dragging a velocity subgroup onto a pad assigns all its samples as velocity layers on that single pad (`multiMode: 'velocity'`), with auto-computed velocity splits. Works from both library sidebar and pad grid drop.
+- Velocity subgroup detection uses regex `_v(\d+)` before the file extension; samples are sorted by velocity value ascending within subgroups
 
 ### Chop Modal (F2)
 - `chopPoints: number[]` stored on `SampleAsset` in IndexedDB — sorted fractional positions (0–1)
@@ -275,9 +279,11 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 ### Autosampler
 - `AutosampleDialog.tsx` — Full autosample workflow: MIDI out → audio capture → auto-trim → normalize → pad assignment
 - Configurable: MIDI device/channel, audio input device, note range/step/velocity, timing, threshold, name pattern, normalize, mix bus, choke group
-- **Note mode toggle**: Range (start/count/step), Scale (root + major/minor + octave range), Custom (manual note list + MIDI Learn)
+- **Note mode toggle**: Range (start/count/step), Scale (root + major/minor + octave range), Custom (manual note list + MIDI Learn), Device Drumkit (MC-707)
 - Scale mode: Major `[0,2,4,5,7,9,11]` and Minor `[0,2,3,5,7,8,10]` intervals, configurable root (C–B), start octave, octave count; adds top root note
 - Custom mode: add notes by number input or MIDI Learn (listens on all MIDI inputs for note-on, appends unique notes); notes sorted ascending before sampling
+- **Device Drumkit mode**: extensible system via `DeviceDrumkit` interface in `deviceDrumkits.ts`. MC-707 Drumkit maps 16 pads to fixed MIDI notes with drum names. Samples are named with drum names (e.g. `MC-707 Drumkit_Kick.wav`). Per-pad choke groups from kit mapping (hi-hat pair uses choke group 1). `autosamplePadIndex` set from kit pad order. Auto-trim defaults to on.
+- **Auto-trim toggle**: checkbox in Audio Input section, controls whether `computeSilenceTrim` is applied to captured samples (default on, always on when switching to drumkit mode)
 - `computeNoteList()` returns `number[]` for all modes; sampling loop iterates this array instead of arithmetic
 - **Velocity layers**: 1–4 layers per note; `computeVelocitySplits()` divides 1–127 range evenly, sends appropriate MIDI velocity per layer; creates `SampleLayer[]` with `velocityLow`/`velocityHigh` ranges and sets `multiMode: 'velocity'` on the pad
 - 150ms settle delay after `startPcmCapture` before first note (avoids hardware init glitch)
