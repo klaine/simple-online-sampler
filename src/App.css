@@ -1167,12 +1167,17 @@ select.tb-led-value {
 .seq-mixer-pane > .sequencer {
   display: flex;
   flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
 }
 
 .seq-mixer-pane > .sequencer > .sequencer-matrix-wrap {
   flex: 1;
   min-height: 0;
   max-height: none;
+  width: 100%;
 }
 
 .seq-mixer-divider {
@@ -1706,6 +1711,40 @@ select.tb-led-value {
   align-items: center;
 }
 
+.seq-length-group {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.seq-length-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted-light);
+  margin-right: 0.1rem;
+}
+
+.seq-length-btn {
+  min-width: 28px;
+  padding: 0.15rem 0.3rem !important;
+  font-size: 0.75rem !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.seq-length-btn.active {
+  background: rgba(74, 158, 255, 0.15);
+  border-color: rgba(74, 158, 255, 0.4);
+  color: var(--blue);
+}
+
+.seq-length-custom {
+  width: 3.2rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
 .sequencer-primary-actions {
   justify-content: flex-start;
 }
@@ -2061,6 +2100,7 @@ select.tb-led-value {
 .sequencer-matrix-head.fit-sixteen,
 .sequencer-row.fit-sixteen {
   min-width: 0;
+  width: 100%;
 }
 
 .sequencer-row {

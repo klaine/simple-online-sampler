@@ -152,10 +152,12 @@ export function Sequencer() {
     return () => cancelAnimationFrame(rafId)
   }, [showPerfStats])
 
+  const altLayout = useStore((s) => s.altLayout)
+
   if (!project || !activeSequence || !visibleSequence) return null
 
-  const fitSixteenSteps = visibleSequence.lengthSteps <= 16
-  const stepColSize = fitSixteenSteps ? 'minmax(0, 1fr)' : 'minmax(24px, 1fr)'
+  const fitSteps = altLayout || visibleSequence.lengthSteps <= 16
+  const stepColSize = fitSteps ? 'minmax(0, 1fr)' : 'minmax(24px, 1fr)'
   const sequenceGridColumns = `112px repeat(3, 26px) repeat(${visibleSequence.lengthSteps}, ${stepColSize})`
   const stepGridColumns = `repeat(${visibleSequence.lengthSteps}, ${stepColSize})`
   const chainWithPatterns = project.songChain.flatMap((entry) => {
@@ -193,18 +195,30 @@ export function Sequencer() {
               <option value={32}>1/32</option>
             </select>
           </label>
-          <label>
-            Steps
-            <input
-              type="number"
-              min={MIN_SEQUENCE_STEPS}
-              max={MAX_SEQUENCE_STEPS}
-              value={sequenceLengthDraft}
-              onChange={(e) => useStore.setState({ sequenceLengthDraft: e.target.value })}
-              onBlur={() => void commitSeqLength()}
-              onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
-            />
-          </label>
+          <div className="seq-length-group">
+              <span className="seq-length-label">Steps</span>
+              {[16, 32, 64].map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  className={`seq-length-btn${visibleSequence.lengthSteps === n && sequenceLengthDraft === String(n) ? ' active' : ''}`}
+                  onClick={() => { useStore.setState({ sequenceLengthDraft: String(n) }); void commitSeqLength() }}
+                >
+                  {n}
+                </button>
+              ))}
+              <input
+                type="number"
+                className="seq-length-custom"
+                min={MIN_SEQUENCE_STEPS}
+                max={MAX_SEQUENCE_STEPS}
+                value={sequenceLengthDraft}
+                onChange={(e) => useStore.setState({ sequenceLengthDraft: e.target.value })}
+                onBlur={() => void commitSeqLength()}
+                onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+                title="Custom step count"
+              />
+            </div>
           <label className="sequencer-toggle">
             <input type="checkbox" checked={hideEmptyLanes} onChange={(e) => useStore.setState({ hideEmptyLanes: e.target.checked })} />
             Hide Empty Lanes
@@ -421,9 +435,9 @@ export function Sequencer() {
         )}
       </div>
 
-      <div className={`sequencer-matrix-wrap ${fitSixteenSteps ? 'fit-sixteen' : ''}`}>
+      <div className={`sequencer-matrix-wrap ${fitSteps ? 'fit-sixteen' : ''}`}>
         <div
-          className={`sequencer-matrix-head ${fitSixteenSteps ? 'fit-sixteen' : ''}`}
+          className={`sequencer-matrix-head ${fitSteps ? 'fit-sixteen' : ''}`}
           style={{ gridTemplateColumns: sequenceGridColumns }}
         >
           <span className="lane-head">Pad</span>
@@ -451,7 +465,7 @@ export function Sequencer() {
           return (
             <div key={pad.id} className={isPianoRollExpanded ? 'sequencer-lane-group' : undefined}>
               <div
-                className={`sequencer-row ${selectedLane ? 'selected-lane' : ''} ${fitSixteenSteps ? 'fit-sixteen' : ''}`}
+                className={`sequencer-row ${selectedLane ? 'selected-lane' : ''} ${fitSteps ? 'fit-sixteen' : ''}`}
                 style={{ gridTemplateColumns: sequenceGridColumns }}
               >
                 <button
@@ -493,7 +507,7 @@ export function Sequencer() {
                       spanningEvent={spanningEvent}
                       isPlayhead={playheadStep === step}
                       isGateMode={pad.settings.mode === 'adsr'}
-                      fitSixteen={fitSixteenSteps}
+                      fitSixteen={fitSteps}
                       showGateResizeTip={showGateResizeTip}
                       patternId={visibleSequence.id}
                     />
@@ -509,7 +523,7 @@ export function Sequencer() {
                   events={eventsByPad.get(pad.id) ?? []}
                   playheadStep={playheadStep}
                   stepGridColumns={stepGridColumns}
-                  fitSixteen={fitSixteenSteps}
+                  fitSixteen={fitSteps}
                 />
               )}
             </div>
