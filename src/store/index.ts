@@ -363,7 +363,8 @@ export interface AppState {
   selectedPadId: string | null
   selectedLayerId: string | null
   hideEmptyLanes: boolean
-  altLayout: boolean
+  layoutMode: 'classic' | 'wide' | 'performance'
+  performanceTab: 'library' | 'padEditor' | 'sequencer' | 'mixer' | 'settings'
   showSongChain: boolean
   padEditorCollapsed: boolean
   showLibraryWaveforms: boolean
@@ -1178,7 +1179,16 @@ export const useStore = create<AppState>()(
       selectedPadId: null,
       selectedLayerId: null,
       hideEmptyLanes: true,
-      altLayout: localStorage.getItem('altLayout') !== 'false',
+      layoutMode: (() => {
+        const stored = localStorage.getItem('layoutMode')
+        if (stored === 'classic' || stored === 'wide' || stored === 'performance') return stored
+        // migrate old altLayout key
+        const old = localStorage.getItem('altLayout')
+        if (old === 'false') return 'classic'
+        if (old === 'true') return 'wide'
+        return 'performance'
+      })(),
+      performanceTab: (localStorage.getItem('performanceTab') as 'library' | 'padEditor' | 'sequencer' | 'mixer' | 'settings') || 'sequencer',
       showSongChain: false,
       padEditorCollapsed: false,
       showLibraryWaveforms: true,

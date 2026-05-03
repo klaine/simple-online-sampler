@@ -39,7 +39,7 @@ import { ConfirmDialog } from './components/ConfirmDialog'
 import { SampleLibrary } from './components/SampleLibrary'
 import { PadEditor } from './components/PadEditor'
 import { PadGrid } from './components/PadGrid'
-import { TopBar } from './components/TopBar'
+import { TopBar, SettingsContent } from './components/TopBar'
 import { Sequencer } from './components/Sequencer'
 import { Mixer } from './components/Mixer'
 import { Toasts } from './components/Toasts'
@@ -80,6 +80,19 @@ const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
 let _waveformChannelCache: { sampleId: string; channel: Float32Array } | null = null
 
 // ---------------------------------------------------------------------------
+// Performance layout Settings panel
+// ---------------------------------------------------------------------------
+
+function PerfSettingsPanel() {
+  return (
+    <div className="perf-settings-panel">
+      <h3>Settings</h3>
+      <SettingsContent />
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // App
 // ---------------------------------------------------------------------------
 
@@ -98,7 +111,9 @@ function App() {
   const audioMonitorDeviceId = useStore((s) => s.audioMonitorDeviceId)
   const audioMonitorBusId = useStore((s) => s.audioMonitorBusId)
   const audioOutputDeviceId = useStore((s) => s.audioOutputDeviceId)
-  const altLayout = useStore((s) => s.altLayout)
+  const layoutMode = useStore((s) => s.layoutMode)
+  const performanceTab = useStore((s) => s.performanceTab)
+  const altLayout = layoutMode === 'wide'
 
   const {
     leftWidth, rightWidth, leftCollapsed, rightCollapsed,
@@ -156,6 +171,57 @@ function App() {
     window.addEventListener('pointerup', onHDivPointerUp)
   }, [onHDivPointerMove, onHDivPointerUp])
 
+  // --- Performance layout left/right split ---
+  const PERF_SPLIT_KEY = 'layout-perf-split'
+  const DEFAULT_PERF_RATIO = 0.55
+  const [perfSplitRatio, setPerfSplitRatio] = useState<number>(() => {
+    try {
+      const v = localStorage.getItem(PERF_SPLIT_KEY)
+      if (v) { const n = parseFloat(v); if (n >= 0.25 && n <= 0.75) return n }
+    } catch { /* ignore */ }
+    return DEFAULT_PERF_RATIO
+  })
+  const perfSplitRatioRef = useRef(perfSplitRatio)
+  perfSplitRatioRef.current = perfSplitRatio
+  useEffect(() => { try { localStorage.setItem(PERF_SPLIT_KEY, String(perfSplitRatio)) } catch { /* ignore */ } }, [perfSplitRatio])
+  const perfDivDragging = useRef(false)
+  const perfDivStartX = useRef(0)
+  const perfDivStartRatio = useRef(0)
+  const perfDivContainerRef = useRef<HTMLDivElement | null>(null)
+  const perfDivRafId = useRef(0)
+
+  const onPerfDivPointerMove = useCallback((e: PointerEvent) => {
+    const dx = e.clientX - perfDivStartX.current
+    cancelAnimationFrame(perfDivRafId.current)
+    perfDivRafId.current = requestAnimationFrame(() => {
+      const container = perfDivContainerRef.current
+      if (!container) return
+      const w = container.clientWidth
+      if (w <= 0) return
+      const newRatio = Math.min(0.75, Math.max(0.25, perfDivStartRatio.current + dx / w))
+      setPerfSplitRatio(newRatio)
+    })
+  }, [])
+
+  const onPerfDivPointerUp = useCallback(() => {
+    perfDivDragging.current = false
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+    window.removeEventListener('pointermove', onPerfDivPointerMove)
+    window.removeEventListener('pointerup', onPerfDivPointerUp)
+  }, [onPerfDivPointerMove])
+
+  const onPerfDivPointerDown = useCallback((e: React.PointerEvent) => {
+    e.preventDefault()
+    perfDivDragging.current = true
+    perfDivStartX.current = e.clientX
+    perfDivStartRatio.current = perfSplitRatioRef.current
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    window.addEventListener('pointermove', onPerfDivPointerMove)
+    window.addEventListener('pointerup', onPerfDivPointerUp)
+  }, [onPerfDivPointerMove, onPerfDivPointerUp])
+
   const importMode = useStore((s) => s.importMode)
   const importFile = useStore((s) => s.importFile)
   const waveformPeaks = useStore((s) => s.waveformPeaks)
@@ -183,6 +249,18 @@ function App() {
   // --- Hydrate on mount ---
   useEffect(() => {
     void hydrate()
+  }, [])
+
+  // --- Auto-detect performance layout for landscape mobile ---
+  useEffect(() => {
+    // Only auto-detect if user hasn't explicitly set a layout mode
+    if (localStorage.getItem('layoutMode')) return
+    const isTouch = matchMedia('(pointer: coarse)').matches
+    const isLandscape = window.innerWidth > window.innerHeight
+    const isSmall = window.innerWidth <= 1099
+    if (isTouch && isLandscape && isSmall) {
+      useStore.setState({ layoutMode: 'performance' })
+    }
   }, [])
 
   // --- Flush pending save on unmount ---
@@ -1265,7 +1343,7 @@ function App() {
   }
 
   return (
-    <main className={`app${altLayout ? ' app-alt-layout' : ''}`}>
+    <main className={`app${altLayout ? ' app-alt-layout' : ''}${layoutMode === 'performance' ? ' app-perf-layout' : ''}`}>
       <TopBar />
 
       {showExportDialog && (
@@ -1311,6 +1389,50 @@ function App() {
         </section>
       )}
 
+      {layoutMode === 'performance' ? (
+        <section className="perf-layout" ref={perfDivContainerRef}>
+          <div className="perf-left" style={{ flex: perfSplitRatio }}>
+            {performanceTab === 'library' && <SampleLibrary />}
+            {performanceTab === 'padEditor' && (
+              <PadEditor
+                waveformRef={waveformRef}
+                waveformCanvasRef={waveformCanvasRef}
+                dragTargetRef={dragTargetRef}
+              />
+            )}
+            {performanceTab === 'sequencer' && <Sequencer />}
+            {performanceTab === 'mixer' && <Mixer />}
+            {performanceTab === 'settings' && <PerfSettingsPanel />}
+            <div className="perf-tabs">
+              {([
+                ['library', 'Library'],
+                ['padEditor', 'Pad Edit'],
+                ['sequencer', 'Sequencer'],
+                ['mixer', 'Mixer'],
+                ['settings', 'Settings'],
+              ] as const).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  className={`perf-tab${performanceTab === id ? ' active' : ''}`}
+                  onClick={() => {
+                    useStore.setState({ performanceTab: id })
+                    localStorage.setItem('performanceTab', id)
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="perf-divider" onPointerDown={onPerfDivPointerDown}>
+            <div className="divider-grip" />
+          </div>
+          <div className="perf-right" style={{ flex: 1 - perfSplitRatio }}>
+            <PadGrid />
+          </div>
+        </section>
+      ) : (
       <section className={`studio-layout${altLayout ? ' studio-layout-alt' : ''}`}>
         <div className="studio-col studio-col-left" style={{ width: leftWidth, flexShrink: 0 }}>
           {leftCollapsed ? (
@@ -1377,11 +1499,14 @@ function App() {
           </div>
         </>)}
       </section>
+      )}
 
+      {layoutMode !== 'performance' && (
       <footer className="footer">
         <span>8 banks x {PADS_PER_BANK} pads (C1 start)</span>
         <span>Drag files to pads, trim from waveform handles, sequence and export.</span>
       </footer>
+      )}
 
       <Toasts />
       {showRecordDialog && <RecordDialog />}

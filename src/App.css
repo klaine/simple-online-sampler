@@ -17,6 +17,14 @@
   padding-bottom: 0.2rem;
 }
 
+.app.app-perf-layout {
+  height: 100vh;
+  overflow: hidden;
+  grid-template-rows: auto 1fr;
+  gap: 0.3rem;
+  padding-bottom: 0;
+}
+
 .app-alt-layout .studio-layout {
   min-height: 0;
 }
@@ -1232,6 +1240,162 @@ select.tb-led-value {
   color: var(--text);
 }
 
+/* --- Performance layout --- */
+.perf-layout {
+  display: flex;
+  flex-direction: row;
+  gap: 0;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.perf-left {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.perf-left > .sidebar,
+.perf-left > .pad-editor-panel,
+.perf-left > .sequencer,
+.perf-left > .mixer-panel,
+.perf-left > .perf-settings-panel {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border-radius: 4px 4px 0 0;
+}
+
+.perf-left > .sequencer {
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  overflow-y: hidden;
+}
+
+.perf-left > .sequencer > .sequencer-matrix-wrap {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  width: 100%;
+}
+
+.perf-tabs {
+  display: flex;
+  flex-direction: row;
+  gap: 0;
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.perf-tab {
+  flex: 1;
+  padding: 0.45rem 0.2rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border: none;
+  border-right: 1px solid var(--border-subtle);
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+  white-space: nowrap;
+}
+
+.perf-tab:last-child {
+  border-right: none;
+}
+
+.perf-tab:hover {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.perf-tab.active {
+  background: var(--surface-raised);
+  color: var(--accent);
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.perf-divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 7px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  background: transparent;
+  position: relative;
+  z-index: 2;
+}
+
+.perf-divider:hover,
+.perf-divider:active {
+  background: var(--border-subtle);
+}
+
+.perf-divider .divider-grip {
+  width: 3px;
+  height: 32px;
+  border-radius: 2px;
+  background: var(--border);
+  opacity: 0.5;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.perf-divider:hover .divider-grip,
+.perf-divider:active .divider-grip {
+  opacity: 1;
+  background: var(--muted);
+}
+
+.perf-right {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.perf-right > .pad-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.perf-right > .pad-panel > .grid {
+  flex: 1;
+  grid-template-rows: repeat(4, 1fr);
+}
+
+.perf-right > .pad-panel > .grid > .pad {
+  min-height: 0;
+}
+
+.perf-settings-panel {
+  padding: 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  display: grid;
+  gap: 0.4rem;
+  align-content: start;
+}
+
+.perf-settings-panel h3 {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
 .studio-sequencer {
   min-width: 0;
   align-self: start;
@@ -2147,7 +2311,7 @@ select.tb-led-value {
 
 .lane-label {
   text-align: left;
-  font-size: 0.69rem;
+  font-size: 0.62rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2292,7 +2456,7 @@ select.tb-led-value {
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
-  /* Must match: lane-label(112px) + 3*lane-action(26px) + 3*gap(0.2rem) = 112+78+9.6 ≈ 199.6px */
+  /* Must match: lane-label(148px) + 3*lane-action(26px) + 3*gap(0.2rem) = 148+78+9.6 ≈ 235.6px */
   width: calc(112px + 26px * 3 + 0.2rem * 3);
   align-items: stretch;
   background: rgba(0, 0, 0, 0.2);

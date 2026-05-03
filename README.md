@@ -7,13 +7,15 @@ A browser-based sampler/sequencer built with React, TypeScript, and the Web Audi
 ### Sampler
 - **128 pads** across 8 banks (16 pads per bank)
 - **Velocity-sensitive pads** — vertical click/touch position maps to velocity
-- **Touch support** for mobile pad triggering
+- **3 layout modes** — Classic (3-column), Wide (sequencer on top), Performance (pads + tabbed panels, auto-detected on landscape mobile)
+- **Touch support** for mobile/tablet pad triggering
 - **Multisample** support: round-robin, random, velocity-layer, and stacked modes
 - **Per-pad settings**: gain, pitch (semitones + fine cents), playback mode (one-shot/ADSR), trim, MC-909 style AMP envelope (vertical faders, ADSR curve visualization), filter (LP/HP/BP) with filter envelope (ADSR+depth, both sample and synth pads), per-pad pan (with random pan mode), mix bus routing, choke groups (1–8), normalize, crop
 - **Additive synth engine** — each pad can be sample-based or synth-based (16 sine-wave harmonics with filter envelope and LFO)
 - **Synth patches** — save, load, export/import (.ospatch), drag between library and pads
 - **Pad naming** — editable pad names with reset to default
 - **Pad drag** — move, copy, or swap pads across banks (hover bank tabs to switch)
+- **Bank naming** — double-click bank buttons to rename
 - **Multi-file drop** — drop multiple audio files on a pad to assign sequentially
 - **Sample assign modes** — replace existing sample or add as multisample layer
 - **Record to pad** — record button on empty pads opens recording dialog targeted to that pad
@@ -86,6 +88,7 @@ A browser-based sampler/sequencer built with React, TypeScript, and the Web Audi
 - **Import modes**: New Project, Merge, or Overwrite with conflict preview
 - **Editable project name** in the TopBar
 - **Initialize project** button to reset to defaults
+- **Preset drum kits** — 3 factory kits (TR-7x7, TR-8x8, TR-9x9) auto-loaded and assigned to Banks 1–3 on first launch
 
 ## Getting Started
 

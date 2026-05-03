@@ -152,13 +152,13 @@ export function Sequencer() {
     return () => cancelAnimationFrame(rafId)
   }, [showPerfStats])
 
-  const altLayout = useStore((s) => s.altLayout)
+  const layoutMode = useStore((s) => s.layoutMode)
 
   if (!project || !activeSequence || !visibleSequence) return null
 
-  const fitSteps = altLayout || visibleSequence.lengthSteps <= 16
+  const fitSteps = layoutMode === 'wide' || layoutMode === 'performance' || visibleSequence.lengthSteps <= 16
   const stepColSize = fitSteps ? 'minmax(0, 1fr)' : 'minmax(24px, 1fr)'
-  const sequenceGridColumns = `112px repeat(3, 26px) repeat(${visibleSequence.lengthSteps}, ${stepColSize})`
+  const sequenceGridColumns = `148px repeat(3, 26px) repeat(${visibleSequence.lengthSteps}, ${stepColSize})`
   const stepGridColumns = `repeat(${visibleSequence.lengthSteps}, ${stepColSize})`
   const chainWithPatterns = project.songChain.flatMap((entry) => {
     const pattern = project.sequences.find((seq) => seq.id === entry.patternId)

@@ -64,8 +64,7 @@ function useDragNumber(opts: { min: number; max: number; step: number; getValue:
 
 const BUFFER_SIZES = [128, 256, 512, 768, 1024] as const
 
-function SettingsPopover() {
-  const [open, setOpen] = useState(false)
+export function SettingsContent() {
   const [bufferSize, setBufferSize] = useState(() => audioEngine.getBufferSize())
 
   const midiInputEnabled = useStore((s) => s.midiInputEnabled)
@@ -77,7 +76,142 @@ function SettingsPopover() {
   const audioInputs = useStore((s) => s.audioInputs)
   const audioInputDeviceId = useStore((s) => s.audioInputDeviceId)
   const metronomeVolume = useStore((s) => s.metronomeVolume)
-  const altLayout = useStore((s) => s.altLayout)
+  const layoutMode = useStore((s) => s.layoutMode)
+
+  return (
+    <>
+      <strong className="settings-section-title">MIDI Input</strong>
+      <label className="settings-row">
+        <span>Enabled</span>
+        <input
+          type="checkbox"
+          checked={midiInputEnabled}
+          onChange={() => useStore.setState((s) => ({ midiInputEnabled: !s.midiInputEnabled }))}
+        />
+      </label>
+      {midiInputEnabled && (
+        <>
+          <label className="settings-row">
+            <span>Device</span>
+            <select
+              value={midiInputDeviceId ?? ''}
+              onChange={(e) => useStore.setState({ midiInputDeviceId: e.target.value || null })}
+            >
+              <option value="">All devices</option>
+              {midiInputs.map((d) => (
+                <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
+            </select>
+          </label>
+          <label className="settings-row">
+            <span>Pad Channel</span>
+            <select
+              value={padMidiChannel ?? ''}
+              onChange={(e) => useStore.setState({ padMidiChannel: e.target.value ? Number(e.target.value) : null })}
+            >
+              <option value="">All</option>
+              {Array.from({ length: 16 }, (_, i) => (
+                <option key={i + 1} value={i + 1}>Ch {i + 1}</option>
+              ))}
+            </select>
+          </label>
+        </>
+      )}
+      {midiInputEnabled && midiInputs.length === 0 && (
+        <p className="settings-hint">No MIDI devices detected.</p>
+      )}
+
+      <strong className="settings-section-title">Audio Output</strong>
+      <label className="settings-row">
+        <span>Device</span>
+        <select
+          value={audioOutputDeviceId ?? ''}
+          onChange={(e) => useStore.setState({ audioOutputDeviceId: e.target.value || null })}
+        >
+          <option value="">System default</option>
+          {audioOutputs.map((d) => (
+            <option key={d.id} value={d.id}>{d.name}</option>
+          ))}
+        </select>
+      </label>
+
+      <strong className="settings-section-title">Audio Input</strong>
+      <label className="settings-row">
+        <span>Device</span>
+        <select
+          value={audioInputDeviceId ?? ''}
+          onChange={(e) => {
+            const val = e.target.value || null
+            useStore.setState({ audioInputDeviceId: val })
+            if (val) localStorage.setItem('audioInputDeviceId', val)
+            else localStorage.removeItem('audioInputDeviceId')
+          }}
+        >
+          <option value="">System default</option>
+          {audioInputs.map((d) => (
+            <option key={d.id} value={d.id}>{d.name}</option>
+          ))}
+        </select>
+      </label>
+
+      <strong className="settings-section-title">Metronome</strong>
+      <label className="settings-row">
+        <span>Volume</span>
+        <input
+          type="range"
+          min={0}
+          max={100}
+          value={Math.round(metronomeVolume * 100)}
+          onChange={(e) => {
+            const v = Number(e.target.value) / 100
+            useStore.setState({ metronomeVolume: v })
+            localStorage.setItem('metronomeVolume', String(v))
+          }}
+          style={{ width: 80 }}
+        />
+      </label>
+
+      <strong className="settings-section-title">Audio Engine</strong>
+      <label className="settings-row">
+        <span>Buffer Size</span>
+        <select
+          value={bufferSize}
+          onChange={(e) => {
+            const size = Number(e.target.value)
+            setBufferSize(size)
+            void audioEngine.setBufferSize(size)
+          }}
+        >
+          {BUFFER_SIZES.map((s) => (
+            <option key={s} value={s}>{s} samples</option>
+          ))}
+        </select>
+      </label>
+      <p className="settings-hint">Lower = less latency, higher CPU. Requires stopping playback.</p>
+
+      <strong className="settings-section-title">Layout</strong>
+      <label className="settings-row">
+        <span>Mode</span>
+        <select
+          value={layoutMode}
+          onChange={(e) => {
+            const mode = e.target.value as 'classic' | 'wide' | 'performance'
+            useStore.setState({ layoutMode: mode })
+            localStorage.setItem('layoutMode', mode)
+          }}
+        >
+          <option value="classic">Classic</option>
+          <option value="wide">Wide</option>
+          <option value="performance">Performance</option>
+        </select>
+      </label>
+      <p className="settings-hint">Classic: 3-column. Wide: sequencer on top. Performance: pads + tabs.</p>
+    </>
+  )
+}
+
+function SettingsPopover() {
+  const [open, setOpen] = useState(false)
 
   return (
     <div className="settings-popover-wrap">
@@ -86,129 +220,7 @@ function SettingsPopover() {
       </button>
       {open && (
         <div className="settings-popover">
-          <strong className="settings-section-title">MIDI Input</strong>
-          <label className="settings-row">
-            <span>Enabled</span>
-            <input
-              type="checkbox"
-              checked={midiInputEnabled}
-              onChange={() => useStore.setState((s) => ({ midiInputEnabled: !s.midiInputEnabled }))}
-            />
-          </label>
-          {midiInputEnabled && (
-            <>
-              <label className="settings-row">
-                <span>Device</span>
-                <select
-                  value={midiInputDeviceId ?? ''}
-                  onChange={(e) => useStore.setState({ midiInputDeviceId: e.target.value || null })}
-                >
-                  <option value="">All devices</option>
-                  {midiInputs.map((d) => (
-                    <option key={d.id} value={d.id}>{d.name}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="settings-row">
-                <span>Pad Channel</span>
-                <select
-                  value={padMidiChannel ?? ''}
-                  onChange={(e) => useStore.setState({ padMidiChannel: e.target.value ? Number(e.target.value) : null })}
-                >
-                  <option value="">All</option>
-                  {Array.from({ length: 16 }, (_, i) => (
-                    <option key={i + 1} value={i + 1}>Ch {i + 1}</option>
-                  ))}
-                </select>
-              </label>
-            </>
-          )}
-          {midiInputEnabled && midiInputs.length === 0 && (
-            <p className="settings-hint">No MIDI devices detected.</p>
-          )}
-
-          <strong className="settings-section-title">Audio Output</strong>
-          <label className="settings-row">
-            <span>Device</span>
-            <select
-              value={audioOutputDeviceId ?? ''}
-              onChange={(e) => useStore.setState({ audioOutputDeviceId: e.target.value || null })}
-            >
-              <option value="">System default</option>
-              {audioOutputs.map((d) => (
-                <option key={d.id} value={d.id}>{d.name}</option>
-              ))}
-            </select>
-          </label>
-
-          <strong className="settings-section-title">Audio Input</strong>
-          <label className="settings-row">
-            <span>Device</span>
-            <select
-              value={audioInputDeviceId ?? ''}
-              onChange={(e) => {
-                const val = e.target.value || null
-                useStore.setState({ audioInputDeviceId: val })
-                if (val) localStorage.setItem('audioInputDeviceId', val)
-                else localStorage.removeItem('audioInputDeviceId')
-              }}
-            >
-              <option value="">System default</option>
-              {audioInputs.map((d) => (
-                <option key={d.id} value={d.id}>{d.name}</option>
-              ))}
-            </select>
-          </label>
-
-          <strong className="settings-section-title">Metronome</strong>
-          <label className="settings-row">
-            <span>Volume</span>
-            <input
-              type="range"
-              min={0}
-              max={100}
-              value={Math.round(metronomeVolume * 100)}
-              onChange={(e) => {
-                const v = Number(e.target.value) / 100
-                useStore.setState({ metronomeVolume: v })
-                localStorage.setItem('metronomeVolume', String(v))
-              }}
-              style={{ width: 80 }}
-            />
-          </label>
-
-          <strong className="settings-section-title">Audio Engine</strong>
-          <label className="settings-row">
-            <span>Buffer Size</span>
-            <select
-              value={bufferSize}
-              onChange={(e) => {
-                const size = Number(e.target.value)
-                setBufferSize(size)
-                void audioEngine.setBufferSize(size)
-              }}
-            >
-              {BUFFER_SIZES.map((s) => (
-                <option key={s} value={s}>{s} samples</option>
-              ))}
-            </select>
-          </label>
-          <p className="settings-hint">Lower = less latency, higher CPU. Requires stopping playback.</p>
-
-          <strong className="settings-section-title">Layout</strong>
-          <label className="settings-row">
-            <span>Wide layout</span>
-            <input
-              type="checkbox"
-              checked={altLayout}
-              onChange={() => {
-                const next = !altLayout
-                useStore.setState({ altLayout: next })
-                localStorage.setItem('altLayout', String(next))
-              }}
-            />
-          </label>
-          <p className="settings-hint">Sequencer on top, mixer + pad editor + pads below.</p>
+          <SettingsContent />
         </div>
       )}
     </div>
