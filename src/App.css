@@ -1308,6 +1308,58 @@ select.tb-led-value {
   width: 100%;
 }
 
+/* Compact sequencer controls in performance mode */
+.perf-left > .sequencer {
+  gap: 0.2rem;
+  padding: 0.4rem;
+}
+
+.perf-left > .sequencer > .sequencer-top {
+  gap: 0.15rem;
+}
+
+.perf-left > .sequencer > .sequencer-top > h2 {
+  display: none;
+}
+
+.perf-left > .sequencer .sequencer-controls-row {
+  gap: 0.2rem;
+  flex-wrap: wrap;
+}
+
+.perf-left > .sequencer .sequencer-controls-row label,
+.perf-left > .sequencer .sequencer-controls-row .seq-length-group,
+.perf-left > .sequencer .sequencer-controls-row .sequencer-toggle {
+  font-size: 0.68rem;
+}
+
+.perf-left > .sequencer .pattern-strip {
+  gap: 0.2rem;
+}
+
+.perf-left > .sequencer .pattern-chip {
+  padding: 0.15rem 0.3rem;
+  font-size: 0.68rem;
+}
+
+.perf-left > .sequencer .sequencer-status {
+  font-size: 0.68rem;
+  padding: 0.1rem 0;
+}
+
+.perf-left > .sequencer .chain-grid {
+  font-size: 0.68rem;
+}
+
+.perf-left > .sequencer .sequencer-primary-actions {
+  gap: 0.2rem;
+}
+
+.perf-left > .sequencer .sequencer-primary-actions button {
+  padding: 0.15rem 0.3rem;
+  font-size: 0.68rem;
+}
+
 .perf-tabs {
   display: flex;
   flex-direction: row;
@@ -2095,6 +2147,19 @@ select.tb-led-value {
 .pattern-dup {
   font-size: 0.62rem;
   padding: 0.16rem 0.26rem;
+}
+
+.pattern-del {
+  font-size: 0.72rem;
+  padding: 0.1rem 0.22rem;
+  line-height: 1;
+  color: var(--muted);
+  opacity: 0.5;
+}
+
+.pattern-del:hover {
+  opacity: 1;
+  color: #f87171;
 }
 
 .chain-grid {

@@ -504,6 +504,7 @@ export interface AppState {
   renamePattern: (patternId: string, name: string) => Promise<void>
   setPatternColor: (patternId: string, color: string) => Promise<void>
   duplicatePattern: (patternId: string) => Promise<void>
+  deletePattern: (patternId: string) => Promise<void>
 
   // Song Chain
   addChainEntry: (patternId: string) => Promise<void>
@@ -2491,6 +2492,25 @@ export const useStore = create<AppState>()(
         }
         await s.saveProject({ ...s.project, sequences: [...s.project.sequences, clone] })
         set((d) => { d.activeSequenceId = clone.id })
+      },
+
+      deletePattern: async (patternId: string) => {
+        const s = get()
+        if (!s.project) return
+        if (s.project.sequences.length <= 1) return // must keep at least one
+        const confirmed = await showConfirm('Delete this pattern? This cannot be undone.')
+        if (!confirmed) return
+        const remaining = s.project.sequences.filter((seq) => seq.id !== patternId)
+        // Also remove from song chain
+        const chain = s.project.songChain.filter((e) => e.patternId !== patternId)
+        const needSwitch = s.activeSequenceId === patternId || s.playingPatternId === patternId
+        await s.saveProject({ ...s.project, sequences: remaining, songChain: chain })
+        if (needSwitch) {
+          set((d) => {
+            d.activeSequenceId = remaining[0].id
+            d.playingPatternId = remaining[0].id
+          })
+        }
       },
 
       // --- Song Chain ---

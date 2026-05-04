@@ -117,6 +117,7 @@ export function Sequencer() {
     renamePattern,
     setPatternColor,
     duplicatePattern,
+    deletePattern,
     addChainEntryAt,
     removeChainEntry,
     moveChainEntry,
@@ -308,6 +309,9 @@ export function Sequencer() {
               )}
               <ColorPicker color={sequence.color} onChange={(c) => void setPatternColor(sequence.id, c)} />
               <button type="button" className="pattern-dup" onClick={() => void duplicatePattern(sequence.id)}>Dup</button>
+              {project.sequences.length > 1 && (
+                <button type="button" className="pattern-del" onClick={() => void deletePattern(sequence.id)} title="Delete pattern">&times;</button>
+              )}
             </div>
           )
         })}
