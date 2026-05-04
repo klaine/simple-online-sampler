@@ -1392,17 +1392,6 @@ function App() {
       {layoutMode === 'performance' ? (
         <section className="perf-layout" ref={perfDivContainerRef}>
           <div className="perf-left" style={{ flex: perfSplitRatio }}>
-            {performanceTab === 'library' && <SampleLibrary />}
-            {performanceTab === 'padEditor' && (
-              <PadEditor
-                waveformRef={waveformRef}
-                waveformCanvasRef={waveformCanvasRef}
-                dragTargetRef={dragTargetRef}
-              />
-            )}
-            {performanceTab === 'sequencer' && <Sequencer />}
-            {performanceTab === 'mixer' && <Mixer />}
-            {performanceTab === 'settings' && <PerfSettingsPanel />}
             <div className="perf-tabs">
               {([
                 ['library', 'Library'],
@@ -1424,6 +1413,17 @@ function App() {
                 </button>
               ))}
             </div>
+            {performanceTab === 'library' && <SampleLibrary />}
+            {performanceTab === 'padEditor' && (
+              <PadEditor
+                waveformRef={waveformRef}
+                waveformCanvasRef={waveformCanvasRef}
+                dragTargetRef={dragTargetRef}
+              />
+            )}
+            {performanceTab === 'sequencer' && <Sequencer />}
+            {performanceTab === 'mixer' && <Mixer />}
+            {performanceTab === 'settings' && <PerfSettingsPanel />}
           </div>
           <div className="perf-divider" onPointerDown={onPerfDivPointerDown}>
             <div className="divider-grip" />

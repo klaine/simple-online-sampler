@@ -105,6 +105,7 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - `midiExport.ts` — MIDI export
 - `mpcImport.ts` — MPC1000/MPC2500 `.pgm` program file parser: `parseMpcPgm` (extracts pad-to-sample mapping from binary), `matchMpcSamplesToFiles` (matches mapping to dropped audio files)
 - `drumKitMap.ts` — Drum category classifier (`classifyDrumSample`, `looksLikeDrumKit`) and standard 16-pad layout mapper (`mapToStandardKit`)
+- `touchDrag.ts` — Touch-based drag-and-drop for iPad/mobile (floating ghost, `elementFromPoint` drop detection, custom `touch-drop` event). Works alongside HTML5 DnD for desktop.
 - `constants.ts` — Constants (`BANK_COUNT=8`, `PADS_PER_BANK=16`, `TOTAL_PADS=128`)
 
 ### Workers (`src/workers/`)

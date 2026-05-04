@@ -22,7 +22,15 @@
   overflow: hidden;
   grid-template-rows: auto 1fr;
   gap: 0.3rem;
-  padding-bottom: 0;
+  padding: 0.3rem 0.5rem 0;
+  max-width: 100vw;
+  box-sizing: border-box;
+}
+
+.app-perf-layout .topbar {
+  flex-wrap: wrap;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .app-alt-layout .studio-layout {
@@ -1267,7 +1275,7 @@ select.tb-led-value {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  border-radius: 4px 4px 0 0;
+  border-radius: 0 0 4px 4px;
 }
 
 .perf-left > .sequencer {
@@ -1289,7 +1297,7 @@ select.tb-led-value {
   flex-direction: row;
   gap: 0;
   flex-shrink: 0;
-  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   background: var(--surface);
 }
 
@@ -1321,7 +1329,7 @@ select.tb-led-value {
 .perf-tab.active {
   background: var(--surface-raised);
   color: var(--accent);
-  box-shadow: inset 0 2px 0 var(--accent);
+  box-shadow: inset 0 -2px 0 var(--accent);
 }
 
 .perf-divider {
@@ -2258,6 +2266,8 @@ select.tb-led-value {
   background: var(--surface-inset);
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.08) transparent;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .sequencer-matrix-wrap.fit-sixteen {
@@ -2281,6 +2291,8 @@ select.tb-led-value {
 
 .sequencer-row {
   border-top: 1px solid rgba(255, 255, 255, 0.04);
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .lane-head,
@@ -2347,7 +2359,9 @@ select.tb-led-value {
   background: var(--surface-inset);
   color: var(--muted);
   padding: 0;
-  touch-action: manipulation;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
   transition: background 0.06s;
 }
 

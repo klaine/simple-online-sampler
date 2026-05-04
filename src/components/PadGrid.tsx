@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useRef, useState, useEffect, useSyncExternalStore } from 'react'
 import { audioEngine } from '../lib/audioEngine'
 import { releaseMidiNote } from '../lib/midiOut'
 import { parseMpcPgm, matchMpcSamplesToFiles } from '../lib/mpcImport'
@@ -47,6 +47,38 @@ export function PadGrid() {
     addToast,
   } = useStore.getState()
 
+  // Touch drag-and-drop from library (iPad / mobile)
+  const gridRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    const el = gridRef.current
+    if (!el) return
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as Record<string, string>
+      const padEl = (e.target as HTMLElement).closest('.pad[data-pad-id]') as HTMLElement | null
+      if (!padEl) return
+      const padId = padEl.getAttribute('data-pad-id')
+      if (!padId) return
+
+      const sampleId = detail['application/x-online-sampler-sample-id']
+      if (sampleId) {
+        const draggedSample = useStore.getState().samples.find((s) => s.id === sampleId)
+        if (draggedSample) {
+          useStore.setState({ selectedPadId: padId })
+          void useStore.getState().assignSampleToPad(draggedSample, padId)
+        }
+        return
+      }
+
+      const groupData = detail['application/x-online-sampler-group']
+      if (groupData) {
+        // Group drop handled elsewhere
+        return
+      }
+    }
+    el.addEventListener('touch-drop', handler)
+    return () => el.removeEventListener('touch-drop', handler)
+  }, [])
+
   // Bank tab drag-switch: hovering over a bank button while dragging a pad switches banks after 300ms
   const bankSwitchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [editingBank, setEditingBank] = useState<number | null>(null)
@@ -65,7 +97,7 @@ export function PadGrid() {
   const promptTarget = padDragPrompt ? project?.pads.find((p) => p.id === padDragPrompt.targetPadId) : null
 
   return (
-    <div className="pad-panel">
+    <div className="pad-panel" ref={gridRef}>
       <div className="bank-nav-row">
         <div className="bank-nav">
           {Array.from({ length: BANK_COUNT }, (_, i) => (
@@ -159,6 +191,7 @@ export function PadGrid() {
               key={pad.id}
               role="button"
               tabIndex={0}
+              data-pad-id={pad.id}
               className={`pad ${selected ? 'selected' : ''} ${isSequencedHit ? 'sequenced-hit' : ''} ${pad.id === padHoldRecordingPadId ? 'hold-recording' : ''}`}
               draggable={!!pad.settings.sampleId || pad.settings.source === 'synth'}
               onDragStart={(e) => {

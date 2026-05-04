@@ -9,6 +9,7 @@ import type { BusId, SampleAsset, SynthPatch } from '../types'
 import { BANK_COUNT, PADS_PER_BANK } from '../lib/constants'
 import { uid } from '../lib/utils'
 import { looksLikeDrumKit, mapToStandardKit } from '../lib/drumKitMap'
+import { makeTouchDragHandlers } from '../lib/touchDrag'
 
 export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
   const sampleQuery = useStore((s) => s.sampleQuery)
@@ -340,6 +341,10 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
             e.dataTransfer.setData('application/x-online-sampler-sample-id', sample.id)
             e.dataTransfer.setData('text/plain', sample.id)
           }}
+          {...makeTouchDragHandlers(
+            { 'application/x-online-sampler-sample-id': sample.id },
+            sample.name,
+          )}
         >
           {!inGroup && (
             <input
