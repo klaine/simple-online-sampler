@@ -41,6 +41,10 @@
   overflow: hidden;
 }
 
+.app-perf-layout .settings-popover-wrap {
+  display: none;
+}
+
 /* Prevent body scroll in performance mode (iOS Safari) */
 body:has(.app-perf-layout),
 body:has(.app-perf-layout) > #root {
@@ -1464,6 +1468,37 @@ select.tb-led-value {
   min-height: 0;
   padding: 0.3rem;
   font-size: 0.72rem;
+}
+
+/* Performance mode: make pad editor scrollable */
+.perf-left > .pad-editor-panel {
+  display: block;
+}
+
+/* Performance mode: hide MIDI status to save space */
+.perf-right .midi-status {
+  display: none;
+}
+
+/* Performance mode: compact bank buttons into single row */
+.perf-right .bank-nav-row {
+  gap: 0.25rem;
+  flex-wrap: nowrap;
+}
+
+.perf-right .bank-nav {
+  flex-wrap: wrap;
+}
+
+.perf-right .bank-nav button {
+  padding: 0.25rem 0.35rem;
+  font-size: 0.65rem;
+  min-width: 0;
+}
+
+/* Performance mode: tighter pad grid */
+.perf-right > .pad-panel > .grid {
+  gap: 0.2rem;
 }
 
 .perf-settings-panel {

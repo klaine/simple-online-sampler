@@ -588,7 +588,30 @@ export class AudioEngine {
     return this.busNodes.get(busId)!.gain
   }
 
+  // iOS silent switch workaround: playing a tiny <audio> element promotes the
+  // audio session from "ambient" (muted by silent switch) to "playback".
+  private _iosAudioUnlocked = false
+  private async unlockIOSAudio(): Promise<void> {
+    if (this._iosAudioUnlocked) return
+    // Only needed on iOS (iPhone/iPad/iPod) — all iOS browsers use WebKit
+    const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+    if (!isIOS) { this._iosAudioUnlocked = true; return }
+    try {
+      // Tiny 1-sample silent WAV (44 bytes header + 2 bytes data = 46 bytes)
+      const silentWav = 'data:audio/wav;base64,UklGRiYAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQIAAAAAAA=='
+      const audio = new Audio(silentWav)
+      audio.volume = 0.01
+      audio.setAttribute('playsinline', '')
+      await audio.play()
+      this._iosAudioUnlocked = true
+    } catch {
+      // Ignore — user gesture may not be active
+    }
+  }
+
   async unlock(): Promise<void> {
+    await this.unlockIOSAudio()
     const ctx = this.getContext()
     if (ctx.state !== 'running') {
       await ctx.resume()
@@ -599,6 +622,7 @@ export class AudioEngine {
 
   /** Synchronous unlock — resumes context without awaiting (fire-and-forget) */
   unlockSync(): void {
+    void this.unlockIOSAudio()
     const ctx = this.getContext()
     if (ctx.state !== 'running') {
       void ctx.resume().then(() => this.flushPendingDecodes())
