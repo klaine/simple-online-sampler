@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, useEffect, useSyncExternalStore } from 'react'
+import { useCallback, useRef, useState, useEffect, useSyncExternalStore, useMemo } from 'react'
 import { audioEngine } from '../lib/audioEngine'
 import { releaseMidiNote } from '../lib/midiOut'
 import { parseMpcPgm, matchMpcSamplesToFiles } from '../lib/mpcImport'
@@ -10,6 +10,7 @@ import {
   useStore,
   transportVisualStore,
   selectDisplayedPads,
+  selectVisibleSequence,
 } from '../store'
 
 // Guard: suppress mouse events that follow a recent touch (prevents double-trigger)
@@ -33,6 +34,7 @@ export function PadGrid() {
   const samples = useStore((s) => s.samples)
   const selectedPadId = useStore((s) => s.selectedPadId)
   const sequencedPadHits = useSyncExternalStore(transportVisualStore.subscribe, transportVisualStore.getSequencedPadHits)
+  const playheadStep = useSyncExternalStore(transportVisualStore.subscribe, transportVisualStore.getPlayheadStep)
   const activeBank = useStore((s) => s.activeBank)
   const midiStatus = useStore((s) => s.midiStatus)
   const lastMidiNote = useStore((s) => s.lastMidiNote)
@@ -56,7 +58,22 @@ export function PadGrid() {
     startPadHoldRecord,
     stopPadHoldRecord,
     addToast,
+    toggleStep,
   } = useStore.getState()
+
+  const visibleSequence = useStore(selectVisibleSequence)
+
+  // Steps for the selected pad in the active pattern
+  const inlineSteps = useMemo(() => {
+    if (!visibleSequence || !selectedPadId) return null
+    const stepMap = new Map<number, { velocity: number }>()
+    for (const ev of visibleSequence.events) {
+      if (ev.padId === selectedPadId) {
+        stepMap.set(ev.step, { velocity: ev.velocity })
+      }
+    }
+    return { lengthSteps: visibleSequence.lengthSteps, stepMap }
+  }, [visibleSequence, selectedPadId])
 
   // Touch drag-and-drop from library (iPad / mobile)
   const gridRef = useRef<HTMLDivElement | null>(null)
@@ -192,6 +209,27 @@ export function PadGrid() {
           ● REC PAD
         </button>
       </div>
+      {/* Inline TR-style step sequencer for selected pad */}
+      {inlineSteps && selectedPadId && (
+        <div className="inline-step-row">
+          <div className="inline-step-grid" style={{ gridTemplateColumns: `repeat(${inlineSteps.lengthSteps}, 1fr)` }}>
+            {Array.from({ length: inlineSteps.lengthSteps }, (_, i) => {
+              const hit = inlineSteps.stepMap.get(i)
+              const isPlayhead = playheadStep === i
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  className={`inline-step${hit ? ' on' : ''}${isPlayhead ? ' playhead' : ''}${i % 4 === 0 ? ' beat' : ''}${Math.floor(i / 4) % 2 === 1 ? ' group-odd' : ''}`}
+                  onClick={() => void toggleStep(i, selectedPadId)}
+                >
+                  {hit && <span className="inline-step-fill" style={{ opacity: hit.velocity / 127 }} />}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
       <div className="grid">
         {displayedPads.map((pad) => {
           const sample = samples.find((s) => s.id === pad.settings.sampleId)

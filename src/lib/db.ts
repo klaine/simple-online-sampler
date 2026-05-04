@@ -81,6 +81,11 @@ export const db = {
     return instance.getAll('projects')
   },
 
+  async deleteProject(projectId: string): Promise<void> {
+    const instance = await getDb()
+    await instance.delete('projects', projectId)
+  },
+
   async putSample(sample: SampleAsset): Promise<void> {
     const instance = await getDb()
     await instance.put('samples', sample)

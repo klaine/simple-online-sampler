@@ -92,6 +92,38 @@ function PerfSettingsPanel() {
   )
 }
 
+function ProjectsPanel() {
+  const projectList = useStore((s) => s.projectList)
+  const currentProjectId = useStore((s) => s.project?.id ?? null)
+  const { createNewProject, switchProject, deleteProject, duplicateProject } = useStore.getState()
+
+  return (
+    <div className="projects-panel">
+      <div className="projects-panel-header">
+        <h3>Projects</h3>
+        <button type="button" className="projects-new-btn" onClick={() => void createNewProject()} title="New Project">+ New</button>
+      </div>
+      <div className="projects-list">
+        {projectList.map((p) => (
+          <div
+            key={p.id}
+            className={`project-row${p.id === currentProjectId ? ' active' : ''}`}
+            onClick={() => void switchProject(p.id)}
+          >
+            <span className="project-row-name">{p.name}</span>
+            <span className="project-row-actions">
+              {p.id === currentProjectId && (
+                <button type="button" title="Duplicate" onClick={(e) => { e.stopPropagation(); void duplicateProject() }}>⧉</button>
+              )}
+              <button type="button" title="Delete" onClick={(e) => { e.stopPropagation(); void deleteProject(p.id) }}>✕</button>
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ---------------------------------------------------------------------------
 // App
 // ---------------------------------------------------------------------------
@@ -1416,6 +1448,7 @@ function App() {
                 ['padEditor', 'Pad Edit'],
                 ['sequencer', 'Sequencer'],
                 ['mixer', 'Mixer'],
+                ['projects', 'Projects'],
                 ['settings', 'Settings'],
               ] as const).map(([id, label]) => (
                 <button
@@ -1441,6 +1474,7 @@ function App() {
             )}
             {performanceTab === 'sequencer' && <Sequencer />}
             {performanceTab === 'mixer' && <Mixer />}
+            {performanceTab === 'projects' && <ProjectsPanel />}
             {performanceTab === 'settings' && <PerfSettingsPanel />}
           </div>
           <div className="perf-divider" onPointerDown={onPerfDivPointerDown}>

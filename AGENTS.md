@@ -59,7 +59,7 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 ## Important Files
 
 ### Core
-- `src/store/index.ts` — Zustand store: all state, actions, selectors, `transportVisualStore`, `showConfirm`/`resolveConfirmDialog` (~4410 lines)
+- `src/store/index.ts` — Zustand store: all state, actions, selectors, `transportVisualStore`, `showConfirm`/`resolveConfirmDialog` (~4596 lines)
 - `src/App.tsx` — App shell: effects, drag handlers, export callbacks, layout (~1535 lines)
 - `src/App.css` — All styling (single file, ~4440 lines)
 - `src/types.ts` — Core types: Pad, PadSettings, SampleLayer, SampleAsset, Project, BusId, EffectSlot, MixBus, MasterBus, TrimSettings, MidiOutConfig, PadSource, SynthParams, LfoSettings, FilterEnvelopeSettings, SynthPatch, etc.
@@ -71,7 +71,7 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - `ExportDialog.tsx` — Export format chooser with spinner
 - `ImportDialog.tsx` — Import dialog
 - `ConfirmDialog.tsx` — Promise-based confirm overlay (replaces all `window.confirm` calls)
-- `SampleLibrary.tsx` — Sample library sidebar with file drop, chop/spread buttons, "Remove Unassigned" cleanup, record button, autosample group UI (rename/delete/export/drag/assign-to-pads), group edit modal (name/bus/choke), manual sample grouping (multi-select + group button), per-sample ungroup, MPC badge on .pgm-imported groups, Preset badge on factory preset groups, ZIP import support, synth patches section (list/assign/export/import/delete), sidebar collapse button
+- `SampleLibrary.tsx` — Sample library sidebar with file drop, chop/spread buttons, "Remove Unassigned" cleanup, record button, autosample group UI (rename/delete/export/drag/assign-to-pads), group edit modal (name/bus/choke), manual sample grouping (multi-select + group button), per-sample ungroup, MPC badge on .pgm-imported groups, Preset badge on factory preset groups, ZIP import support, synth patches section (list/assign/export/import/delete), sidebar collapse button, projects section (list/new/duplicate/delete/switch)
 - `PadEditor.tsx` — Collapsible pad settings, waveform trim with zoom (gain-scaled, layer-aware), filter knobs (LP12/LP24/HP/BP), MC-909 style AMP and FILTER envelope sections (vertical faders + ADSR curve visualization), filter envelope for both sample and synth pads, multisample layer UI, per-layer editing, stacked timeline (canvas waveforms + drag offset), bus selector, choke group selector, pan knob (with random pan toggle), MIDI Out section, source toggle (Sample/Synth), SynthEditor integration, per-pad effect slots (2 slots, synth pads), synth MIDI input section (channel/device), Crop button (destructively trims sample to trim markers), Normalize button (peak normalize to -0.3 dBFS), Reset Pad button (resets to defaults + clears sequencer events)
 - `EnvelopeSection.tsx` — Reusable MC-909 style envelope section with ADSR curve SVG visualization, vertical faders (with log-scale support), level/depth fader, used for both AMP and FILTER envelopes in PadEditor
 - `PadGrid.tsx` — Pad grid with bank nav (double-click to rename banks), pad drag (move/copy/swap), record button overlay on empty pads, MIDI debug display, autosample group drop with metadata (trim/bus/choke), group drop on bank tabs (assigns starting from pad 1 of target bank), MPC .pgm import on file drop, synth pad display ("~ Synth"), synth patch drop from library, touch event handling (preventDefault to avoid double-trigger on mobile)
@@ -248,7 +248,7 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - Record arm + quantize (Q, default on) + overdub/replace (OVR/REP) buttons in TopBar
 - `recordPadHit(padId, velocity, note?)` action called from `triggerPad` when armed+playing
 - Optional `note` parameter records piano roll events for synth pads (computer keyboard + MIDI chromatic input)
-- `recordPadRelease(padId, note?)` computes gate length from note-on step to note-off step, updates the recorded event
+- `recordPadRelease(padId, note?)` computes gate length from elapsed time (`performance.now()`) and BPM, more accurate than visual playhead
 - Active recording notes tracked in module-level `_activeRecordingNotes` Map (cleared on transport stop)
 - Records into `playingPatternId` pattern; replace mode uses `_seqRecordCleared` Set
 
@@ -256,6 +256,17 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - 🎹 button on library sample row opens inline popover
 - Bank, Start Pad, Count (default 12), Choke Group (Off or 1-8) selectors
 - `spreadSampleChromatically()` assigns sample to N consecutive pads with semitones 0, +1, +2...
+
+### Multi-Project
+- Projects stored in IndexedDB `projects` table (multiple projects coexist, samples are shared globally)
+- `projectList` state: lightweight `{ id, name, updatedAt }[]` sorted by most recent
+- Store actions: `refreshProjectList`, `switchProject`, `createNewProject`, `deleteProject`, `duplicateProject`
+- `createNewProject`: auto-names "Sketch NN", creates default project, switches to it
+- `switchProject`: stops transport, flushes pending save, loads project from DB, resets UI state
+- `deleteProject`: confirms via `showConfirm`, prevents deleting last project, switches to most recent if deleting current
+- `duplicateProject`: deep-clones current project with new ID + " Copy" suffix
+- Projects section in SampleLibrary sidebar (above Sample Library): collapsible list, active project highlighted, + button for new, ⧉ duplicate, ✕ delete
+- Project name edited via TopBar input; `commitProjectNameDraft` refreshes project list
 
 ### Remove Unassigned Samples
 - "Remove Unassigned" button in library panel removes samples not referenced by any pad (primary sampleId or layer sampleId)
@@ -350,7 +361,7 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
   - **Wide** (default): sequencer on top, mixer + pad editor + pad grid on bottom row. Uses `studio-col-main` and `alt-bottom-row` CSS classes.
   - **Performance**: optimized for landscape mobile / compact screens. Left panel with switchable content via bottom tab bar (Library, Pad Editor, Sequencer, Mixer, Settings), right panel always shows PadGrid. Drag-resizable vertical divider between left/right (ratio 0.25–0.75, persisted as `layout-perf-split`). No footer. Uses `perf-layout`, `perf-left`, `perf-right`, `perf-tabs`, `perf-divider` CSS classes.
   - Auto-detection: on mount, if `pointer: coarse` + landscape orientation + width ≤ 1099px and no explicit `layoutMode` in localStorage, defaults to performance mode.
-  - State: `layoutMode: 'classic' | 'wide' | 'performance'` and `performanceTab: 'library' | 'padEditor' | 'sequencer' | 'mixer' | 'settings'` in Zustand store.
+  - State: `layoutMode: 'classic' | 'wide' | 'performance'` and `performanceTab: 'library' | 'padEditor' | 'sequencer' | 'mixer' | 'projects' | 'settings'` in Zustand store.
 
 ## Performance Notes
 

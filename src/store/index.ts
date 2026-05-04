@@ -364,7 +364,7 @@ export interface AppState {
   selectedLayerId: string | null
   hideEmptyLanes: boolean
   layoutMode: 'classic' | 'wide' | 'performance'
-  performanceTab: 'library' | 'padEditor' | 'sequencer' | 'mixer' | 'settings'
+  performanceTab: 'library' | 'padEditor' | 'sequencer' | 'mixer' | 'settings' | 'projects'
   showSongChain: boolean
   padEditorCollapsed: boolean
   showLibraryWaveforms: boolean
@@ -437,6 +437,9 @@ export interface AppState {
   selectedChainEntryId: string | null
   copiedChainPatternId: string | null
 
+  // --- Project List ---
+  projectList: { id: string; name: string; updatedAt: number }[]
+
   // --- Internal refs (non-reactive, accessed via getState()) ---
   // (Mutable refs moved to module-level variables, see storeRefs export)
   // (Mutable refs moved to module-level variables, see storeRefs export)
@@ -449,6 +452,11 @@ export interface AppState {
   saveProjectLight: (next: Project, flushImmediately?: boolean) => void
   flushPendingProjectSave: () => void
   initializeCurrentProject: () => Promise<void>
+  refreshProjectList: () => Promise<void>
+  switchProject: (projectId: string) => Promise<void>
+  createNewProject: () => Promise<void>
+  deleteProject: (projectId: string) => Promise<void>
+  duplicateProject: () => Promise<void>
 
   // Pad
   triggerPad: (pad: Pad, velocity?: number) => void
@@ -898,7 +906,7 @@ let _draggedPatternId: string | null = null
 let _draggedChainEntryId: string | null = null
 const _seqRecordCleared = new Set<string>() // tracks patterns cleared during replace-mode recording
 // Tracks active recording notes: key = "padId:note" (or "padId:" for non-piano-roll), value = { eventId, startStep }
-const _activeRecordingNotes = new Map<string, { eventId: string; startStep: number; patternId: string }>()
+const _activeRecordingNotes = new Map<string, { eventId: string; startStep: number; patternId: string; startTimeMs: number }>()
 let _frozenZoomRange: { start: number; end: number } | null = null
 
 // --- Confirm dialog promise resolver ---
@@ -1248,6 +1256,8 @@ export const useStore = create<AppState>()(
       selectedChainEntryId: null,
       copiedChainPatternId: null,
 
+      projectList: [],
+
       showAutosampleDialog: false,
 
       // =================================================================
@@ -1286,6 +1296,7 @@ export const useStore = create<AppState>()(
             await get().assignGroupToPads(runId, bank)
           }
         }
+        await get().refreshProjectList()
         })()
         return _hydratePromise
       },
@@ -1370,6 +1381,139 @@ export const useStore = create<AppState>()(
           s.favoriteSampleIds = new Set()
           s.showGateResizeTip = true
         })
+        await get().refreshProjectList()
+      },
+
+      refreshProjectList: async () => {
+        const all = await db.getAllProjects()
+        const list = all
+          .map((p) => ({ id: p.id, name: p.name, updatedAt: p.updatedAt }))
+          .sort((a, b) => b.updatedAt - a.updatedAt)
+        set((s) => {
+          s.projectList = list
+        })
+      },
+
+      switchProject: async (projectId: string) => {
+        const current = get().project
+        if (current && current.id === projectId) return
+
+        get().stopTransport()
+        get().flushPendingProjectSave()
+
+        const proj = await db.getProject(projectId)
+        if (!proj) return
+        const loaded = normalizeProject(proj)
+
+        const allSamples = await db.getAllSamples()
+        set((s) => {
+          s.project = loaded
+          s.projectNameDraft = loaded.name
+          s.bpmDraft = String(loaded.bpm)
+          s.swingDraft = String(loaded.swing ?? 0)
+          s.selectedPadId = loaded.pads[0]?.id ?? null
+          s.activeSequenceId = loaded.sequences[0]?.id ?? null
+          s.activeBank = 0
+          s.mutedLanePadIds = new Set()
+          s.playbackScope = 'pattern'
+          s.playingPatternId = null
+          s.playingChainIndex = null
+          s.playingChainRepeat = 1
+          s.historyPast = []
+          s.historyFuture = []
+          s.selectedChainEntryId = null
+          s.copiedChainPatternId = null
+          s.samples = allSamples
+          s.sampleMap = new Map(allSamples.map((sample) => [sample.id, sample]))
+        })
+        audioEngine.setBpm(loaded.bpm)
+        audioEngine.setPolyphony(loaded.polyphony)
+        rebuildPlaybackSnapshot(loaded)
+      },
+
+      createNewProject: async () => {
+        get().stopTransport()
+        get().flushPendingProjectSave()
+
+        // Generate a name like "Sketch 02", "Sketch 03", etc.
+        const all = await db.getAllProjects()
+        const existingNames = new Set(all.map((p) => p.name))
+        let num = all.length + 1
+        let name = `Sketch ${String(num).padStart(2, '0')}`
+        while (existingNames.has(name)) {
+          num++
+          name = `Sketch ${String(num).padStart(2, '0')}`
+        }
+
+        const next = createDefaultProject(name)
+        await db.putProject(next)
+
+        set((s) => {
+          s.project = next
+          s.projectNameDraft = next.name
+          s.bpmDraft = String(next.bpm)
+          s.swingDraft = String(next.swing ?? 0)
+          s.selectedPadId = next.pads[0]?.id ?? null
+          s.activeSequenceId = next.sequences[0]?.id ?? null
+          s.activeBank = 0
+          s.mutedLanePadIds = new Set()
+          s.playbackScope = 'pattern'
+          s.playingPatternId = null
+          s.playingChainIndex = null
+          s.playingChainRepeat = 1
+          s.historyPast = []
+          s.historyFuture = []
+          s.selectedChainEntryId = null
+          s.copiedChainPatternId = null
+        })
+        audioEngine.setBpm(next.bpm)
+        audioEngine.setPolyphony(next.polyphony)
+        rebuildPlaybackSnapshot(next)
+        await get().refreshProjectList()
+      },
+
+      deleteProject: async (projectId: string) => {
+        const current = get().project
+        if (!current) return
+
+        const all = await db.getAllProjects()
+        if (all.length <= 1) {
+          get().addToast('Cannot delete the only project', 'error')
+          return
+        }
+
+        const target = all.find((p) => p.id === projectId)
+        const ok = await showConfirm(`Delete project "${target?.name ?? 'Untitled'}"?`)
+        if (!ok) return
+
+        await db.deleteProject(projectId)
+
+        // If deleting the current project, switch to the most recent remaining
+        if (current.id === projectId) {
+          const remaining = all.filter((p) => p.id !== projectId)
+          remaining.sort((a, b) => b.updatedAt - a.updatedAt)
+          if (remaining.length > 0) {
+            await get().switchProject(remaining[0].id)
+          }
+        }
+        await get().refreshProjectList()
+      },
+
+      duplicateProject: async () => {
+        const current = get().project
+        if (!current) return
+
+        get().flushPendingProjectSave()
+
+        const dupe: Project = JSON.parse(JSON.stringify(current))
+        dupe.id = uid()
+        dupe.name = current.name + ' Copy'
+        dupe.createdAt = Date.now()
+        dupe.updatedAt = Date.now()
+
+        await db.putProject(dupe)
+        await get().switchProject(dupe.id)
+        await get().refreshProjectList()
       },
 
       // --- Pad ---
@@ -3401,8 +3545,8 @@ export const useStore = create<AppState>()(
 
         // Determine target step
         let step = transportVisualStore.getPlayheadStep() ?? 0
+        const rawStep = step
         if (s.seqRecordQuantize) {
-          // playheadStep is already quantized to the grid
           step = Math.round(step) % seq.lengthSteps
         } else {
           step = step % seq.lengthSteps
@@ -3446,8 +3590,11 @@ export const useStore = create<AppState>()(
         }
 
         // Track this note for gate-length computation on release
+        // Adjust startTimeMs so it represents when the quantized step occurs
+        const stepDurationMs = (60_000 / s.project.bpm) / 4
+        const quantizeOffsetMs = (step - (rawStep % seq.lengthSteps)) * stepDurationMs
         const noteKey = `${padId}:${note ?? ''}`
-        _activeRecordingNotes.set(noteKey, { eventId: newEvent.id, startStep: step, patternId: targetPatternId })
+        _activeRecordingNotes.set(noteKey, { eventId: newEvent.id, startStep: step, patternId: targetPatternId, startTimeMs: performance.now() + quantizeOffsetMs })
 
         const events = [...freshSeq.events, newEvent]
         const sequences = freshState.project.sequences.map((p) =>
@@ -3469,12 +3616,10 @@ export const useStore = create<AppState>()(
         const seq = s.project.sequences.find((p) => p.id === active.patternId)
         if (!seq) return
 
-        let currentStep = transportVisualStore.getPlayheadStep() ?? 0
-        currentStep = Math.ceil(currentStep) % seq.lengthSteps
-
-        // Compute gate: steps from start to current position
-        let gate = currentStep - active.startStep
-        if (gate <= 0) gate += seq.lengthSteps // wrapped around pattern
+        // Compute gate from elapsed time + BPM (more accurate than visual playhead)
+        const elapsedMs = performance.now() - active.startTimeMs
+        const stepDurationMs = (60_000 / s.project.bpm) / 4 // 16th note duration
+        let gate = Math.round(elapsedMs / stepDurationMs)
         gate = Math.max(1, Math.min(seq.lengthSteps, gate))
 
         const events = seq.events.map((e) =>
@@ -4179,6 +4324,7 @@ export const useStore = create<AppState>()(
           return
         }
         await s.saveProject({ ...s.project, name: nextName })
+        await get().refreshProjectList()
       },
 
       addToast: (message: string, type: ToastType = 'info') => {
