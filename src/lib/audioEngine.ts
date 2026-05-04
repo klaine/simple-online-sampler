@@ -619,31 +619,16 @@ export class AudioEngine {
   unlockAndPrepare(): Promise<void> {
     try {
       // All of these must start synchronously within the gesture:
+      // iOS silent audio: fire-and-forget (just needs to START in gesture, don't await)
       this.startIOSAudioUnlock()
       const ctx = this.getContext()
-      console.log('[audioEngine] unlockAndPrepare ctx.state:', ctx.state)
       const resumeP = ctx.state !== 'running'
-        ? ctx.resume().then(() => console.log('[audioEngine] ctx.resume() resolved')).catch((e) => console.warn('[audioEngine] ctx.resume() failed:', e))
+        ? ctx.resume().catch(() => {})
         : Promise.resolve()
-      const iosP = this._iosUnlockPromise
-        ? this._iosUnlockPromise.then(() => console.log('[audioEngine] iOS unlock resolved'))
-        : Promise.resolve()
-      // Return a promise that waits for everything to settle, with a safety timeout
-      const settleP = Promise.all([iosP, resumeP])
-        .then(() => {
-          console.log('[audioEngine] all settled, flushing pending decodes')
-          return this.flushPendingDecodes()
-        })
-        .then(() => console.log('[audioEngine] unlockAndPrepare complete'))
-        .catch((e) => {
-          console.warn('[audioEngine] unlockAndPrepare settle error:', e)
-        })
-      // Safety timeout: never hang more than 2s (iOS resume() can hang indefinitely)
-      const timeoutP = new Promise<void>((resolve) => setTimeout(() => {
-        console.warn('[audioEngine] unlockAndPrepare timed out after 2s, ctx.state:', ctx.state)
-        resolve()
-      }, 2000))
-      return Promise.race([settleP, timeoutP])
+      // Only wait for ctx.resume + pending decodes (not the iOS audio element)
+      return resumeP.then(() => this.flushPendingDecodes()).catch((e) => {
+        console.warn('[audioEngine] unlockAndPrepare error:', e)
+      })
     } catch (e) {
       console.warn('[audioEngine] unlockAndPrepare sync error:', e)
       return Promise.resolve()

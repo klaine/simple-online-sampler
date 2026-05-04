@@ -1851,7 +1851,6 @@ export const useStore = create<AppState>()(
       startTransport: async () => {
         try {
         const s = get()
-        console.log('[startTransport] project:', !!s.project, 'activeSeqId:', s.activeSequenceId, 'isPlaying:', s.isPlaying)
         if (!s.project || !s.activeSequenceId || s.isPlaying) return
 
         const activeSeq = selectActiveSequence(s)
@@ -1886,7 +1885,6 @@ export const useStore = create<AppState>()(
           ),
         )
         await audioEngine.unlock()
-        console.log('[startTransport] unlocked, ctx state:', audioEngine.getContextIfReady()?.state)
 
         for (const sampleId of sampleIdsToPrepare) {
           if (audioEngine.hasSample(sampleId)) continue
@@ -2076,7 +2074,6 @@ export const useStore = create<AppState>()(
       },
 
       togglePlayPause: () => {
-        console.log('[togglePlayPause] isPlaying:', get().isPlaying)
         if (get().isPlaying) {
           get().stopTransport()
         } else {
