@@ -19,6 +19,7 @@
 
 .app.app-perf-layout {
   height: 100vh;
+  max-height: 100vh;
   overflow: hidden;
   grid-template-rows: auto 1fr;
   gap: 0.3rem;
@@ -27,10 +28,25 @@
   box-sizing: border-box;
 }
 
+@supports (height: 100dvh) {
+  .app.app-perf-layout {
+    height: 100dvh;
+    max-height: 100dvh;
+  }
+}
+
 .app-perf-layout .topbar {
   flex-wrap: wrap;
   min-width: 0;
   overflow: hidden;
+}
+
+/* Prevent body scroll in performance mode (iOS Safari) */
+body:has(.app-perf-layout) {
+  overflow: hidden;
+  position: fixed;
+  width: 100%;
+  height: 100%;
 }
 
 .app-alt-layout .studio-layout {
