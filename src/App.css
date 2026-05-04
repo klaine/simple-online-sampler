@@ -41,6 +41,83 @@
   overflow: hidden;
 }
 
+/* Larger touch targets in perf mode */
+.app-perf-layout .tb-play,
+.app-perf-layout .tb-stop,
+.app-perf-layout .tb-loop {
+  width: 40px;
+  height: 36px;
+  font-size: 0.9rem;
+}
+
+.app-perf-layout .tb-metronome {
+  width: 42px;
+  height: 36px;
+  font-size: 11px;
+}
+
+.app-perf-layout .tb-secondary {
+  min-height: 36px;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.65rem;
+}
+
+.app-perf-layout .tb-tap {
+  min-height: 36px;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.65rem;
+}
+
+.app-perf-layout .tb-led-value {
+  min-height: 36px;
+  font-size: 0.85rem;
+  padding: 0.2rem 0.35rem;
+}
+
+.app-perf-layout .tb-keyboard-toggle {
+  min-height: 36px;
+  min-width: 36px;
+}
+
+.app-perf-layout .seq-rec-btn {
+  min-height: 36px;
+  padding: 0.25rem 0.5rem;
+  font-size: 11px;
+}
+
+.app-perf-layout .seq-rec-option {
+  min-height: 36px;
+  padding: 0.25rem 0.4rem;
+  font-size: 10px;
+}
+
+.app-perf-layout .seq-rec-countdown {
+  min-height: 36px;
+  padding: 0.2rem 0.3rem;
+}
+
+.app-perf-layout .tb-midi-toggle {
+  min-height: 36px;
+  min-width: 36px;
+  padding: 0.25rem 0.4rem;
+}
+
+.app-perf-layout .sidebar-header {
+  display: none;
+}
+
+.app-perf-layout .mixer-head {
+  display: none;
+}
+
+.app-perf-layout .mixer-panel.collapsed .mixer-channels {
+  display: flex;
+}
+
+.app-perf-layout .pad-editor-head {
+  display: none;
+}
+
 .app-perf-layout .settings-popover-wrap {
   display: none;
 }
@@ -51,11 +128,19 @@ body:has(.app-perf-layout) > #root {
   height: 100%;
   max-height: 100%;
   overflow: hidden;
+  overscroll-behavior: none;
 }
 
 html:has(.app-perf-layout) {
   height: 100%;
   overflow: hidden;
+  overscroll-behavior: none;
+}
+
+.app-perf-layout {
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: manipulation;
 }
 
 .app-alt-layout .studio-layout {
@@ -1655,7 +1740,7 @@ select.tb-led-value {
 
 .inline-step {
   position: relative;
-  height: 18px;
+  height: 36px;
   border: 1px solid var(--border);
   border-radius: 2px;
   background: rgba(255, 255, 255, 0.02);
@@ -1833,6 +1918,7 @@ select.tb-led-value {
 }
 
 .sidebar-toggle {
+}
 
 .sidebar-header {
   display: flex;
@@ -1862,40 +1948,6 @@ select.tb-led-value {
 }
 
 /* --- Projects Section --- */
-.projects-panel {
-  padding: 0.5rem;
-  overflow-y: auto;
-  flex: 1;
-}
-
-.projects-panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 0.4rem;
-}
-
-.projects-panel-header h3 {
-  margin: 0;
-  font-size: 0.8rem;
-}
-
-.projects-new-btn {
-  background: none;
-  border: 1px solid var(--border);
-  color: var(--muted);
-  font-size: 0.65rem;
-  padding: 0.15rem 0.4rem;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  line-height: 1.3;
-}
-
-.projects-new-btn:hover {
-  color: var(--text);
-  border-color: var(--border-focus);
-}
-
 .projects-list {
   display: flex;
   flex-direction: column;
@@ -1903,62 +1955,75 @@ select.tb-led-value {
 }
 
 .project-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.3rem;
   align-items: center;
-  justify-content: space-between;
-  padding: 0.2rem 0.35rem;
+  width: 100%;
+  padding: 0.3rem 0.4rem;
   border-radius: var(--radius-sm);
+  border: 1px solid transparent;
   cursor: pointer;
-  font-size: 0.7rem;
-  color: var(--muted);
   transition: background 0.1s;
 }
 
 .project-row:hover {
   background: rgba(255, 255, 255, 0.04);
-  color: var(--text);
 }
 
 .project-row.active {
   background: rgba(255, 255, 255, 0.07);
-  color: var(--accent);
+  border-color: var(--accent-soft);
 }
 
 .project-row-name {
-  flex: 1;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.15;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--text);
+}
+
+.project-row.active .project-row-name {
+  color: var(--accent);
 }
 
 .project-row-actions {
   display: flex;
-  gap: 0.15rem;
+  gap: 0.12rem;
+  align-items: center;
+  justify-content: end;
   opacity: 0;
   transition: opacity 0.1s;
 }
 
-.project-row:hover .project-row-actions {
+.project-row:hover .project-row-actions,
+.project-row.active .project-row-actions {
   opacity: 1;
 }
 
 .project-row-actions button {
+  min-width: 24px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  font-size: 0.75rem;
+  line-height: 1;
   background: none;
-  border: none;
+  border: 1px solid var(--border);
   color: var(--muted);
-  font-size: 0.6rem;
-  padding: 0.1rem 0.2rem;
-  cursor: pointer;
   border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
 }
 
 .project-row-actions button:hover {
   color: var(--text);
-  background: rgba(255, 255, 255, 0.06);
-}
-
-  width: 100%;
+  border-color: var(--border-focus);
 }
 
 .sidebar-content {

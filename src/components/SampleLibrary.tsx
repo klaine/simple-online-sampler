@@ -66,6 +66,7 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
   } = useStore.getState()
 
   const patchImportRef = useRef<HTMLInputElement>(null)
+  const sampleImportRef = useRef<HTMLInputElement>(null)
 
   const handleExportPatch = useCallback((patch: SynthPatch) => {
     const json = JSON.stringify(patch, null, 2)
@@ -717,6 +718,19 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
           )}
           <div className="record-controls">
             <input
+              ref={sampleImportRef}
+              type="file"
+              accept="audio/*,.wav,.mp3,.ogg,.flac,.aif,.aiff,.zip"
+              multiple
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                if (e.target.files?.length) {
+                  void addSamplesToLibrary(Array.from(e.target.files))
+                }
+                e.target.value = ''
+              }}
+            />
+            <input
               ref={patchImportRef}
               type="file"
               accept=".ospatch"
@@ -724,6 +738,7 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
               style={{ display: 'none' }}
               onChange={(e) => { handleImportPatch(e.target.files); e.target.value = '' }}
             />
+            <button type="button" onClick={() => sampleImportRef.current?.click()}>Import Samples</button>
             <button type="button" onClick={() => patchImportRef.current?.click()} title="Import .ospatch file">Import Patch</button>
             <button type="button" onClick={() => openRecordDialog()}>Record</button>
             <button type="button" onClick={() => openAutosampleDialog()} title="Automatically sample external MIDI gear">Auto-Sample</button>

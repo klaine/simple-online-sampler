@@ -86,7 +86,6 @@ let _waveformChannelCache: { sampleId: string; channel: Float32Array } | null = 
 function PerfSettingsPanel() {
   return (
     <div className="perf-settings-panel">
-      <h3>Settings</h3>
       <SettingsContent />
     </div>
   )
@@ -98,29 +97,32 @@ function ProjectsPanel() {
   const { createNewProject, switchProject, deleteProject, duplicateProject } = useStore.getState()
 
   return (
-    <div className="projects-panel">
-      <div className="projects-panel-header">
-        <h3>Projects</h3>
-        <button type="button" className="projects-new-btn" onClick={() => void createNewProject()} title="New Project">+ New</button>
-      </div>
-      <div className="projects-list">
-        {projectList.map((p) => (
-          <div
-            key={p.id}
-            className={`project-row${p.id === currentProjectId ? ' active' : ''}`}
-            onClick={() => void switchProject(p.id)}
-          >
-            <span className="project-row-name">{p.name}</span>
-            <span className="project-row-actions">
-              {p.id === currentProjectId && (
-                <button type="button" title="Duplicate" onClick={(e) => { e.stopPropagation(); void duplicateProject() }}>⧉</button>
-              )}
-              <button type="button" title="Delete" onClick={(e) => { e.stopPropagation(); void deleteProject(p.id) }}>✕</button>
-            </span>
+    <aside className="sidebar">
+      <div className="sidebar-content">
+        <section>
+          <div className="projects-list">
+            {projectList.map((p) => (
+              <div
+                key={p.id}
+                className={`project-row${p.id === currentProjectId ? ' active' : ''}`}
+                onClick={() => void switchProject(p.id)}
+              >
+                <span className="project-row-name">{p.name}</span>
+                <span className="project-row-actions">
+                  {p.id === currentProjectId && (
+                    <button type="button" title="Duplicate" onClick={(e) => { e.stopPropagation(); void duplicateProject() }}>⧉</button>
+                  )}
+                  <button type="button" title="Delete" onClick={(e) => { e.stopPropagation(); void deleteProject(p.id) }}>✕</button>
+                </span>
+              </div>
+            ))}
           </div>
-        ))}
+          <div className="record-controls">
+            <button type="button" onClick={() => void createNewProject()}>+ New Project</button>
+          </div>
+        </section>
       </div>
-    </div>
+    </aside>
   )
 }
 
@@ -1444,7 +1446,7 @@ function App() {
           <div className="perf-left" style={{ flex: perfSplitRatio }}>
             <div className="perf-tabs">
               {([
-                ['library', 'Library'],
+                ['library', 'Samples'],
                 ['padEditor', 'Pad Edit'],
                 ['sequencer', 'Sequencer'],
                 ['mixer', 'Mixer'],

@@ -9,6 +9,13 @@ let _startY = 0
 let _moved = false
 const DRAG_THRESHOLD = 8 // px before drag starts
 
+/** Optional list of CSS selectors that should receive touch-drop events (in addition to pads). */
+const DROP_SELECTORS = [
+  '.pad[data-pad-id]',
+  '.chain-insert-slot',
+  '.chain-cell',
+]
+
 export function getTouchDragData(key: string): string | undefined {
   return _data[key]
 }
@@ -46,21 +53,27 @@ function createGhost(label: string, x: number, y: number) {
 
 let _lastHighlighted: Element | null = null
 
-function highlightDropTarget(x: number, y: number) {
-  // Hide ghost temporarily so elementFromPoint sees through it
+function findDropTarget(x: number, y: number): Element | null {
   if (_ghost) _ghost.style.display = 'none'
   const el = document.elementFromPoint(x, y)
   if (_ghost) _ghost.style.display = ''
+  if (!el) return null
+  for (const sel of DROP_SELECTORS) {
+    const match = el.closest(sel)
+    if (match) return match
+  }
+  return null
+}
 
-  // Find closest pad element
-  const padEl = el?.closest('.pad[data-pad-id]') as HTMLElement | null
+function highlightDropTarget(x: number, y: number) {
+  const target = findDropTarget(x, y)
 
-  if (_lastHighlighted && _lastHighlighted !== padEl) {
+  if (_lastHighlighted && _lastHighlighted !== target) {
     (_lastHighlighted as HTMLElement).style.outline = ''
   }
-  if (padEl) {
-    padEl.style.outline = '2px solid rgba(232, 168, 50, 0.7)'
-    _lastHighlighted = padEl
+  if (target) {
+    (target as HTMLElement).style.outline = '2px solid rgba(232, 168, 50, 0.7)'
+    _lastHighlighted = target
   } else {
     _lastHighlighted = null
   }
@@ -125,21 +138,19 @@ export function makeTouchDragHandlers(
     clearHighlight()
 
     // Find drop target
-    if (_ghost) _ghost.style.display = 'none'
-    const el = document.elementFromPoint(touch.clientX, touch.clientY)
+    const target = findDropTarget(touch.clientX, touch.clientY)
+
     if (_ghost) {
       _ghost.remove()
       _ghost = null
     }
 
-    const padEl = el?.closest('.pad[data-pad-id]') as HTMLElement | null
-    if (padEl) {
-      // Dispatch a custom event the PadGrid can listen for
+    if (target) {
       const evt = new CustomEvent('touch-drop', {
         bubbles: true,
         detail: { ..._data },
       })
-      padEl.dispatchEvent(evt)
+      target.dispatchEvent(evt)
     }
 
     _active = false

@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 const sw = /** @type {ServiceWorkerGlobalScope} */ (/** @type {unknown} */ (self))
 
-const CACHE_NAME = 'online-sampler-v3'
+const CACHE_NAME = 'online-sampler-v4'
 
 // Install: skip waiting immediately
 sw.addEventListener('install', () => {

@@ -18,6 +18,7 @@ import {
 } from '../store'
 import { SequencerStep } from './SequencerStep'
 import { PianoRollLane } from './PianoRollLane'
+import { makeTouchDragHandlers } from '../lib/touchDrag'
 
 function ColorPicker({ color, onChange }: { color: string; onChange: (c: string) => void }) {
   const [open, setOpen] = useState(false)
@@ -131,7 +132,38 @@ export function Sequencer() {
 
   const draggedPatternIdRef = useRef<string | null>(null)
   const draggedChainEntryIdRef = useRef<string | null>(null)
+  const chainRowRef = useRef<HTMLDivElement>(null)
   const [fps, setFps] = useState(0)
+
+  // Handle touch-drop events on chain area
+  useEffect(() => {
+    const el = chainRowRef.current
+    if (!el) return
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as Record<string, string> | undefined
+      if (!detail) return
+      const patternId = detail['x-pattern-id']
+      const chainEntryId = detail['x-chain-entry-id']
+      const target = e.target as HTMLElement
+
+      // Determine insert index from data attribute
+      const insertSlot = target.closest('.chain-insert-slot') as HTMLElement | null
+      const chainCell = target.closest('.chain-cell') as HTMLElement | null
+
+      if (insertSlot && patternId) {
+        const idx = Number(insertSlot.dataset.chainIndex ?? 0)
+        void addChainEntryAt(patternId, idx)
+      } else if (chainCell && patternId) {
+        const idx = Number(chainCell.dataset.chainIndex ?? 0)
+        void addChainEntryAt(patternId, idx)
+      } else if (chainCell && chainEntryId) {
+        const targetEntryId = chainCell.dataset.chainEntryId
+        if (targetEntryId) void moveChainEntry(chainEntryId, targetEntryId)
+      }
+    }
+    el.addEventListener('touch-drop', handler)
+    return () => el.removeEventListener('touch-drop', handler)
+  }, [])
 
   // FPS counter (only active when perf stats visible)
   useEffect(() => {
@@ -272,7 +304,7 @@ export function Sequencer() {
           const isActive = sequence.id === activeSequence.id
           const isPlayingPat = sequence.id === playingPatternId
           return (
-            <div
+             <div
               key={sequence.id}
               className={`pattern-chip ${isActive ? 'active' : ''} ${isPlayingPat ? 'playing' : ''}`}
               style={{ borderColor: sequence.color }}
@@ -282,6 +314,7 @@ export function Sequencer() {
                 draggedChainEntryIdRef.current = null
               }}
               onClick={() => useStore.setState({ activeSequenceId: sequence.id })}
+              {...makeTouchDragHandlers({ 'x-pattern-id': sequence.id }, sequence.name)}
             >
               <span className="pattern-color" style={{ background: sequence.color }}></span>
               {patternRenameId === sequence.id ? (
@@ -364,11 +397,12 @@ export function Sequencer() {
               <button type="button" onClick={() => void redoSequencer()} disabled={historyFuture.length === 0}>Redo</button>
             </div>
             <div className="chain-help">Insert slots: drop a pattern on any + between blocks.</div>
-            <div className="chain-row">
+            <div className="chain-row" ref={chainRowRef}>
               {chainWithPatterns.length === 0 && <span className="chain-empty">Drag patterns here</span>}
               <button
                 type="button"
                 className="chain-insert-slot"
+                data-chain-index={0}
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={() => {
                   if (draggedPatternIdRef.current) {
@@ -390,6 +424,8 @@ export function Sequencer() {
                     <div
                       className={`chain-cell ${selectedChainEntryId === entry.id ? 'selected' : ''} ${isPlayingEntry ? 'playing' : ''} ${inLoop ? 'in-loop' : ''}`}
                       style={{ borderColor: pattern.color, background: `${pattern.color}22` }}
+                      data-chain-entry-id={entry.id}
+                      data-chain-index={entryIndex}
                       draggable
                       onDragStart={() => { draggedChainEntryIdRef.current = entry.id; draggedPatternIdRef.current = null }}
                       onClick={() => useStore.setState({ selectedChainEntryId: entry.id })}
@@ -405,6 +441,7 @@ export function Sequencer() {
                           draggedPatternIdRef.current = null
                         }
                       }}
+                      {...makeTouchDragHandlers({ 'x-chain-entry-id': entry.id }, pattern.name)}
                     >
                       <button type="button" className="chain-name" onClick={() => useStore.setState({ activeSequenceId: pattern.id })}>{pattern.name}</button>
                       <label className="chain-repeat">
@@ -424,6 +461,7 @@ export function Sequencer() {
                     <button
                       type="button"
                       className="chain-insert-slot"
+                      data-chain-index={entryIndex + 1}
                       onDragOver={(e) => e.preventDefault()}
                       onDrop={() => {
                         if (draggedPatternIdRef.current) {
