@@ -1881,13 +1881,13 @@ export const useStore = create<AppState>()(
               }),
           ),
         )
+        await audioEngine.unlock()
+
         for (const sampleId of sampleIdsToPrepare) {
           if (audioEngine.hasSample(sampleId)) continue
           const sample = s.sampleMap.get(sampleId)
           if (sample) await audioEngine.registerSample(sample)
         }
-
-        await audioEngine.unlock()
 
         const initialChainIndex =
           s.playbackScope === 'song' && s.project.songLoopStart !== null

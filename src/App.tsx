@@ -251,6 +251,24 @@ function App() {
     void hydrate()
   }, [])
 
+  // --- Eagerly unlock AudioContext on first user gesture (iOS requires this) ---
+  useEffect(() => {
+    const onGesture = () => {
+      void audioEngine.unlock()
+      document.removeEventListener('touchstart', onGesture, true)
+      document.removeEventListener('mousedown', onGesture, true)
+      document.removeEventListener('keydown', onGesture, true)
+    }
+    document.addEventListener('touchstart', onGesture, true)
+    document.addEventListener('mousedown', onGesture, true)
+    document.addEventListener('keydown', onGesture, true)
+    return () => {
+      document.removeEventListener('touchstart', onGesture, true)
+      document.removeEventListener('mousedown', onGesture, true)
+      document.removeEventListener('keydown', onGesture, true)
+    }
+  }, [])
+
   // --- Auto-detect performance layout for landscape mobile ---
   useEffect(() => {
     // Only auto-detect if user hasn't explicitly set a layout mode

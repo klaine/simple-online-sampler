@@ -21,6 +21,14 @@ const velocityFromMouseEvent = (event: React.MouseEvent<HTMLElement>): number =>
   return Math.max(0.2, ratio)
 }
 
+const velocityFromTouchEvent = (event: React.TouchEvent<HTMLElement>): number => {
+  const touch = event.touches[0]
+  if (!touch) return 0.9
+  const rect = event.currentTarget.getBoundingClientRect()
+  const ratio = 1 - Math.max(0, Math.min(1, (touch.clientY - rect.top) / rect.height))
+  return Math.max(0.2, ratio)
+}
+
 export function PadGrid() {
   const samples = useStore((s) => s.samples)
   const selectedPadId = useStore((s) => s.selectedPadId)
@@ -235,7 +243,7 @@ export function PadGrid() {
                 if (padHoldRecordEnabled && !pad.settings.sampleId) {
                   startPadHoldRecord(pad.id)
                 } else {
-                  triggerPad(pad, 0.9)
+                  triggerPad(pad, velocityFromTouchEvent(e))
                 }
               }}
               onTouchEnd={(e) => {
