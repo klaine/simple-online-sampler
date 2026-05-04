@@ -1364,6 +1364,19 @@ select.tb-led-value {
   gap: 0.2rem;
 }
 
+.perf-left > .sequencer .lane-label {
+  font-size: 0.57rem;
+}
+
+.perf-left > .sequencer .lane-action {
+  font-size: 0.57rem;
+}
+
+.perf-left > .sequencer .lane-head,
+.perf-left > .sequencer .step-head {
+  font-size: 0.57rem;
+}
+
 .perf-left > .sequencer .sequencer-primary-actions button {
   padding: 0.15rem 0.3rem;
   font-size: 0.68rem;

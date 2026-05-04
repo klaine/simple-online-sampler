@@ -12,6 +12,9 @@ import {
   selectDisplayedPads,
 } from '../store'
 
+// Guard: suppress mouse events that follow a recent touch (prevents double-trigger)
+let _lastTouchTime = 0
+
 const velocityFromMouseEvent = (event: React.MouseEvent<HTMLElement>): number => {
   const rect = event.currentTarget.getBoundingClientRect()
   const ratio = 1 - Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height))
@@ -199,6 +202,7 @@ export function PadGrid() {
                 e.dataTransfer.setData('application/x-online-sampler-pad-id', pad.id)
               }}
               onMouseDown={(e) => {
+                if (Date.now() - _lastTouchTime < 500) return
                 useStore.setState({ selectedPadId: pad.id })
                 if (padHoldRecordEnabled && !pad.settings.sampleId) {
                   startPadHoldRecord(pad.id)
@@ -207,6 +211,7 @@ export function PadGrid() {
                 }
               }}
               onMouseUp={() => {
+                if (Date.now() - _lastTouchTime < 500) return
                 if (padHoldRecordingPadId === pad.id) {
                   stopPadHoldRecord()
                 } else {
@@ -215,6 +220,7 @@ export function PadGrid() {
                 }
               }}
               onMouseLeave={() => {
+                if (Date.now() - _lastTouchTime < 500) return
                 if (padHoldRecordingPadId === pad.id) {
                   stopPadHoldRecord()
                 } else {
@@ -224,6 +230,7 @@ export function PadGrid() {
               }}
               onTouchStart={(e) => {
                 e.preventDefault()
+                _lastTouchTime = Date.now()
                 useStore.setState({ selectedPadId: pad.id })
                 if (padHoldRecordEnabled && !pad.settings.sampleId) {
                   startPadHoldRecord(pad.id)

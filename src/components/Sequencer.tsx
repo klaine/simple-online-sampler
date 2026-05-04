@@ -159,7 +159,8 @@ export function Sequencer() {
 
   const fitSteps = layoutMode === 'wide' || layoutMode === 'performance' || visibleSequence.lengthSteps <= 16
   const stepColSize = fitSteps ? 'minmax(0, 1fr)' : 'minmax(24px, 1fr)'
-  const sequenceGridColumns = `148px repeat(3, 26px) repeat(${visibleSequence.lengthSteps}, ${stepColSize})`
+  const laneLabelWidth = layoutMode === 'performance' ? 172 : 148
+  const sequenceGridColumns = `${laneLabelWidth}px repeat(3, 26px) repeat(${visibleSequence.lengthSteps}, ${stepColSize})`
   const stepGridColumns = `repeat(${visibleSequence.lengthSteps}, ${stepColSize})`
   const chainWithPatterns = project.songChain.flatMap((entry) => {
     const pattern = project.sequences.find((seq) => seq.id === entry.patternId)

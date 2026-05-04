@@ -11,6 +11,11 @@ import { uid } from '../lib/utils'
 import { looksLikeDrumKit, mapToStandardKit } from '../lib/drumKitMap'
 import { makeTouchDragHandlers } from '../lib/touchDrag'
 
+// Module-level state survives component unmount (perf mode tab switches)
+let _expandedChops = new Set<string>()
+let _expandedGroups = new Set<string>()
+let _expandedVeloGroups = new Set<string>()
+
 export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
   const sampleQuery = useStore((s) => s.sampleQuery)
   const sampleSort = useStore((s) => s.sampleSort)
@@ -21,9 +26,9 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
   const synthPatches = useStore((s) => s.synthPatches)
 
   const [dropActive, setDropActive] = useState(false)
-  const [expandedChops, setExpandedChops] = useState<Set<string>>(new Set())
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
-  const [expandedVeloGroups, setExpandedVeloGroups] = useState<Set<string>>(new Set())
+  const [expandedChops, setExpandedChops] = useState<Set<string>>(() => _expandedChops)
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(() => _expandedGroups)
+  const [expandedVeloGroups, setExpandedVeloGroups] = useState<Set<string>>(() => _expandedVeloGroups)
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null)
   const [editingGroupName, setEditingGroupName] = useState('')
   const [editingGroupBus, setEditingGroupBus] = useState<BusId>('A')
@@ -199,6 +204,7 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
       const next = new Set(prev)
       if (next.has(sampleId)) next.delete(sampleId)
       else next.add(sampleId)
+      _expandedChops = next
       return next
     })
   }, [])
@@ -208,6 +214,7 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
       const next = new Set(prev)
       if (next.has(groupKey)) next.delete(groupKey)
       else next.add(groupKey)
+      _expandedGroups = next
       return next
     })
   }, [])
@@ -217,6 +224,7 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
       const next = new Set(prev)
       if (next.has(key)) next.delete(key)
       else next.add(key)
+      _expandedVeloGroups = next
       return next
     })
   }, [])

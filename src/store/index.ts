@@ -1384,8 +1384,8 @@ export const useStore = create<AppState>()(
 
         // Synchronous fast path: unlock only if context is suspended (rare after first gesture)
         const ctx = audioEngine.getContextIfReady()
-        if (ctx && ctx.state !== 'running') {
-          // Suspended context — fall back to async path
+        if (!ctx || ctx.state !== 'running') {
+          // No context yet or suspended — use async path to unlock + decode + play
           void (async () => {
             await audioEngine.unlock()
             for (const sid of neededSampleIds) {
