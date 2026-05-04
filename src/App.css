@@ -1445,6 +1445,28 @@ select.tb-led-value {
   font-size: 0.68rem;
 }
 
+.perf-left > .sequencer .chain-insert-slot {
+  min-width: 44px;
+  height: 44px;
+  font-size: 1rem;
+}
+
+.perf-left > .sequencer .chain-cell {
+  min-height: 44px;
+  padding: 0.3rem 0.5rem;
+}
+
+.perf-left > .sequencer .chain-row {
+  min-height: 50px;
+  align-items: stretch;
+}
+
+.perf-left > .sequencer .chain-empty {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+
 .perf-left > .sequencer .sequencer-primary-actions {
   gap: 0.2rem;
 }

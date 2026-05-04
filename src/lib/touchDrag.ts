@@ -14,6 +14,8 @@ const DROP_SELECTORS = [
   '.pad[data-pad-id]',
   '.chain-insert-slot',
   '.chain-cell',
+  '.chain-grid',
+  '.chain-empty',
 ]
 
 export function getTouchDragData(key: string): string | undefined {

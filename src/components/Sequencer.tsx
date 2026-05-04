@@ -132,12 +132,12 @@ export function Sequencer() {
 
   const draggedPatternIdRef = useRef<string | null>(null)
   const draggedChainEntryIdRef = useRef<string | null>(null)
-  const chainRowRef = useRef<HTMLDivElement>(null)
+  const chainGridRef = useRef<HTMLDivElement>(null)
   const [fps, setFps] = useState(0)
 
   // Handle touch-drop events on chain area
   useEffect(() => {
-    const el = chainRowRef.current
+    const el = chainGridRef.current
     if (!el) return
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail as Record<string, string> | undefined
@@ -152,13 +152,17 @@ export function Sequencer() {
 
       if (insertSlot && patternId) {
         const idx = Number(insertSlot.dataset.chainIndex ?? 0)
-        void addChainEntryAt(patternId, idx)
+        void useStore.getState().addChainEntryAt(patternId, idx)
       } else if (chainCell && patternId) {
         const idx = Number(chainCell.dataset.chainIndex ?? 0)
-        void addChainEntryAt(patternId, idx)
+        void useStore.getState().addChainEntryAt(patternId, idx)
       } else if (chainCell && chainEntryId) {
         const targetEntryId = chainCell.dataset.chainEntryId
-        if (targetEntryId) void moveChainEntry(chainEntryId, targetEntryId)
+        if (targetEntryId) void useStore.getState().moveChainEntry(chainEntryId, targetEntryId)
+      } else if (patternId) {
+        // Dropped on chain area but not on a specific slot — append to end
+        const chainLen = useStore.getState().project?.songChain.length ?? 0
+        void useStore.getState().addChainEntryAt(patternId, chainLen)
       }
     }
     el.addEventListener('touch-drop', handler)
@@ -351,7 +355,7 @@ export function Sequencer() {
         })}
       </div>
 
-      <div className={`chain-grid ${showSongChain ? '' : 'collapsed'}`}>
+      <div className={`chain-grid ${showSongChain ? '' : 'collapsed'}`} ref={chainGridRef}>
         <div className="chain-grid-head">
           <h3>Song Chain</h3>
           <button
@@ -397,7 +401,7 @@ export function Sequencer() {
               <button type="button" onClick={() => void redoSequencer()} disabled={historyFuture.length === 0}>Redo</button>
             </div>
             <div className="chain-help">Insert slots: drop a pattern on any + between blocks.</div>
-            <div className="chain-row" ref={chainRowRef}>
+            <div className="chain-row">
               {chainWithPatterns.length === 0 && <span className="chain-empty">Drag patterns here</span>}
               <button
                 type="button"
