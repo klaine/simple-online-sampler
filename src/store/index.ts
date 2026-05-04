@@ -1382,12 +1382,14 @@ export const useStore = create<AppState>()(
           if (layer.sampleId) neededSampleIds.push(layer.sampleId)
         }
 
-        // Synchronous fast path: unlock only if context is suspended (rare after first gesture)
+        // Start unlock synchronously in the user gesture callstack (critical for iOS)
+        const unlockP = audioEngine.unlockAndPrepare()
+
         const ctx = audioEngine.getContextIfReady()
         if (!ctx || ctx.state !== 'running') {
           // No context yet or suspended — use async path to unlock + decode + play
           void (async () => {
-            await audioEngine.unlock()
+            await unlockP
             for (const sid of neededSampleIds) {
               if (!audioEngine.hasSample(sid)) {
                 const sample = get().sampleMap.get(sid)
@@ -1398,11 +1400,11 @@ export const useStore = create<AppState>()(
           })()
         } else {
           // Hot path: check if all needed samples are loaded
-          audioEngine.unlockSync()
           const missing = neededSampleIds.filter((sid) => !audioEngine.hasSample(sid))
           if (missing.length > 0) {
             // Must go async to decode missing buffers
             void (async () => {
+              await unlockP
               for (const sid of missing) {
                 const sample = get().sampleMap.get(sid)
                 if (sample) await audioEngine.registerSample(sample)

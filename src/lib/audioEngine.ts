@@ -591,42 +591,50 @@ export class AudioEngine {
   // iOS silent switch workaround: playing a tiny <audio> element promotes the
   // audio session from "ambient" (muted by silent switch) to "playback".
   private _iosAudioUnlocked = false
-  private async unlockIOSAudio(): Promise<void> {
-    if (this._iosAudioUnlocked) return
-    // Only needed on iOS (iPhone/iPad/iPod) — all iOS browsers use WebKit
+  private _iosUnlockPromise: Promise<void> | null = null
+
+  /** Kick off iOS audio unlock synchronously (must be in user gesture callstack) */
+  private startIOSAudioUnlock(): void {
+    if (this._iosAudioUnlocked || this._iosUnlockPromise) return
     const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) ||
       (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
     if (!isIOS) { this._iosAudioUnlocked = true; return }
-    try {
-      // Tiny 1-sample silent WAV (44 bytes header + 2 bytes data = 46 bytes)
-      const silentWav = 'data:audio/wav;base64,UklGRiYAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQIAAAAAAA=='
-      const audio = new Audio(silentWav)
-      audio.volume = 0.01
-      audio.setAttribute('playsinline', '')
-      await audio.play()
+    // Tiny 1-sample silent WAV
+    const silentWav = 'data:audio/wav;base64,UklGRiYAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQIAAAAAAA=='
+    const audio = new Audio(silentWav)
+    audio.volume = 0.01
+    audio.setAttribute('playsinline', '')
+    // Start play synchronously in gesture — store the promise for awaiting later
+    this._iosUnlockPromise = audio.play().then(() => {
       this._iosAudioUnlocked = true
-    } catch {
-      // Ignore — user gesture may not be active
-    }
+      this._iosUnlockPromise = null
+    }).catch(() => {
+      this._iosUnlockPromise = null
+    })
+  }
+
+  /** Must be called synchronously inside a user gesture handler.
+   *  Kicks off context creation + resume + iOS audio unlock in the same callstack.
+   *  Returns a promise that resolves when everything is ready. */
+  unlockAndPrepare(): Promise<void> {
+    // All of these must start synchronously within the gesture:
+    this.startIOSAudioUnlock()
+    const ctx = this.getContext()
+    const resumeP = ctx.state !== 'running' ? ctx.resume() : Promise.resolve()
+    // Return a promise that waits for everything to settle
+    return Promise.all([
+      this._iosUnlockPromise ?? Promise.resolve(),
+      resumeP,
+    ]).then(() => this.flushPendingDecodes())
   }
 
   async unlock(): Promise<void> {
-    await this.unlockIOSAudio()
-    const ctx = this.getContext()
-    if (ctx.state !== 'running') {
-      await ctx.resume()
-    }
-    // Flush any samples queued while context was suspended (Safari)
-    await this.flushPendingDecodes()
+    return this.unlockAndPrepare()
   }
 
   /** Synchronous unlock — resumes context without awaiting (fire-and-forget) */
   unlockSync(): void {
-    void this.unlockIOSAudio()
-    const ctx = this.getContext()
-    if (ctx.state !== 'running') {
-      void ctx.resume().then(() => this.flushPendingDecodes())
-    }
+    void this.unlockAndPrepare()
   }
 
   /** Return the AudioContext if already created, or null */
