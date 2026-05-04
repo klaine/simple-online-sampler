@@ -617,15 +617,22 @@ export class AudioEngine {
    *  Kicks off context creation + resume + iOS audio unlock in the same callstack.
    *  Returns a promise that resolves when everything is ready. */
   unlockAndPrepare(): Promise<void> {
-    // All of these must start synchronously within the gesture:
-    this.startIOSAudioUnlock()
-    const ctx = this.getContext()
-    const resumeP = ctx.state !== 'running' ? ctx.resume() : Promise.resolve()
-    // Return a promise that waits for everything to settle
-    return Promise.all([
-      this._iosUnlockPromise ?? Promise.resolve(),
-      resumeP,
-    ]).then(() => this.flushPendingDecodes())
+    try {
+      // All of these must start synchronously within the gesture:
+      this.startIOSAudioUnlock()
+      const ctx = this.getContext()
+      const resumeP = ctx.state !== 'running' ? ctx.resume().catch(() => {}) : Promise.resolve()
+      // Return a promise that waits for everything to settle
+      return Promise.all([
+        this._iosUnlockPromise ?? Promise.resolve(),
+        resumeP,
+      ]).then(() => this.flushPendingDecodes()).catch((e) => {
+        console.warn('[audioEngine] unlockAndPrepare settle error:', e)
+      })
+    } catch (e) {
+      console.warn('[audioEngine] unlockAndPrepare sync error:', e)
+      return Promise.resolve()
+    }
   }
 
   async unlock(): Promise<void> {

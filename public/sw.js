@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 const sw = /** @type {ServiceWorkerGlobalScope} */ (/** @type {unknown} */ (self))
 
-const CACHE_NAME = 'online-sampler-v1'
+const CACHE_NAME = 'online-sampler-v2'
 
 // Pre-cache essential shell on install
 sw.addEventListener('install', (event) => {

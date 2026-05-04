@@ -1849,6 +1849,7 @@ export const useStore = create<AppState>()(
       },
 
       startTransport: async () => {
+        try {
         const s = get()
         if (!s.project || !s.activeSequenceId || s.isPlaying) return
 
@@ -2066,12 +2067,18 @@ export const useStore = create<AppState>()(
           if (message.data.type === 'tick') tick()
         }
         worker.postMessage({ type: 'start', intervalMs: schedulerMs })
+        } catch (e) {
+          console.error('[startTransport] failed:', e)
+          set((d) => { d.isPlaying = false })
+        }
       },
 
       togglePlayPause: () => {
         if (get().isPlaying) {
           get().stopTransport()
         } else {
+          // Kick off audio unlock synchronously in gesture callstack (iOS requirement)
+          audioEngine.unlockAndPrepare()
           void get().startTransport()
         }
       },
