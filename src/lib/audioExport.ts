@@ -1,6 +1,6 @@
 import type { BusId, EffectSlot, FilterType, Pad, PadSettings, Project, SampleAsset, SampleLayer, SequenceEvent, SequencePattern } from '../types'
 import { BUS_IDS } from '../types'
-import { buildEffectChain, getSCWorkletBlobUrl } from './audioEngine'
+import { buildEffectChain, getSCWorkletUrl } from './audioEngine'
 import { createSynthVoice } from './synthEngine'
 import { encodeWav } from './wavEncode'
 import type { WavLoopPoints } from './wavEncode'
@@ -294,7 +294,7 @@ export const renderProjectAudioWav = async (
   const needsSCWorklet = allEffectSlots.some((s) => s.type === 'sidechain-compressor' && s.enabled)
   if (needsSCWorklet && 'audioWorklet' in offline) {
     try {
-      await offline.audioWorklet.addModule(getSCWorkletBlobUrl())
+      await offline.audioWorklet.addModule(getSCWorkletUrl())
     } catch {
       console.warn('[audioExport] Failed to register sidechain worklet on OfflineAudioContext — falling back to regular compressor')
     }

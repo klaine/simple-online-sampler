@@ -114,12 +114,12 @@ class SidechainCompressorProcessor extends AudioWorkletProcessor {
 registerProcessor('sidechain-compressor', SidechainCompressorProcessor);
 `
 
-let scWorkletBlobUrl: string | null = null
-function getSCWorkletBlobUrl(): string {
-  if (!scWorkletBlobUrl) {
-    scWorkletBlobUrl = URL.createObjectURL(new Blob([SC_WORKLET_SOURCE], { type: 'application/javascript' }))
+let scWorkletDataUrl: string | null = null
+function getSCWorkletUrl(): string {
+  if (!scWorkletDataUrl) {
+    scWorkletDataUrl = 'data:application/javascript,' + encodeURIComponent(SC_WORKLET_SOURCE)
   }
-  return scWorkletBlobUrl
+  return scWorkletDataUrl
 }
 
 // ---------------------------------------------------------------------------
@@ -509,7 +509,7 @@ export class AudioEngine {
   private async registerWorklet(): Promise<void> {
     if (!this.ctx || this.workletReady) return
     try {
-      await this.ctx.audioWorklet.addModule(getSCWorkletBlobUrl())
+      await this.ctx.audioWorklet.addModule(getSCWorkletUrl())
       this.workletReady = true
     } catch (e) {
       console.warn('Failed to register sidechain compressor worklet:', e)
@@ -593,13 +593,15 @@ export class AudioEngine {
     if (ctx.state !== 'running') {
       await ctx.resume()
     }
+    // Flush any samples queued while context was suspended (Safari)
+    await this.flushPendingDecodes()
   }
 
   /** Synchronous unlock — resumes context without awaiting (fire-and-forget) */
   unlockSync(): void {
     const ctx = this.getContext()
     if (ctx.state !== 'running') {
-      void ctx.resume()
+      void ctx.resume().then(() => this.flushPendingDecodes())
     }
   }
 
@@ -696,11 +698,37 @@ export class AudioEngine {
     }
   }
 
+  // Queue for samples that failed decoding on a suspended context (Safari)
+  private pendingDecodes: Map<string, ArrayBuffer> = new Map()
+
+  private async flushPendingDecodes(): Promise<void> {
+    if (this.pendingDecodes.size === 0) return
+    const ctx = this.getContext()
+    const entries = [...this.pendingDecodes.entries()]
+    this.pendingDecodes.clear()
+    for (const [id, buf] of entries) {
+      if (this.buffers.has(id)) continue // already decoded
+      try {
+        const audioBuffer = await ctx.decodeAudioData(buf.slice(0))
+        this.buffers.set(id, audioBuffer)
+      } catch (e) {
+        console.warn('Failed to decode pending sample', id, e)
+      }
+    }
+  }
+
   async registerSample(sample: SampleAsset): Promise<void> {
     const ctx = this.getContext()
     const buffer = await sample.blob.arrayBuffer()
-    const audioBuffer = await ctx.decodeAudioData(buffer.slice(0))
-    this.buffers.set(sample.id, audioBuffer)
+    try {
+      const audioBuffer = await ctx.decodeAudioData(buffer.slice(0))
+      this.buffers.set(sample.id, audioBuffer)
+    } catch (e) {
+      // Safari may fail decodeAudioData on a suspended context —
+      // queue the raw buffer and decode after unlock/resume
+      console.warn('decodeAudioData failed (context may be suspended), queueing for later', e)
+      this.pendingDecodes.set(sample.id, buffer)
+    }
   }
 
   unregisterSample(sampleId: string): void {
@@ -1665,6 +1693,6 @@ export class AudioEngine {
 }
 
 // Export shared helpers for audioExport.ts
-export { buildEffectChain, getSCWorkletBlobUrl, type EffectChainNode }
+export { buildEffectChain, getSCWorkletUrl, type EffectChainNode }
 
 export const audioEngine = new AudioEngine()

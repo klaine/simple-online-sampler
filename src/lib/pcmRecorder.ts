@@ -6,7 +6,8 @@
 /** Sample rate used by the recorder AudioContext — matches system default for zero-resampling */
 export let RECORDER_SAMPLE_RATE = 44_100
 
-// AudioWorklet processor source — inlined as a Blob URL to avoid build/CORS issues
+// AudioWorklet processor source — inlined as a data: URI for Safari compatibility
+// (Safari < 17 doesn't support Blob URLs for audioWorklet.addModule)
 const WORKLET_SRC = `
 class RecorderWorkletProcessor extends AudioWorkletProcessor {
   constructor() {
@@ -30,8 +31,7 @@ class RecorderWorkletProcessor extends AudioWorkletProcessor {
 }
 registerProcessor('recorder-worklet', RecorderWorkletProcessor);
 `
-const workletBlob = new Blob([WORKLET_SRC], { type: 'application/javascript' })
-export const recorderWorkletUrl = URL.createObjectURL(workletBlob)
+export const recorderWorkletUrl = 'data:application/javascript,' + encodeURIComponent(WORKLET_SRC)
 
 export interface PcmRecorderSession {
   stream: MediaStream

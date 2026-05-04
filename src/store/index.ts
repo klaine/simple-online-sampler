@@ -3611,10 +3611,8 @@ export const useStore = create<AppState>()(
 
             // Register worklet on main context once
             if (!_holdRecWorkletRegistered) {
-              const blob = new Blob([HOLD_REC_WORKLET_SRC], { type: 'application/javascript' })
-              const url = URL.createObjectURL(blob)
+              const url = 'data:application/javascript,' + encodeURIComponent(HOLD_REC_WORKLET_SRC)
               await ctx.audioWorklet.addModule(url)
-              URL.revokeObjectURL(url)
               _holdRecWorkletRegistered = true
             }
             // Guard: recording may have been stopped while awaiting addModule

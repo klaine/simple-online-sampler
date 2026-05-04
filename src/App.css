@@ -23,7 +23,7 @@
   overflow: hidden;
   grid-template-rows: auto 1fr;
   gap: 0.3rem;
-  padding: 0.3rem 0.5rem 0;
+  padding: 0.3rem 0.5rem env(safe-area-inset-bottom, 0);
   max-width: 100vw;
   box-sizing: border-box;
 }
@@ -42,11 +42,16 @@
 }
 
 /* Prevent body scroll in performance mode (iOS Safari) */
-body:has(.app-perf-layout) {
-  overflow: hidden;
-  position: fixed;
-  width: 100%;
+body:has(.app-perf-layout),
+body:has(.app-perf-layout) > #root {
   height: 100%;
+  max-height: 100%;
+  overflow: hidden;
+}
+
+html:has(.app-perf-layout) {
+  height: 100%;
+  overflow: hidden;
 }
 
 .app-alt-layout .studio-layout {
