@@ -774,6 +774,15 @@ export class AudioEngine {
     this.buffers.delete(sampleId)
   }
 
+  /** Remove cached AudioBuffers for samples no longer assigned to any pad */
+  pruneUnusedBuffers(usedSampleIds: Set<string>): void {
+    for (const id of this.buffers.keys()) {
+      if (!usedSampleIds.has(id)) {
+        this.buffers.delete(id)
+      }
+    }
+  }
+
   // --- Mixer control methods ---
 
   updateBus(busId: BusId, bus: MixBus, anySoloed: boolean): void {

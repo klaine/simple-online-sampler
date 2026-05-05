@@ -1190,6 +1190,31 @@ export const useStore = create<AppState>()(
       return touched
     }
 
+    // Debounced cleanup of unused AudioBuffers and stale effect chains (runs 2s after last pad assignment)
+    let _pruneTimer: ReturnType<typeof setTimeout> | null = null
+    const schedulePruneBuffers = () => {
+      if (_pruneTimer) clearTimeout(_pruneTimer)
+      _pruneTimer = setTimeout(() => {
+        _pruneTimer = null
+        const state = get()
+        if (!state.project) return
+        const usedIds = new Set<string>()
+        for (const pad of state.project.pads) {
+          if (pad.settings.sampleId) usedIds.add(pad.settings.sampleId)
+          if (pad.settings.layers) {
+            for (const l of pad.settings.layers) {
+              if (l.sampleId) usedIds.add(l.sampleId)
+            }
+          }
+          // Dispose pad effect chains for pads that are no longer synth
+          if (pad.settings.source !== 'synth') {
+            audioEngine.disposePadEffectChain(pad.id)
+          }
+        }
+        audioEngine.pruneUnusedBuffers(usedIds)
+      }, 2000)
+    }
+
     const historySnapshotFrom = (state: Project, sequenceId: string | null): SequencerHistorySnapshot => ({
       sequences: state.sequences,
       songChain: state.songChain,
@@ -1366,6 +1391,7 @@ export const useStore = create<AppState>()(
 
       saveProject: async (next: Project) => {
         await persistProject(next)
+        schedulePruneBuffers()
       },
 
       saveProjectLight: (next: Project, flushImmediately = false) => {
@@ -1488,6 +1514,8 @@ export const useStore = create<AppState>()(
           s.copiedChainPatternId = null
           s.samples = allSamples
           s.sampleMap = new Map(allSamples.map((sample) => [sample.id, sample]))
+          s.libraryWavePeaks = {}
+          s.waveformPeaks = []
         })
         audioEngine.setBpm(loaded.bpm)
         audioEngine.setPolyphony(loaded.polyphony)

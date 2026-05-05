@@ -261,7 +261,7 @@ function App() {
   const waveformPeaks = useStore((s) => s.waveformPeaks)
   const waveformZoom = useStore((s) => s.waveformZoom)
   const trimDraft = useStore((s) => s.trimDraft)
-  const libraryWavePeaks = useStore((s) => s.libraryWavePeaks)
+
 
   const selectedPad = useStore(selectSelectedPad)
   const selectedLayer = useStore(selectSelectedLayer)
@@ -643,49 +643,55 @@ function App() {
   // --- Library waveform peaks ---
   useEffect(() => {
     if (!showLibraryWaveforms || isPlaying) return
-    const missing = filteredSamples.filter((s) => !libraryWavePeaks[s.id]).slice(0, 8)
-    if (missing.length === 0) return
 
     let cancelled = false
     const buildPeaks = async () => {
-      const nextEntries: Array<[string, number[]]> = []
-      const bucketCount = 112
-      const decodeContext = new AudioContext()
-      for (const sample of missing) {
-        if (cancelled) break
-        try {
-          const cached = await db.getWaveformPeaksByHash(sample.hash, bucketCount)
-          if (cached) { nextEntries.push([sample.id, cached]); continue }
-          const buffer = await decodeContext.decodeAudioData(await sample.blob.arrayBuffer())
-          const channel = buffer.getChannelData(0)
-          const bucketSize = Math.max(16, Math.floor(channel.length / bucketCount))
-          const peaks = Array.from({ length: bucketCount }, (_, i) => {
-            const start = i * bucketSize
-            const end = Math.min(channel.length, start + bucketSize)
-            let max = 0
-            for (let c = start; c < end; c++) max = Math.max(max, Math.abs(channel[c]))
-            return max
+      while (!cancelled) {
+        const currentPeaks = useStore.getState().libraryWavePeaks
+        const missing = filteredSamples.filter((s) => !currentPeaks[s.id]).slice(0, 8)
+        if (missing.length === 0) break
+
+        const nextEntries: Array<[string, number[]]> = []
+        const bucketCount = 112
+        const decodeContext = new AudioContext()
+        for (const sample of missing) {
+          if (cancelled) break
+          try {
+            const cached = await db.getWaveformPeaksByHash(sample.hash, bucketCount)
+            if (cached) { nextEntries.push([sample.id, cached]); continue }
+            const buffer = await decodeContext.decodeAudioData(await sample.blob.arrayBuffer())
+            const channel = buffer.getChannelData(0)
+            const bucketSize = Math.max(16, Math.floor(channel.length / bucketCount))
+            const peaks = Array.from({ length: bucketCount }, (_, i) => {
+              const start = i * bucketSize
+              const end = Math.min(channel.length, start + bucketSize)
+              let max = 0
+              for (let c = start; c < end; c++) max = Math.max(max, Math.abs(channel[c]))
+              return max
+            })
+            await db.putWaveformPeaks({
+              key: `${sample.hash}:${bucketCount}`, sampleId: sample.id, hash: sample.hash,
+              bucketCount, peaks, updatedAt: Date.now(),
+            })
+            nextEntries.push([sample.id, peaks])
+          } catch { nextEntries.push([sample.id, []]) }
+        }
+        void decodeContext.close().catch(() => undefined)
+        if (!cancelled && nextEntries.length > 0) {
+          useStore.setState((s) => {
+            const updated = { ...s.libraryWavePeaks }
+            nextEntries.forEach(([id, peaks]) => { updated[id] = peaks })
+            return { libraryWavePeaks: updated }
           })
-          await db.putWaveformPeaks({
-            key: `${sample.hash}:${bucketCount}`, sampleId: sample.id, hash: sample.hash,
-            bucketCount, peaks, updatedAt: Date.now(),
-          })
-          nextEntries.push([sample.id, peaks])
-        } catch { nextEntries.push([sample.id, []]) }
-      }
-      void decodeContext.close().catch(() => undefined)
-      if (!cancelled && nextEntries.length > 0) {
-        useStore.setState((s) => {
-          const updated = { ...s.libraryWavePeaks }
-          nextEntries.forEach(([id, peaks]) => { updated[id] = peaks })
-          return { libraryWavePeaks: updated }
-        })
+        }
+        // Small yield before next batch to keep UI responsive
+        await new Promise((r) => setTimeout(r, 50))
       }
     }
 
     void buildPeaks()
     return () => { cancelled = true }
-  }, [filteredSamples, showLibraryWaveforms, libraryWavePeaks, isPlaying])
+  }, [filteredSamples, showLibraryWaveforms, isPlaying]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // --- Sync trimDraft from selected pad/layer ---
   useEffect(() => {
@@ -754,8 +760,8 @@ function App() {
     }
     let cancelled = false
     const decode = async () => {
+      const context = new AudioContext()
       try {
-        const context = new AudioContext()
         const buffer = await context.decodeAudioData(await selectedSample.blob.arrayBuffer())
         const channel = buffer.getChannelData(0)
         // Cache full-res channel for zoom
@@ -769,10 +775,11 @@ function App() {
           for (let c = start; c < end; c++) max = Math.max(max, Math.abs(channel[c]))
           return max
         })
-        await context.close()
         if (!cancelled) useStore.setState({ waveformPeaks: peaks })
       } catch {
         if (!cancelled) useStore.setState({ waveformPeaks: [] })
+      } finally {
+        void context.close().catch(() => undefined)
       }
     }
     void decode()
