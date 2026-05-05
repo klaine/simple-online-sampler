@@ -113,6 +113,17 @@ export function PadGrid() {
   const [bankDraft, setBankDraft] = useState('')
   const bankNames = useStore((s) => s.project?.bankNames)
 
+  // Derive which banks have active sequencer hits (for cross-bank flash on bank buttons)
+  const hitBanks = useMemo(() => {
+    if (!project || sequencedPadHits.size === 0) return new Set<number>()
+    const banks = new Set<number>()
+    for (const padId of sequencedPadHits) {
+      const pad = project.pads.find((p) => p.id === padId)
+      if (pad !== undefined) banks.add(pad.bank)
+    }
+    return banks
+  }, [project, sequencedPadHits])
+
   const clearBankSwitchTimer = useCallback(() => {
     if (bankSwitchTimer.current) {
       clearTimeout(bankSwitchTimer.current)
@@ -152,7 +163,7 @@ export function PadGrid() {
           <button
             key={i}
             type="button"
-            className={i === activeBank ? 'active' : ''}
+            className={`${i === activeBank ? 'active' : ''} ${hitBanks.has(i) && i !== activeBank ? 'bank-hit' : ''}`}
             onClick={() => useStore.setState({ activeBank: i })}
             onDoubleClick={() => {
               const name = bankNames?.[i] ?? `Bank ${i + 1}`

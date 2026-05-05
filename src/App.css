@@ -1714,6 +1714,12 @@ select.tb-led-value {
   box-shadow: 0 0 6px var(--accent-glow);
 }
 
+.bank-nav button.bank-hit {
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 4px var(--accent-glow);
+}
+
 .bank-nav button {
   background: var(--surface-inset);
   border: 1px solid var(--border);
