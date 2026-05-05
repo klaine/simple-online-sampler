@@ -21,7 +21,7 @@ export interface LcdkPadMapping {
 export interface LcdkPatternStep {
   padIndex: number       // 0–15
   step: number           // 0–15
-  velocity: number       // 0–1 (normalized from 0–127)
+  velocity: number       // 1–127 (MIDI velocity)
 }
 
 export interface LcdkPattern {
@@ -149,9 +149,9 @@ export function parseLcdk(jsonString: string, filename: string): LcdkResult | nu
       if (!pat.pattern_Note || !pat.pattern_Vel) continue
 
       const steps: LcdkPatternStep[] = []
-      // Layout: 16 header values + 16 pads × 16 steps = 272
+      // Layout: 16 pads × 16 steps (first 256 entries), remaining 16 are unused padding
       for (let padIdx = 0; padIdx < 16; padIdx++) {
-        const offset = 16 + padIdx * 16
+        const offset = padIdx * 16
         for (let step = 0; step < 16; step++) {
           const noteVal = pat.pattern_Note[offset + step]
           if (noteVal > 0) {
@@ -159,7 +159,7 @@ export function parseLcdk(jsonString: string, filename: string): LcdkResult | nu
             steps.push({
               padIndex: padIdx,
               step,
-              velocity: Math.max(0, Math.min(1, (velVal || noteVal) / 127)),
+              velocity: Math.max(1, Math.min(127, velVal || noteVal)),
             })
           }
         }
