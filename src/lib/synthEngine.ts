@@ -156,6 +156,34 @@ export function createSynthVoice(
       // Hold at sustain indefinitely (no release scheduled)
     }
     // If no forceDuration, voice is self-terminating (A+D+R) or held for live key release via stopSynthVoice
+  } else if (mode === 'ahr') {
+    // AHR envelope: attack→peak, hold at peak, release→zero
+    const holdTime = settings.envelope.hold ?? 0
+    if (forceDuration != null && forceDuration > 0) {
+      // Sequencer: self-terminating AHR (ignores gate)
+      const actualAttack = Math.min(attack, forceDuration)
+      if (actualAttack > 0) {
+        voiceGain.gain.linearRampToValueAtTime(linearGain, startTime + actualAttack)
+      } else {
+        voiceGain.gain.linearRampToValueAtTime(linearGain, startTime + 0.0015)
+      }
+      const holdEnd = startTime + actualAttack + holdTime
+      if (holdTime > 0) {
+        voiceGain.gain.setValueAtTime(linearGain, holdEnd)
+      }
+      if (release > 0) {
+        voiceGain.gain.linearRampToValueAtTime(0, holdEnd + release)
+      } else {
+        voiceGain.gain.setValueAtTime(0, holdEnd)
+      }
+    } else {
+      // Live hold: attack→peak, hold indefinitely until stopSynthVoice
+      if (attack > 0) {
+        voiceGain.gain.linearRampToValueAtTime(linearGain, startTime + attack)
+      } else {
+        voiceGain.gain.linearRampToValueAtTime(linearGain, startTime + 0.0015)
+      }
+    }
   } else {
     // One-shot mode: attack ramp, then decay to zero
     voiceGain.gain.linearRampToValueAtTime(linearGain, startTime + attack)
@@ -168,7 +196,18 @@ export function createSynthVoice(
   let filterBaseFreq: number | undefined
   let filterReleaseSec: number | undefined
   const resolvedFt = resolveFilterType(settings.filterType)
-  if (resolvedFt) {
+  if (settings.filterType === 'lphp') {
+    const hp = ctx.createBiquadFilter()
+    hp.type = 'highpass'
+    hp.frequency.value = settings.filterFreq ?? 20
+    hp.Q.value = settings.filterQ ?? 0.7
+    filters.push(hp)
+    const lp = ctx.createBiquadFilter()
+    lp.type = 'lowpass'
+    lp.frequency.value = settings.filterFreq2 ?? 20000
+    lp.Q.value = settings.filterQ ?? 0.7
+    filters.push(lp)
+  } else if (resolvedFt) {
     // Apply key tracking: offset filter freq by semitoneOffset scaled by keyTrack amount
     const keyTrack = (settings.filterKeyTrack ?? 0) / 100
     const keyTrackSemitones = (semitoneOffset ?? 0) * keyTrack
@@ -231,9 +270,17 @@ export function createSynthVoice(
           f.frequency.linearRampToValueAtTime(sustainFreq, startTime + fEnv.attack + fEnv.decay)
         }
 
-        if (mode !== 'adsr') {
+        if (mode === 'one-shot') {
           // one-shot: note duration is attack + decay
           const noteEnd = startTime + attack + decay
+          for (const f of filters) {
+            f.frequency.setValueAtTime(sustainFreq, noteEnd)
+            f.frequency.linearRampToValueAtTime(baseFreqHz, noteEnd + fEnv.release)
+          }
+        } else if (mode === 'ahr') {
+          // AHR: note duration is attack + hold + release (self-terminating filter release at hold end)
+          const holdTime = settings.envelope.hold ?? 0
+          const noteEnd = startTime + attack + holdTime
           for (const f of filters) {
             f.frequency.setValueAtTime(sustainFreq, noteEnd)
             f.frequency.linearRampToValueAtTime(baseFreqHz, noteEnd + fEnv.release)

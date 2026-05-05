@@ -73,7 +73,7 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - `ConfirmDialog.tsx` — Promise-based confirm overlay (replaces all `window.confirm` calls)
 - `SampleLibrary.tsx` — Sample library sidebar with file drop, chop/spread buttons, "Remove Unassigned" cleanup, record button, Import Samples button, autosample group UI (rename/delete/export/drag/assign-to-pads), group edit modal (name/bus/choke), manual sample grouping (multi-select + group button), per-sample ungroup, MPC badge on .pgm-imported groups, Preset badge on factory preset groups, ZIP import support, synth patches section (list/assign/export/import/delete), sidebar collapse button, projects section (list/new/duplicate/delete/switch)
 - `PadEditor.tsx` — Collapsible pad settings, waveform trim with zoom (gain-scaled, layer-aware), filter knobs (LP12/LP24/HP/BP), MC-909 style AMP and FILTER envelope sections (vertical faders + ADSR curve visualization), filter envelope for both sample and synth pads, multisample layer UI, per-layer editing, stacked timeline (canvas waveforms + drag offset), bus selector, choke group selector, pan knob (with random pan toggle), MIDI Out section, source toggle (Sample/Synth), SynthEditor integration, per-pad effect slots (2 slots, synth pads), synth MIDI input section (channel/device), Crop button (destructively trims sample to trim markers), Normalize button (peak normalize to -0.3 dBFS), Reset Pad button (resets to defaults + clears sequencer events)
-- `EnvelopeSection.tsx` — Reusable MC-909 style envelope section with ADSR curve SVG visualization, vertical faders (with log-scale support), level/depth fader, used for both AMP and FILTER envelopes in PadEditor
+- `EnvelopeSection.tsx` — Reusable MC-909 style envelope section with ADSR/AHR curve SVG visualization, vertical faders (with log-scale support), level/depth fader, mode-aware (ADSR shows A/D/S/R, AHR shows A/H/R), used for both AMP and FILTER envelopes in PadEditor
 - `PadGrid.tsx` — Pad grid with bank nav (double-click to rename banks), pad drag (move/copy/swap), record button overlay on empty pads, MIDI debug display, autosample group drop with metadata (trim/bus/choke), group drop on bank tabs (assigns starting from pad 1 of target bank), MPC .pgm import on file drop, synth pad display ("~ Synth"), synth patch drop from library, touch event handling (preventDefault to avoid double-trigger on mobile)
 - `TopBar.tsx` — Header with transport, BPM, swing, tap tempo, VU meter, metronome toggle, sequencer record arm/quantize/overdub/count-in buttons, MIDI input cluster, Audio Out device selector, drag-to-adjust BPM/Swing inputs, settings popover (buffer size, metronome volume, wide layout toggle)
 - `Sequencer.tsx` — Compact toolbar, draggable pattern strip (drag to reorder), song chain, sequencer matrix with collapsible bank groups (all 8 banks visible, auto-collapsed if no events in current pattern), inline ColorPicker (8×8 grid popover), performance stats overlay (FPS + tick drift)
@@ -87,7 +87,7 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - `SynthEditor.tsx` — Additive synth editor: canvas-based harmonic bar editor (16 partials), waveform preview (one-cycle additive waveform), LFO section (waveform/rate with per-target depth knobs for pitch/filter/gain, free Hz or tempo-sync), base note selector, "Export Synth WAV" button
 
 ### Library (`src/lib/`)
-- `audioEngine.ts` — Web Audio voice pool, multisample resolution, per-pad filter (LP12/LP24/HP/BP with live param updates), choke groups, ADSR envelope shaping, AnalyserNode, `mergeLayerSettings`, `resolveFilterType`, `updateActiveFilters`, bus routing, effect chains (with sidechain compressor worklet), `buildEffectChain`, `buildEffectNode`, `updateEffectNodeParams`, `updateBusEffectParams`, `updateMasterEffectParams`, `getOutputLatency`, input monitor, `setOutputDevice`, `playSynthPad`, `setBufferSize`, `playPreview`/`stopPreview` (sample preview via AudioContext)
+- `audioEngine.ts` — Web Audio voice pool, multisample resolution, per-pad filter (LP12/LP24/HP/BP/LPHP with live param updates), choke groups, ADSR/AHR envelope shaping, AnalyserNode, `mergeLayerSettings`, `resolveFilterType`, `updateActiveFilters`, bus routing, effect chains (with sidechain compressor worklet), `buildEffectChain`, `buildEffectNode`, `updateEffectNodeParams`, `updateBusEffectParams`, `updateMasterEffectParams`, `getOutputLatency`, input monitor, `setOutputDevice`, `playSynthPad`, `setBufferSize`, `playPreview`/`stopPreview` (sample preview via AudioContext)
 - `audioExport.ts` — Offline WAV render with swing, layer resolution, per-pad filter, choke groups, ADSR envelope shaping, bus routing + effects, `mergeLayerSettings`
 - `wavEncode.ts` — Shared WAV encoding: `encodeWav` (AudioBuffer), `encodeWavFromChannels` (raw Float32)
 - `transportScheduler.ts` — Step scheduler with swing offset
@@ -124,10 +124,11 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - Playback mode rules:
   - `one-shot`: attack ramp only, plays full trimmed sample. Not step/gate-clamped.
   - `adsr`: ADSR envelope — attack ramps to peak, decay ramps to sustain level (peak * sustain), release ramps to zero. In sequencer, ADSR respects step gate duration (`forceDuration`). For live pad hold (sample and synth pads), voice holds at sustain level until `releasePad` triggers the release phase using the pad's actual release time.
+  - `ahr`: AHR envelope — attack ramps to peak, hold at peak for `hold` seconds, release ramps to zero. Self-terminating (ignores gate). For live pad hold, hold phase extends until `releasePad` triggers release.
 - Envelope shaping (gain automation via `linearRampToValueAtTime`) applied in both live and offline paths.
 - Choke groups: voices in same group (1–8) cut each other. Applied in both live (5ms fade, time-aligned with `atTimeSec`) and offline (gain ramp-down) paths.
 - Multisample: layer resolution happens in both live and offline paths.
-- Per-pad filter: LP12 (single BiquadFilter), LP24 (two chained BiquadFilters), HP, BP. Applied in both live and offline paths. Live param updates via `updateActiveFilters` (setTargetAtTime with 10ms tau).
+- Per-pad filter: LP12 (single BiquadFilter), LP24 (two chained BiquadFilters), HP, BP, LPHP (HP+LP in series with independent freq controls). Applied in both live and offline paths. Live param updates via `updateActiveFilters` (setTargetAtTime with 10ms tau).
 - Per-pad pan: `StereoPannerNode` per voice, inserted between filter chain (or gain node) and bus destination. `randomPan` mode: pan value = `random(-1,1) * panWidth`. Applied in both live and offline paths.
 - Per-pad filter envelope (sample pads): `filterEnvelope` (ADSR+depth) modulates filter cutoff in semitones. Same model as synth filter envelope. Applied in both live (`audioEngine.ts` playPad/playVoice) and offline (`audioExport.ts`) paths. Gate hold release deferred to `releasePad`.
 - Swing: applied to odd steps in both `TransportScheduler.tick()` and `audioExport.ts`.
@@ -171,15 +172,16 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - `PadSettings.layers: SampleLayer[]` — each layer has `sampleId`, `velocityMin`, `velocityMax`
 - `SampleLayer` extended with nullable override fields: `gain`, `semitones`, `fineCents`, `trimStart`, `trimEnd`, `attack`, `decay`, `release`, `filterType`, `filterFreq`, `filterQ`, `stackOffsetMs` — `null` means inherit from pad
 - `PadSettings.multiMode: 'single' | 'round-robin' | 'random' | 'velocity' | 'stacked'`
-- `PadSettings.filterType: 'off' | 'lp12' | 'lp24' | 'highpass' | 'bandpass'`
+- `PadSettings.filterType: 'off' | 'lp12' | 'lp24' | 'highpass' | 'bandpass' | 'lphp'`
 - `PadSettings.filterFreq` (Hz), `PadSettings.filterQ` (resonance)
+- `PadSettings.filterFreq2?: number` — second frequency for LPHP filter (LP cutoff, Hz)
 - `PadSettings.filterKeyTrack?: number` — filter key tracking (-100 to +100, 0=off, +100=filter fully tracks pitch, -100=inverse tracking). Applied per-voice in `createSynthVoice` — offsets filter frequency by `semitoneOffset * keyTrack/100` semitones. Works in both live and offline paths.
 - `PadSettings.bus: BusId` — mix bus routing ('A' | 'B' | 'C' | 'D')
 - `PadSettings.chokeGroup: number` — 0=off, 1–8
 - `PadSettings.pan?: number` — per-pad pan (-1 left to +1 right, undefined = 0 center)
 - `PadSettings.randomPan?: boolean` — when true, pan value controls random pan width per note
-- `PadSettings.mode: 'one-shot' | 'adsr'`
-- `PadSettings.envelope: EnvelopeSettings` — `{ attack, decay, sustain, release }` (ADSR model: decay ramps to sustain level, release ramps to zero)
+- `PadSettings.mode: 'one-shot' | 'adsr' | 'ahr'`
+- `PadSettings.envelope: EnvelopeSettings` — `{ attack, decay, sustain, release, hold? }` (ADSR model: decay ramps to sustain level, release ramps to zero; AHR model: attack→peak, hold at peak, release→zero)
 - `PadSettings.midiOut?: MidiOutConfig` — optional MIDI out config (undefined = disabled)
 - `PadSettings.source: PadSource` — `'sample'` (default) or `'synth'`
 - `PadSettings.synthParams?: SynthParams` — additive synth parameters (harmonics, baseNote, filterEnvelope, lfo)
@@ -222,7 +224,7 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - `addSamplesToLibrary(files: File[])` action processes files and shows toast
 - ZIP files are detected and imported as autosample groups (reads `metadata.json` for trim/bus/choke metadata)
 - **MPC .pgm import**: when a `.pgm` file is among dropped files, it is parsed for pad-to-sample mapping; matched WAV files are imported as a group with `autosamplePadIndex` metadata preserving the original pad order. Per-pad settings (choke group, pan, level, tuning, filter type/freq/Q, attack/decay, play mode) are stored on `SampleAsset.autosampleMpcPadSettings` and applied when samples are assigned to pads via `assignGroupToPads` or direct PadGrid drop. Up to 4 velocity layers per pad are supported with MPC velocity ranges preserved.
-- **Loopcloud .lcdk import**: when a `.lcdk` file is among dropped files, it is parsed for pad-to-sample mapping + sequencer patterns; matched audio files are imported as a group with `autosampleImportedPadSettings` (volume/pan/filter/choke/transpose/finetune/attack/release/samplestart). Sequencer patterns stored as JSON on first sample (`autosamplePatterns`) and imported into sequencer on `assignGroupToPads`. HP filter takes priority when both HP and LP cutoffs are set.
+- **Loopcloud .lcdk import**: when a `.lcdk` file is among dropped files, it is parsed for pad-to-sample mapping + sequencer patterns; matched audio files are imported as a group with `autosampleImportedPadSettings` (volume/pan/filter/choke/transpose/finetune/attack/hold/release/samplestart). Muted/empty pads are skipped. Sequencer patterns stored as JSON on first sample (`autosamplePatterns`) and imported into sequencer on `assignGroupToPads`. When both HP and LP cutoffs are active, LPHP dual filter is used. Pads with hold or release > 0 use AHR mode (attack 0-5s, hold 0-4s, release 0-6s, all quadratic mapped from 0-1).
 - **Multi-file drop auto-grouping**: when ≥2 audio files are dropped at once, they are automatically grouped with a label derived from the common filename prefix
 - **Folder drop**: dropping a folder recursively reads all audio files using `webkitGetAsEntry`. If files look like a drum kit (≥40% match known categories), a confirm dialog offers to map them to a standard 16-pad MPC-style layout (kick→1, snare→2, clap→3, CH→4, OH→5, perc→6, toms→7-9, crash→10, ride→11, shaker→12, cowbell→13, conga→14, snap→15, other→16). Uses `autosamplePadIndex` for ordering on pad assignment. Folder name is used as group label (instead of common filename prefix).
 

@@ -216,6 +216,12 @@ export const renderProjectAudioWav = async (
       // ADSR uses step gate duration, clamped by playback duration
       noteDurationSec = Math.min(playbackDurationSec, forceDurationSec)
       sourceStopSec = Math.min(playbackDurationSec, noteDurationSec + releaseSec)
+    } else if (ms.mode === 'ahr') {
+      // AHR: self-terminating (attack + hold + release), ignores gate
+      const holdSec = ms.envelope.hold ?? 0
+      const ahrDuration = ms.envelope.attack + holdSec + releaseSec
+      noteDurationSec = Math.min(playbackDurationSec, ahrDuration)
+      sourceStopSec = noteDurationSec
     } else {
       // one-shot: play full sample
       noteDurationSec = playbackDurationSec
@@ -393,6 +399,24 @@ export const renderProjectAudioWav = async (
         gainNode.gain.setValueAtTime(sustainGain, noteStart + noteDurationSec)
         gainNode.gain.linearRampToValueAtTime(0, noteStart + sourceStopSec)
       }
+    } else if (ms.mode === 'ahr') {
+      // AHR envelope: attack→peak, hold at peak, release→zero
+      const holdSec = ms.envelope.hold ?? 0
+      const actualAttack = Math.min(attackSec, noteDurationSec)
+      gainNode.gain.setValueAtTime(0, noteStart)
+      if (actualAttack > 0) {
+        gainNode.gain.linearRampToValueAtTime(baseGain, noteStart + actualAttack)
+      } else {
+        gainNode.gain.linearRampToValueAtTime(baseGain, noteStart + 0.0015)
+      }
+      const holdEnd = noteStart + actualAttack + holdSec
+      if (holdSec > 0) {
+        gainNode.gain.setValueAtTime(baseGain, holdEnd)
+      }
+      const actualRelease = Math.min(releaseSec, noteDurationSec - actualAttack - holdSec)
+      if (actualRelease > 0) {
+        gainNode.gain.linearRampToValueAtTime(0, holdEnd + actualRelease)
+      }
     } else {
       // One-shot: attack ramp, hold at peak for full sample
       gainNode.gain.setValueAtTime(0, noteStart)
@@ -410,7 +434,19 @@ export const renderProjectAudioWav = async (
 
     // Per-pad filter (with layer overrides)
     const resolvedFt = resolveFilterType(ms.filterType)
-    if (resolvedFt) {
+    if (ms.filterType === 'lphp') {
+      const hp = offline.createBiquadFilter()
+      hp.type = 'highpass'
+      hp.frequency.value = ms.filterFreq ?? 20
+      hp.Q.value = ms.filterQ ?? 0.7
+      const lp = offline.createBiquadFilter()
+      lp.type = 'lowpass'
+      lp.frequency.value = ms.filterFreq2 ?? 20000
+      lp.Q.value = ms.filterQ ?? 0.7
+      gainNode.connect(hp)
+      hp.connect(lp)
+      lp.connect(padPanNode)
+    } else if (resolvedFt) {
       const filterChain: BiquadFilterNode[] = []
       const f1 = offline.createBiquadFilter()
       f1.type = resolvedFt.biquadType
@@ -445,6 +481,14 @@ export const renderProjectAudioWav = async (
           for (const f of filterChain) {
             f.frequency.setValueAtTime(sustainFreqHz, noteEnd)
             f.frequency.linearRampToValueAtTime(baseFreqHz, noteEnd + fEnv.release)
+          }
+        } else if (ms.mode === 'ahr') {
+          // AHR: release at end of hold phase
+          const holdSec = ms.envelope.hold ?? 0
+          const fEnd = noteStart + attackSec + holdSec
+          for (const f of filterChain) {
+            f.frequency.setValueAtTime(sustainFreqHz, fEnd)
+            f.frequency.linearRampToValueAtTime(baseFreqHz, fEnd + fEnv.release)
           }
         } else {
           // One-shot: release at end of filter attack+decay
@@ -505,7 +549,9 @@ export const renderProjectAudioWav = async (
 
     const noteDurationSec = settings.mode === 'one-shot'
       ? undefined
-      : Math.max(0.04, entry.event.gate * entry.stepDurationSec)
+      : settings.mode === 'ahr'
+        ? (settings.envelope.attack + (settings.envelope.hold ?? 0) + settings.envelope.release)
+        : Math.max(0.04, entry.event.gate * entry.stepDurationSec)
 
     // For piano roll events with absolute note, compute semitone offset from synth base
     let semitoneOffset = entry.event.semitones

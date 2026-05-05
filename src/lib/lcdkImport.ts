@@ -75,6 +75,8 @@ export function parseLcdk(jsonString: string, filename: string): LcdkResult | nu
 
   for (const pad of data.pads) {
     if (!pad.filename) continue
+    // Skip muted or empty pads
+    if (pad.mute === true || pad.mute === 1) continue
 
     const settings: ImportedPadSettings = {}
 
@@ -96,35 +98,47 @@ export function parseLcdk(jsonString: string, filename: string): LcdkResult | nu
       settings.fineCents = Math.round((pad.finetune - 0.5) * 100)
     }
 
-    // Filter: HP takes priority over LP when both are active
+    // Filter: LPHP when both are active, otherwise HP or LP alone
     const hpActive = pad.hpcutoff != null && pad.hpcutoff > 0
     const lpActive = pad.lpcutoff != null && pad.lpcutoff < 1
-    if (hpActive) {
+    if (hpActive && lpActive) {
+      settings.filterType = 'lphp' as FilterType
+      settings.filterFreq = lcdkHpToHz(pad.hpcutoff)
+      settings.filterFreq2 = lcdkLpToHz(pad.lpcutoff)
+      settings.filterQ = 0.7
+    } else if (hpActive) {
       settings.filterType = 'highpass' as FilterType
       settings.filterFreq = lcdkHpToHz(pad.hpcutoff)
-      settings.filterQ = 0.7 // default Q
+      settings.filterQ = 0.7
     } else if (lpActive) {
       settings.filterType = 'lp12' as FilterType
       settings.filterFreq = lcdkLpToHz(pad.lpcutoff)
       settings.filterQ = 0.7
     }
 
-    // Envelope
-    if (pad.attack != null && pad.attack > 0) {
+    // Envelope: AHR mode when hold or release > 0
+    const hasAttack = pad.attack != null && pad.attack > 0
+    const hasHold = pad.hold != null && pad.hold > 0
+    const hasRelease = pad.release != null && pad.release > 0
+    if (hasAttack) {
       settings.attack = lcdkEnvToSec(pad.attack)
     }
-    // LCDK has 'release' but our ImportedPadSettings has 'decay' — map release to decay
-    // since LCDK pads are one-shot drum samples, release = tail behavior
-    // Actually, let's not map release as decay — it's a different concept.
-    // We'll leave release unmapped for now since our one-shot mode ignores decay.
+    if (hasHold || hasRelease) {
+      settings.playMode = 'ahr'
+      if (hasHold) {
+        settings.hold = 4 * Math.pow(pad.hold, 2) // 0-1 → 0-4s quadratic
+      }
+      if (hasRelease) {
+        settings.release = 6 * Math.pow(pad.release, 2) // 0-1 → 0-6s quadratic
+      }
+    } else {
+      settings.playMode = 'one-shot'
+    }
 
     // Choke group: LCDK stores as 0-1 float (0.25=group1, 0.5=group2, etc.)
     if (pad.chokegroup != null && pad.chokegroup > 0) {
       settings.chokeGroup = Math.max(1, Math.min(8, Math.round(pad.chokegroup * 8)))
     }
-
-    // Play mode: LCDK is always one-shot for drum pads
-    settings.playMode = 'one-shot'
 
     const mapping: LcdkPadMapping = {
       index: pad.index ?? pads.length,

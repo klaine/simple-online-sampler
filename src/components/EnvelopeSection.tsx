@@ -120,6 +120,32 @@ const EnvelopeCurve = memo(function EnvelopeCurve({ attack, decay, sustain, rele
 })
 
 // ---------------------------------------------------------------------------
+// AHR Curve Visualization (mini SVG)
+// ---------------------------------------------------------------------------
+
+const AhrCurve = memo(function AhrCurve({ attack, hold, release }: { attack: number; hold: number; release: number }) {
+  const total = Math.max(0.001, attack + hold + release)
+  const w = 120
+  const h = 28
+  const pad = 2
+
+  const aX = pad + (attack / total) * (w - 2 * pad)
+  const hX = aX + (hold / total) * (w - 2 * pad)
+  const endX = w - pad
+  const baseY = h - pad
+
+  const linePath = `M ${pad},${baseY} L ${aX},${pad} L ${hX},${pad} L ${endX},${baseY}`
+  const fillPath = `${linePath} L ${endX},${baseY} L ${pad},${baseY} Z`
+
+  return (
+    <svg className="env-curve" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none">
+      <path d={fillPath} fill="rgba(255,255,255,0.04)" stroke="none" />
+      <path d={linePath} fill="none" stroke="var(--muted-light)" strokeWidth="1.2" strokeLinejoin="round" />
+    </svg>
+  )
+})
+
+// ---------------------------------------------------------------------------
 // Envelope Section (MC-909 style container)
 // ---------------------------------------------------------------------------
 
@@ -141,33 +167,47 @@ interface EnvelopeSectionProps {
   decay: number
   sustain: number
   release: number
+  hold?: number
   onAttackChange: (v: number) => void
   onDecayChange: (v: number) => void
   onSustainChange: (v: number) => void
   onReleaseChange: (v: number) => void
+  onHoldChange?: (v: number) => void
   adsrDisabled?: boolean
+  mode?: 'adsr' | 'ahr'
 }
 
 export const EnvelopeSection = memo(function EnvelopeSection(props: EnvelopeSectionProps) {
   const {
     title, levelLabel, levelValue, levelMin, levelMax, levelStep,
     onLevelChange, formatLevel,
-    attack, decay, sustain, release,
-    onAttackChange, onDecayChange, onSustainChange, onReleaseChange,
-    adsrDisabled,
+    attack, decay, sustain, release, hold,
+    onAttackChange, onDecayChange, onSustainChange, onReleaseChange, onHoldChange,
+    adsrDisabled, mode,
   } = props
+
+  const isAhr = mode === 'ahr'
 
   return (
     <div className={title ? 'envelope-section' : 'envelope-section-inner'}>
       {title && <div className="envelope-section-header">{title}</div>}
-      <EnvelopeCurve attack={attack} decay={decay} sustain={sustain} release={release} />
+      {isAhr
+        ? <AhrCurve attack={attack} hold={hold ?? 0} release={release} />
+        : <EnvelopeCurve attack={attack} decay={decay} sustain={sustain} release={release} />
+      }
       <div className="envelope-faders">
         <VerticalFader label={levelLabel} value={levelValue} min={levelMin} max={levelMax} step={levelStep} onChange={onLevelChange} formatValue={formatLevel} />
         <div className="env-fader-separator" />
         <VerticalFader label="A" value={attack} min={0} max={5} step={0.001} logScale onChange={onAttackChange} formatValue={formatTime} disabled={adsrDisabled} />
-        <VerticalFader label="D" value={decay} min={0} max={5} step={0.001} logScale onChange={onDecayChange} formatValue={formatTime} disabled={adsrDisabled} />
-        <VerticalFader label="S" value={sustain} min={0} max={1} step={0.01} onChange={onSustainChange} formatValue={(v) => `${Math.round(v * 100)}%`} disabled={adsrDisabled} />
-        <VerticalFader label="R" value={release} min={0} max={5} step={0.001} logScale onChange={onReleaseChange} formatValue={formatTime} disabled={adsrDisabled} />
+        {isAhr ? (
+          <VerticalFader label="H" value={hold ?? 0} min={0} max={4} step={0.001} logScale onChange={onHoldChange ?? (() => {})} formatValue={formatTime} disabled={adsrDisabled} />
+        ) : (
+          <VerticalFader label="D" value={decay} min={0} max={5} step={0.001} logScale onChange={onDecayChange} formatValue={formatTime} disabled={adsrDisabled} />
+        )}
+        {!isAhr && (
+          <VerticalFader label="S" value={sustain} min={0} max={1} step={0.01} onChange={onSustainChange} formatValue={(v) => `${Math.round(v * 100)}%`} disabled={adsrDisabled} />
+        )}
+        <VerticalFader label="R" value={release} min={0} max={isAhr ? 6 : 5} step={0.001} logScale onChange={onReleaseChange} formatValue={formatTime} disabled={adsrDisabled} />
       </div>
     </div>
   )

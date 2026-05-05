@@ -68,6 +68,7 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
 
   const patchImportRef = useRef<HTMLInputElement>(null)
   const sampleImportRef = useRef<HTMLInputElement>(null)
+  const folderImportRef = useRef<HTMLInputElement>(null)
 
   const handleExportPatch = useCallback((patch: SynthPatch) => {
     const json = JSON.stringify(patch, null, 2)
@@ -757,6 +758,21 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
               onChange={(e) => { handleImportPatch(e.target.files); e.target.value = '' }}
             />
             <button type="button" onClick={() => sampleImportRef.current?.click()}>Import Samples</button>
+            <input
+              ref={folderImportRef}
+              type="file"
+              multiple
+              // @ts-expect-error webkitdirectory is non-standard but supported on iOS 15.4+
+              webkitdirectory=""
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                if (e.target.files?.length) {
+                  void addSamplesToLibrary(Array.from(e.target.files))
+                }
+                e.target.value = ''
+              }}
+            />
+            <button type="button" onClick={() => folderImportRef.current?.click()}>Import Folder</button>
             <button type="button" onClick={() => patchImportRef.current?.click()} title="Import .ospatch file">Import Patch</button>
             <button type="button" onClick={() => openRecordDialog()}>Record</button>
             <button type="button" onClick={() => openAutosampleDialog()} title="Automatically sample external MIDI gear">Auto-Sample</button>

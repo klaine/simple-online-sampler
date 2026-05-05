@@ -1726,9 +1726,9 @@ export const useStore = create<AppState>()(
         })
 
         // Live-update filter params on active voices
-        if ('filterType' in patch || 'filterFreq' in patch || 'filterQ' in patch) {
+        if ('filterType' in patch || 'filterFreq' in patch || 'filterQ' in patch || 'filterFreq2' in patch) {
           const merged = { ...pad.settings, ...patch }
-          audioEngine.updateActiveFilters(pad.id, merged.filterType, merged.filterFreq, merged.filterQ)
+          audioEngine.updateActiveFilters(pad.id, merged.filterType, merged.filterFreq, merged.filterQ, merged.filterFreq2)
         }
       },
 
@@ -4431,13 +4431,17 @@ export const useStore = create<AppState>()(
                 ...(mpc?.fineCents != null ? { fineCents: mpc.fineCents } : {}),
                 ...(mpc?.filterType ? { filterType: mpc.filterType } : {}),
                 ...(mpc?.filterFreq != null ? { filterFreq: mpc.filterFreq } : {}),
+                ...(mpc?.filterFreq2 != null ? { filterFreq2: mpc.filterFreq2 } : {}),
                 ...(mpc?.filterQ != null ? { filterQ: mpc.filterQ } : {}),
                 ...(mpc?.playMode ? { mode: mpc.playMode } : {}),
-                ...(mpc?.attack != null || mpc?.decay != null ? {
+                ...(mpc?.attack != null || mpc?.decay != null || mpc?.hold != null || mpc?.release != null || mpc?.sustain != null ? {
                   envelope: {
                     ...p.settings.envelope,
                     ...(mpc.attack != null ? { attack: mpc.attack } : {}),
                     ...(mpc.decay != null ? { decay: mpc.decay } : {}),
+                    ...(mpc.hold != null ? { hold: mpc.hold } : {}),
+                    ...(mpc.release != null ? { release: mpc.release } : {}),
+                    ...(mpc.sustain != null ? { sustain: mpc.sustain } : {}),
                   },
                 } : {}),
               },
@@ -4464,13 +4468,17 @@ export const useStore = create<AppState>()(
                 ...(mpc?.fineCents != null ? { fineCents: mpc.fineCents } : {}),
                 ...(mpc?.filterType ? { filterType: mpc.filterType } : {}),
                 ...(mpc?.filterFreq != null ? { filterFreq: mpc.filterFreq } : {}),
+                ...(mpc?.filterFreq2 != null ? { filterFreq2: mpc.filterFreq2 } : {}),
                 ...(mpc?.filterQ != null ? { filterQ: mpc.filterQ } : {}),
                 ...(mpc?.playMode ? { mode: mpc.playMode } : {}),
-                ...(mpc?.attack != null || mpc?.decay != null ? {
+                ...(mpc?.attack != null || mpc?.decay != null || mpc?.hold != null || mpc?.release != null || mpc?.sustain != null ? {
                   envelope: {
                     ...p.settings.envelope,
                     ...(mpc.attack != null ? { attack: mpc.attack } : {}),
                     ...(mpc.decay != null ? { decay: mpc.decay } : {}),
+                    ...(mpc.hold != null ? { hold: mpc.hold } : {}),
+                    ...(mpc.release != null ? { release: mpc.release } : {}),
+                    ...(mpc.sustain != null ? { sustain: mpc.sustain } : {}),
                   },
                 } : {}),
               },

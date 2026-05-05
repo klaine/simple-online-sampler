@@ -263,6 +263,7 @@ export function PadEditor({ waveformRef, waveformCanvasRef, dragTargetRef }: Pad
                 >
                   <option value="one-shot">One Shot</option>
                   <option value="adsr">ADSR</option>
+                  <option value="ahr">AHR</option>
                 </select>
               </label>
               <label>
@@ -407,11 +408,14 @@ export function PadEditor({ waveformRef, waveformCanvasRef, dragTargetRef }: Pad
                   decay={eff!.envelope.decay}
                   sustain={eff!.envelope.sustain ?? 0}
                   release={eff!.envelope.release}
+                  hold={eff!.envelope.hold ?? 0}
                   onAttackChange={(v) => void updatePadSettings({ envelope: { ...eff!.envelope, attack: v } })}
                   onDecayChange={(v) => void updatePadSettings({ envelope: { ...eff!.envelope, decay: v } })}
                   onSustainChange={(v) => void updatePadSettings({ envelope: { ...eff!.envelope, sustain: v } })}
                   onReleaseChange={(v) => void updatePadSettings({ envelope: { ...eff!.envelope, release: v } })}
+                  onHoldChange={(v) => void updatePadSettings({ envelope: { ...eff!.envelope, hold: v } })}
                   adsrDisabled={selectedPad.settings.mode === 'one-shot'}
+                  mode={selectedPad.settings.mode === 'ahr' ? 'ahr' : 'adsr'}
                 />
 
                 {/* FILTER section (MC-909 style) */}
@@ -457,11 +461,15 @@ export function PadEditor({ waveformRef, waveformCanvasRef, dragTargetRef }: Pad
                         <option value="lp24">LP24</option>
                         <option value="highpass">HP</option>
                         <option value="bandpass">BP</option>
+                        <option value="lphp">LP+HP</option>
                       </select>
                     </label>
                     {eff!.filterType !== 'off' && (
                       <>
-                        <KnobControl label="Freq" value={eff!.filterFreq} min={20} max={20000} step={1} precision={0} freqScale onChange={(v) => void updatePadSettings({ filterFreq: Math.round(v) })} />
+                        <KnobControl label={eff!.filterType === 'lphp' ? 'HP' : 'Freq'} value={eff!.filterFreq} min={20} max={20000} step={1} precision={0} freqScale onChange={(v) => void updatePadSettings({ filterFreq: Math.round(v) })} />
+                        {eff!.filterType === 'lphp' && (
+                          <KnobControl label="LP" value={eff!.filterFreq2 ?? 20000} min={20} max={20000} step={1} precision={0} freqScale onChange={(v) => void updatePadSettings({ filterFreq2: Math.round(v) })} />
+                        )}
                         <KnobControl label="Q" value={eff!.filterQ} min={0.1} max={20} step={0.1} onChange={(v) => void updatePadSettings({ filterQ: v })} />
                       </>
                     )}
@@ -489,11 +497,14 @@ export function PadEditor({ waveformRef, waveformCanvasRef, dragTargetRef }: Pad
                   decay={eff!.envelope.decay}
                   sustain={eff!.envelope.sustain ?? 0}
                   release={eff!.envelope.release}
+                  hold={eff!.envelope.hold ?? 0}
                   onAttackChange={(v) => void updatePadSettings({ envelope: { ...eff!.envelope, attack: v } })}
                   onDecayChange={(v) => void updatePadSettings({ envelope: { ...eff!.envelope, decay: v } })}
                   onSustainChange={(v) => void updatePadSettings({ envelope: { ...eff!.envelope, sustain: v } })}
                   onReleaseChange={(v) => void updatePadSettings({ envelope: { ...eff!.envelope, release: v } })}
+                  onHoldChange={(v) => void updatePadSettings({ envelope: { ...eff!.envelope, hold: v } })}
                   adsrDisabled={selectedPad.settings.mode === 'one-shot'}
+                  mode={selectedPad.settings.mode === 'ahr' ? 'ahr' : 'adsr'}
                 />
                 <div className="envelope-section">
                   <div className="envelope-section-header">FILTER</div>
@@ -536,11 +547,15 @@ export function PadEditor({ waveformRef, waveformCanvasRef, dragTargetRef }: Pad
                         <option value="lp24">LP24</option>
                         <option value="highpass">HP</option>
                         <option value="bandpass">BP</option>
+                        <option value="lphp">LP+HP</option>
                       </select>
                     </label>
                     {eff!.filterType !== 'off' && (
                       <>
-                        <KnobControl label="Freq" value={eff!.filterFreq} min={20} max={20000} step={1} precision={0} freqScale onChange={(v) => void updatePadSettings({ filterFreq: Math.round(v) })} />
+                        <KnobControl label={eff!.filterType === 'lphp' ? 'HP' : 'Freq'} value={eff!.filterFreq} min={20} max={20000} step={1} precision={0} freqScale onChange={(v) => void updatePadSettings({ filterFreq: Math.round(v) })} />
+                        {eff!.filterType === 'lphp' && (
+                          <KnobControl label="LP" value={eff!.filterFreq2 ?? 20000} min={20} max={20000} step={1} precision={0} freqScale onChange={(v) => void updatePadSettings({ filterFreq2: Math.round(v) })} />
+                        )}
                         <KnobControl label="Q" value={eff!.filterQ} min={0.1} max={20} step={0.1} onChange={(v) => void updatePadSettings({ filterQ: v })} />
                         <KnobControl label="Key" value={eff!.filterKeyTrack ?? 0} min={-100} max={100} step={1} precision={0} onChange={(v) => void updatePadSettings({ filterKeyTrack: Math.round(v) })} />
                       </>

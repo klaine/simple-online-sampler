@@ -1,4 +1,4 @@
-export type PadMode = 'one-shot' | 'adsr'
+export type PadMode = 'one-shot' | 'adsr' | 'ahr'
 
 export type PadSource = 'sample' | 'synth'
 
@@ -41,6 +41,7 @@ export interface EnvelopeSettings {
   decay: number
   sustain: number
   release: number
+  hold?: number  // AHR mode hold time (seconds), default 0
 }
 
 export interface TrimSettings {
@@ -65,7 +66,7 @@ export interface SampleLayer {
   stackOffsetMs: number | null  // timing offset in ms for stacked mode (null = 0)
 }
 
-export type FilterType = 'off' | 'lp12' | 'lp24' | 'highpass' | 'bandpass'
+export type FilterType = 'off' | 'lp12' | 'lp24' | 'highpass' | 'bandpass' | 'lphp'
 
 export interface MidiOutConfig {
   enabled: boolean
@@ -120,6 +121,7 @@ export interface PadSettings {
   multiMode: MultiSampleMode
   filterType: FilterType
   filterFreq: number  // Hz, 20–20000
+  filterFreq2?: number // Hz, second cutoff for 'lphp' filter (HP frequency)
   filterQ: number     // 0.1–20
   filterKeyTrack?: number // -100 to +100, 0 = off, 100 = full tracking (filter opens on higher notes)
   bus: BusId          // mix bus routing
@@ -180,12 +182,16 @@ export interface ImportedPadSettings {
   level?: number            // 0.0–1.0
   semitones?: number        // semitone offset
   fineCents?: number        // fine tuning in cents
-  filterType?: FilterType   // 'off' | 'lp12' | 'highpass' | 'bandpass'
-  filterFreq?: number       // Hz
+  filterType?: FilterType   // 'off' | 'lp12' | 'highpass' | 'bandpass' | 'lphp'
+  filterFreq?: number       // Hz (LP cutoff, or single filter freq)
+  filterFreq2?: number      // Hz (HP cutoff for 'lphp' filter)
   filterQ?: number          // Q value
   attack?: number           // seconds
   decay?: number            // seconds
-  playMode?: 'one-shot' | 'adsr'
+  hold?: number             // seconds (AHR mode)
+  release?: number          // seconds (AHR mode)
+  sustain?: number          // 0-1
+  playMode?: PadMode
   chokeGroup?: number       // 1–8 (0=off)
 }
 
