@@ -897,7 +897,7 @@ export class AudioEngine {
       if (chokeGroup > 0) {
         const chokeTime = options?.atTimeSec ?? this.getContext().currentTime
         const chokeDelayMs = Math.max(0, (chokeTime - this.getContext().currentTime) * 1000) + 15
-        const toChoke = this.activeVoices.filter((v) => v.chokeGroup === chokeGroup && v.padId !== pad.id)
+        const toChoke = this.activeVoices.filter((v) => v.chokeGroup === chokeGroup)
         for (const v of toChoke) {
           try { v.gain.gain.setValueAtTime(v.gain.gain.value, chokeTime); v.gain.gain.linearRampToValueAtTime(0, chokeTime + 0.005) } catch { /* */ }
           try { v.source.stop(chokeTime + 0.01) } catch { /* */ }
@@ -934,7 +934,7 @@ export class AudioEngine {
     if (chokeGroup > 0) {
       const chokeTime = options?.atTimeSec ?? this.getContext().currentTime
       const chokeDelayMs = Math.max(0, (chokeTime - this.getContext().currentTime) * 1000) + 15
-      const toChoke = this.activeVoices.filter((v) => v.chokeGroup === chokeGroup && v.padId !== pad.id)
+      const toChoke = this.activeVoices.filter((v) => v.chokeGroup === chokeGroup)
       for (const v of toChoke) {
         try { v.gain.gain.setValueAtTime(v.gain.gain.value, chokeTime); v.gain.gain.linearRampToValueAtTime(0, chokeTime + 0.005) } catch { /* */ }
         try { v.source.stop(chokeTime + 0.01) } catch { /* */ }
@@ -1246,14 +1246,14 @@ export class AudioEngine {
       const chokeTime = options?.atTimeSec ?? ctx.currentTime
       const chokeDelayMs = Math.max(0, (chokeTime - ctx.currentTime) * 1000) + 15
       // Choke sample voices
-      const toChoke = this.activeVoices.filter((v) => v.chokeGroup === chokeGroup && v.padId !== pad.id)
+      const toChoke = this.activeVoices.filter((v) => v.chokeGroup === chokeGroup)
       for (const v of toChoke) {
         try { v.gain.gain.setValueAtTime(v.gain.gain.value, chokeTime); v.gain.gain.linearRampToValueAtTime(0, chokeTime + 0.005) } catch { /* */ }
         try { v.source.stop(chokeTime + 0.01) } catch { /* */ }
         window.setTimeout(() => this.disposeVoice(v), chokeDelayMs)
       }
       // Choke synth voices
-      const toChokeSynth = this.activeSynthVoices.filter((v) => v.chokeGroup === chokeGroup && v.padId !== pad.id)
+      const toChokeSynth = this.activeSynthVoices.filter((v) => v.chokeGroup === chokeGroup)
       for (const sv of toChokeSynth) {
         window.setTimeout(() => {
           stopSynthVoice(ctx, sv.nodes, 0.005)
