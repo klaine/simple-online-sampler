@@ -27,7 +27,7 @@ const SYSEX_END = 0xf7
 const SYSEX_PROGRAMMER_MODE = [...SYSEX_HEADER, 0x0e, 0x01, SYSEX_END]
 
 // --- Colors (0-127 range for SysEx RGB) ---
-const COLOR_OFF: [number, number, number] = [0, 0, 0]
+// const COLOR_OFF: [number, number, number] = [0, 0, 0]
 const COLOR_PAD_EMPTY: [number, number, number] = [3, 3, 3]           // very dim (visible grid)
 const COLOR_PAD_ASSIGNED: [number, number, number] = [0, 80, 0]       // green
 const COLOR_PAD_ACTIVE: [number, number, number] = [0, 127, 0]        // bright green (hit flash)
@@ -69,7 +69,7 @@ const PAL_BLUE = 45
 const PAL_BLUE_BRIGHT = 41
 const PAL_LIGHT_BLUE = 44
 
-type RGB = [number, number, number]
+// type RGB = [number, number, number]
 
 // --- Pad layout mapping ---
 
@@ -396,9 +396,14 @@ function rgbToPalette(r: number, g: number, b: number): number {
   return PAL_DIM_WHITE
 }
 
-/** Set LED using note-on velocity (palette) method */
+/** Set LED using note-on velocity (palette) method — for grid pads */
 function setLedNote(pad: number, paletteColor: number): void {
   sendToAll(new Uint8Array([0x90, pad, paletteColor]))
+}
+
+/** Set LED using CC value (palette) method — for side/top/bottom buttons */
+function setLedCC(cc: number, paletteColor: number): void {
+  sendToAll(new Uint8Array([0xb0, cc, paletteColor]))
 }
 
 function setLed(pad: number, r: number, g: number, b: number): void {
@@ -408,14 +413,17 @@ function setLed(pad: number, r: number, g: number, b: number): void {
 function clearAll(): void {
   for (let row = 1; row <= 8; row++) {
     for (let col = 1; col <= 8; col++) {
-      setLed(row * 10 + col, ...COLOR_OFF)
+      setLedNote(row * 10 + col, PAL_OFF)
     }
   }
-  // Clear bottom row and narrow buttons
+  // Clear bottom row (note-addressed) and narrow buttons (CC-addressed)
   for (let i = 0; i < 8; i++) {
-    setLed(BOTTOM_ROW_NOTES[i], ...COLOR_OFF)
-    setLed(BOTTOM_NARROW_CCS[i], ...COLOR_OFF)
+    setLedNote(BOTTOM_ROW_NOTES[i], PAL_OFF)
+    setLedCC(BOTTOM_NARROW_CCS[i], PAL_OFF)
   }
+  // Clear left column
+  setLedCC(LEFT_COL_RECORD, PAL_OFF)
+  setLedCC(LEFT_COL_PLAY, PAL_OFF)
 }
 
 function repaintDrumGrid(): void {
@@ -583,18 +591,18 @@ function handleMidiMessage(event: MIDIMessageEvent): void {
 function repaintFunctionButtons(): void {
   if (!_connected) return
 
-  // Record button
+  // Record button (left column — uses CC for LED)
   const isRecording = _getIsRecordArmed?.() ?? false
-  setLed(LEFT_COL_RECORD, ...(isRecording ? COLOR_RECORD_ON : COLOR_RECORD_OFF))
+  setLedCC(LEFT_COL_RECORD, rgbToPalette(...(isRecording ? COLOR_RECORD_ON : COLOR_RECORD_OFF)))
 
-  // Play button
+  // Play button (left column — uses CC for LED)
   const isPlaying = _getIsPlaying?.() ?? false
-  setLed(LEFT_COL_PLAY, ...(isPlaying ? COLOR_PLAY_ON : COLOR_PLAY_OFF))
+  setLedCC(LEFT_COL_PLAY, rgbToPalette(...(isPlaying ? COLOR_PLAY_ON : COLOR_PLAY_OFF)))
 
-  // Bank buttons — all 8 bottom row notes and narrow CCs
+  // Bank buttons — bottom row (note-addressed) and narrow CCs
   for (let i = 0; i < 8; i++) {
-    const color: RGB = i === _activeBank ? COLOR_BANK_ON : COLOR_BANK_OFF
-    setLed(BOTTOM_NARROW_CCS[i], ...color)
-    setLed(BOTTOM_ROW_NOTES[i], ...color)
+    const pal = rgbToPalette(...(i === _activeBank ? COLOR_BANK_ON : COLOR_BANK_OFF))
+    setLedCC(BOTTOM_NARROW_CCS[i], pal)
+    setLedNote(BOTTOM_ROW_NOTES[i], pal)
   }
 }
