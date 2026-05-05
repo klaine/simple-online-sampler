@@ -178,6 +178,13 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
         }
         if (allFiles.length === 0) return
 
+        // If .pgm files are present, let addSamplesToLibrary handle multi-pgm grouping
+        const hasPgm = allFiles.some((f) => f.name.match(/\.pgm$/i))
+        if (hasPgm) {
+          void addSamplesToLibrary(allFiles, undefined, folderName)
+          return
+        }
+
         // Check if files look like a drum kit and offer standard layout mapping
         const audioFiles = allFiles.filter((f) => f.type.startsWith('audio/') || f.name.match(/\.(wav|mp3|ogg|flac|aiff?|m4a|webm)$/i))
         const filenames = audioFiles.map((f) => f.name)
