@@ -601,7 +601,7 @@ export interface AppState {
   groupSamples: (sampleIds: string[], label?: string) => void
   ungroupSample: (sampleId: string) => void
   assignGroupToPads: (runId: string, startBank?: number) => Promise<void>
-  importPatternsForGroup: (patternsJson: string, padIndexToId?: Map<number, string>) => Promise<void>
+  importPatternsForGroup: (patternsJson: string, padIndexToId?: Map<number, string>, groupLabel?: string) => Promise<void>
   importPatternsForGroupByRunId: (runId: string) => Promise<void>
   renameAutosampleGroup: (runId: string, newLabel: string) => void
   updateAutosampleGroupSettings: (runId: string, patch: { bus?: BusId; chokeGroup?: number }) => void
@@ -4505,14 +4505,14 @@ export const useStore = create<AppState>()(
             padIndexToId.set(assignIdx, padId)
             assignIdx++
           }
-          await get().importPatternsForGroup(patternSource.autosamplePatterns, padIndexToId)
+          await get().importPatternsForGroup(patternSource.autosamplePatterns, padIndexToId, patternSource.autosampleRunLabel)
         }
       },
 
       // Import sequencer patterns from JSON (LCDK/imported kit data)
       // padIndexToId maps source pad indices to our pad IDs.
-      // If not provided, uses the currently assigned pads for the group (by autosamplePadIndex order).
-      importPatternsForGroup: async (patternsJson: string, padIndexToId?: Map<number, string>) => {
+      // Always appends new patterns (never overwrites existing).
+      importPatternsForGroup: async (patternsJson: string, padIndexToId?: Map<number, string>, groupLabel?: string) => {
         try {
           const patterns = JSON.parse(patternsJson) as Array<{ index: number; steps: Array<{ padIndex: number; step: number; velocity: number }> }>
           if (patterns.length === 0) return
@@ -4521,17 +4521,11 @@ export const useStore = create<AppState>()(
           if (!project) return
 
           const updatedSequences = [...project.sequences]
-
-          // Create missing patterns up to the max index needed
-          const maxIdx = Math.max(...patterns.map((p) => p.index))
-          while (updatedSequences.length <= maxIdx) {
-            updatedSequences.push(createDefaultSequence())
-          }
+          const baseName = groupLabel || 'Imported'
 
           let totalEvents = 0
+          let patternsAdded = 0
           for (const pat of patterns) {
-            let seqPattern = updatedSequences[pat.index]
-
             // Build events from imported steps
             const newEvents: import('../types').SequenceEvent[] = []
             for (const step of pat.steps) {
@@ -4546,19 +4540,19 @@ export const useStore = create<AppState>()(
               })
             }
             if (newEvents.length > 0) {
-              // Merge: remove conflicting pad+step combos from existing
-              const existingFiltered = seqPattern.events.filter((e) => {
-                return !newEvents.some((n) => n.padId === e.padId && n.step === e.step)
-              })
-              seqPattern = { ...seqPattern, events: [...existingFiltered, ...newEvents] }
-              updatedSequences[pat.index] = seqPattern
+              // Always append as a new pattern
+              const newPattern = createDefaultSequence()
+              newPattern.name = `${baseName} ${patternsAdded + 1}`
+              newPattern.events = newEvents
+              updatedSequences.push(newPattern)
               totalEvents += newEvents.length
+              patternsAdded++
             }
           }
 
           if (totalEvents > 0) {
             await get().saveProject({ ...project, pads: project.pads, sequences: updatedSequences })
-            get().addToast(`Imported ${totalEvents} events into ${patterns.length} pattern${patterns.length !== 1 ? 's' : ''}`, 'success')
+            get().addToast(`Imported ${totalEvents} events into ${patternsAdded} new pattern${patternsAdded !== 1 ? 's' : ''}`, 'success')
           }
         } catch (e) {
           console.warn('Failed to import sequencer patterns', e)
@@ -4605,7 +4599,7 @@ export const useStore = create<AppState>()(
           sorted.forEach((p, i) => padIndexToId.set(i, p.id))
         }
 
-        await get().importPatternsForGroup(patternSource.autosamplePatterns, padIndexToId)
+        await get().importPatternsForGroup(patternSource.autosamplePatterns, padIndexToId, patternSource.autosampleRunLabel)
       },
 
       // --- Autosample group management ---
