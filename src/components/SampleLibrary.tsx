@@ -178,9 +178,10 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
         }
         if (allFiles.length === 0) return
 
-        // If .pgm files are present, let addSamplesToLibrary handle multi-pgm grouping
+        // If .pgm or .lcdk files are present, let addSamplesToLibrary handle grouping
         const hasPgm = allFiles.some((f) => f.name.match(/\.pgm$/i))
-        if (hasPgm) {
+        const hasLcdk = allFiles.some((f) => f.name.match(/\.lcdk$/i))
+        if (hasPgm || hasLcdk) {
           void addSamplesToLibrary(allFiles, undefined, folderName)
           return
         }

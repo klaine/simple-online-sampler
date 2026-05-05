@@ -164,16 +164,18 @@ export interface SampleAsset {
   autosamplePadIndex?: number     // original pad index from imported program file (MPC .pgm, etc.)
   autosampleMpc?: boolean         // true only when imported via .pgm program file
   autosamplePreset?: boolean      // true for factory preset samples
-  /** MPC .pgm pad settings (applied on pad assignment) */
-  autosampleMpcPadSettings?: MpcPadImportSettings
+  /** Imported kit pad settings (applied on pad assignment) */
+  autosampleImportedPadSettings?: ImportedPadSettings
   /** MPC velocity layer index within a pad (0=primary, 1–3=additional layers) */
   autosampleMpcLayerIndex?: number
   /** MPC velocity range max for this layer (used to compute velocity splits) */
   autosampleMpcVelocityMax?: number
+  /** Sequencer pattern data from imported kit (stored on first sample in group only) */
+  autosamplePatterns?: string  // JSON-encoded LcdkPattern[] (kept as string to avoid IndexedDB serialization issues)
 }
 
-/** Per-pad settings extracted from MPC .pgm file, applied when sample is assigned to a pad */
-export interface MpcPadImportSettings {
+/** Per-pad settings extracted from imported kit files (.pgm, .lcdk), applied when sample is assigned to a pad */
+export interface ImportedPadSettings {
   pan?: number              // -1 to +1
   level?: number            // 0.0–1.0
   semitones?: number        // semitone offset
@@ -184,6 +186,7 @@ export interface MpcPadImportSettings {
   attack?: number           // seconds
   decay?: number            // seconds
   playMode?: 'one-shot' | 'adsr'
+  chokeGroup?: number       // 1–8 (0=off)
 }
 
 export interface SequenceEvent {
@@ -253,6 +256,6 @@ export interface PackageManifest {
   exportedAt: number
   project: Project
   usedSampleIds: string[]
-  sampleMeta?: { id: string; name: string; chopPoints?: number[]; autosampleRunId?: string; autosampleRunLabel?: string; autosamplePadIndex?: number; autosampleTrim?: TrimSettings; autosampleBus?: BusId; autosampleChokeGroup?: number; autosampleMpc?: boolean; autosamplePreset?: boolean; autosampleMpcPadSettings?: MpcPadImportSettings; autosampleMpcLayerIndex?: number; autosampleMpcVelocityMax?: number }[]
+  sampleMeta?: { id: string; name: string; chopPoints?: number[]; autosampleRunId?: string; autosampleRunLabel?: string; autosamplePadIndex?: number; autosampleTrim?: TrimSettings; autosampleBus?: BusId; autosampleChokeGroup?: number; autosampleMpc?: boolean; autosamplePreset?: boolean; autosampleImportedPadSettings?: ImportedPadSettings; autosampleMpcLayerIndex?: number; autosampleMpcVelocityMax?: number }[]
   synthPatches?: SynthPatch[]
 }

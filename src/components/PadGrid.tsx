@@ -2,6 +2,7 @@ import { useCallback, useRef, useState, useEffect, useSyncExternalStore, useMemo
 import { audioEngine } from '../lib/audioEngine'
 import { releaseMidiNote } from '../lib/midiOut'
 import { parseMpcPgm, matchMpcSamplesToFiles } from '../lib/mpcImport'
+import { parseLcdk, matchLcdkSamplesToFiles } from '../lib/lcdkImport'
 import { db } from '../lib/db'
 import { BANK_COUNT } from '../lib/constants'
 import type { SampleAsset, SampleLayer } from '../types'
@@ -613,6 +614,72 @@ export function PadGrid() {
                       addToast(`Imported MPC kit "${pgmResult.label}" (${clamped} pads)`, 'success')
                       return
                     }
+                  }
+                }
+
+                // Check for Loopcloud Drum .lcdk file
+                const lcdkFile = allDroppedFiles.find((f) => /\.lcdk$/i.test(f.name))
+                if (lcdkFile) {
+                  try {
+                    const jsonStr = await lcdkFile.text()
+                    const lcdkResult = parseLcdk(jsonStr, lcdkFile.name)
+                    if (lcdkResult && lcdkResult.pads.length > 0) {
+                      const audioFiles = allDroppedFiles.filter((f) => f !== lcdkFile && (f.type.startsWith('audio/') || /\.(wav|mp3|ogg|flac|aiff?|m4a|webm)$/i.test(f.name)))
+                      const matched = matchLcdkSamplesToFiles(lcdkResult.pads, audioFiles)
+                      if (matched.length > 0) {
+                        const allPads = useStore.getState().project?.pads
+                        if (!allPads) return
+                        const padsSorted = [...allPads].sort((a, b) => a.bank !== b.bank ? a.bank - b.bank : a.slot - b.slot)
+                        const startIdx = padsSorted.findIndex((p) => p.id === pad.id)
+                        if (startIdx === -1) return
+                        const assignedSampleIds: string[] = []
+                        for (let i = 0; i < matched.length; i++) {
+                          const targetPad = padsSorted[startIdx + i]
+                          if (!targetPad) break
+                          await assignFileToPad(targetPad, matched[i].file)
+                          const updatedPad = useStore.getState().project?.pads.find((p) => p.id === targetPad.id)
+                          if (updatedPad?.settings.sampleId) {
+                            assignedSampleIds.push(updatedPad.settings.sampleId)
+                            // Apply LCDK pad settings
+                            const lcdk = matched[i].mapping.settings
+                            const { project, saveProject } = useStore.getState()
+                            if (project && Object.keys(lcdk).length > 0) {
+                              await saveProject({
+                                ...project,
+                                pads: project.pads.map((p) => {
+                                  if (p.id !== targetPad.id) return p
+                                  return {
+                                    ...p,
+                                    settings: {
+                                      ...p.settings,
+                                      ...(lcdk.chokeGroup ? { chokeGroup: lcdk.chokeGroup } : {}),
+                                      ...(lcdk.pan != null ? { pan: lcdk.pan } : {}),
+                                      ...(lcdk.level != null ? { gain: lcdk.level } : {}),
+                                      ...(lcdk.semitones != null ? { semitones: lcdk.semitones } : {}),
+                                      ...(lcdk.fineCents != null ? { fineCents: lcdk.fineCents } : {}),
+                                      ...(lcdk.filterType ? { filterType: lcdk.filterType } : {}),
+                                      ...(lcdk.filterFreq != null ? { filterFreq: lcdk.filterFreq } : {}),
+                                      ...(lcdk.filterQ != null ? { filterQ: lcdk.filterQ } : {}),
+                                      ...(lcdk.playMode ? { mode: lcdk.playMode } : {}),
+                                      ...(lcdk.attack != null ? { envelope: { ...p.settings.envelope, attack: lcdk.attack } } : {}),
+                                    },
+                                  }
+                                }),
+                              })
+                            }
+                          }
+                        }
+                        if (assignedSampleIds.length >= 2) {
+                          const { groupSamples: grp } = useStore.getState()
+                          grp(assignedSampleIds, lcdkResult.label)
+                        }
+                        const clamped = Math.min(matched.length, padsSorted.length - startIdx)
+                        addToast(`Imported Loopcloud kit "${lcdkResult.label}" (${clamped} pads)`, 'success')
+                        return
+                      }
+                    }
+                  } catch (e) {
+                    console.warn('Failed to parse Loopcloud kit', lcdkFile.name, e)
                   }
                 }
 

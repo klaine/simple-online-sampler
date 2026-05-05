@@ -99,7 +99,7 @@ export const exportProjectPackage = async (project: Project, allSamples?: Sample
       autosampleChokeGroup: s.autosampleChokeGroup,
       autosampleMpc: s.autosampleMpc,
       autosamplePreset: s.autosamplePreset,
-      autosampleMpcPadSettings: s.autosampleMpcPadSettings,
+      autosampleImportedPadSettings: s.autosampleImportedPadSettings,
       autosampleMpcLayerIndex: s.autosampleMpcLayerIndex,
       autosampleMpcVelocityMax: s.autosampleMpcVelocityMax,
     })),
@@ -181,7 +181,7 @@ const normalizeImportedSamples = async (zip: JSZip, manifest: PackageManifest): 
           existing.autosampleChokeGroup = meta.autosampleChokeGroup
            existing.autosampleMpc = meta.autosampleMpc
            existing.autosamplePreset = meta.autosamplePreset
-           existing.autosampleMpcPadSettings = meta.autosampleMpcPadSettings
+           existing.autosampleImportedPadSettings = meta.autosampleImportedPadSettings
            existing.autosampleMpcLayerIndex = meta.autosampleMpcLayerIndex
            existing.autosampleMpcVelocityMax = meta.autosampleMpcVelocityMax
           updated = true
@@ -214,7 +214,7 @@ const normalizeImportedSamples = async (zip: JSZip, manifest: PackageManifest): 
         autosampleChokeGroup: meta.autosampleChokeGroup,
          autosampleMpc: meta.autosampleMpc,
          autosamplePreset: meta.autosamplePreset,
-         autosampleMpcPadSettings: meta.autosampleMpcPadSettings,
+         autosampleImportedPadSettings: meta.autosampleImportedPadSettings,
          autosampleMpcLayerIndex: meta.autosampleMpcLayerIndex,
          autosampleMpcVelocityMax: meta.autosampleMpcVelocityMax,
       }),

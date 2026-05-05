@@ -31,6 +31,7 @@ export const getDefaultEffectParams = (type: EffectType): Record<string, number>
 import { arrayBufferToHex, clampSequenceLength, midiToName, uid } from '../lib/utils'
 import { BANK_COUNT, PADS_PER_BANK } from '../lib/constants'
 import { parseMpcPgm, matchMpcSamplesToFiles } from '../lib/mpcImport'
+import { parseLcdk, matchLcdkSamplesToFiles } from '../lib/lcdkImport'
 import JSZip from 'jszip'
 import TransportClockWorker from '../workers/transportClock.worker?worker'
 import type {
@@ -3308,7 +3309,7 @@ export const useStore = create<AppState>()(
                 try {
                   const sample = await importFileAsSample(file, get, set)
                   // Build MPC pad settings from parsed mapping
-                  const mpcSettings: import('../types').MpcPadImportSettings = {}
+                  const mpcSettings: import('../types').ImportedPadSettings = {}
                   if (mapping.pan != null) mpcSettings.pan = mapping.pan
                   if (mapping.level != null) mpcSettings.level = mapping.level
                   if (mapping.semitones != null) mpcSettings.semitones = mapping.semitones
@@ -3331,7 +3332,7 @@ export const useStore = create<AppState>()(
                     autosamplePadIndex: padIndex,
                     autosampleMpc: true,
                     autosampleChokeGroup: mapping.chokeGroup ?? 0,
-                    ...(hasMpcSettings ? { autosampleMpcPadSettings: mpcSettings } : {}),
+                    ...(hasMpcSettings ? { autosampleImportedPadSettings: mpcSettings } : {}),
                     ...(hasMultiLayers ? { autosampleMpcLayerIndex: 0, autosampleMpcVelocityMax: velocityRanges?.[0] ?? 127 } : {}),
                   }
                   await db.putSample(updated)
@@ -3357,7 +3358,7 @@ export const useStore = create<AppState>()(
                           autosampleChokeGroup: mapping.chokeGroup ?? 0,
                           autosampleMpcLayerIndex: li + 1,
                           autosampleMpcVelocityMax: velocityRanges?.[li + 1] ?? 127,
-                          ...(hasMpcSettings ? { autosampleMpcPadSettings: mpcSettings } : {}),
+                          ...(hasMpcSettings ? { autosampleImportedPadSettings: mpcSettings } : {}),
                         }
                         await db.putSample(layerUpdated)
                         set((s) => {
@@ -3410,6 +3411,72 @@ export const useStore = create<AppState>()(
             return
           }
           // Fall through to auto-grouping logic for remaining samples
+        }
+
+        // --- Loopcloud Drum .lcdk import ---
+        const lcdkFiles = files.filter((f) => f.name.match(/\.lcdk$/i))
+        if (lcdkFiles.length > 0) {
+          const audioFiles = files.filter((f) => !f.name.match(/\.(lcdk|pgm)$/i) && (f.type.startsWith('audio/') || f.name.match(/\.(wav|mp3|ogg|flac|aiff?|m4a|webm)$/i)))
+          const kitNames: string[] = []
+
+          for (const lcdkFile of lcdkFiles) {
+            try {
+              const jsonStr = await lcdkFile.text()
+              const lcdkResult = parseLcdk(jsonStr, lcdkFile.name)
+              if (!lcdkResult || lcdkResult.pads.length === 0) {
+                console.warn('Empty or invalid Loopcloud kit', lcdkFile.name)
+                continue
+              }
+              const matched = matchLcdkSamplesToFiles(lcdkResult.pads, audioFiles)
+              if (matched.length === 0) {
+                get().addToast(`No matching audio files for "${lcdkResult.label}"`)
+                continue
+              }
+              const runId = uid()
+              const runLabel = lcdkResult.label
+              let kitAdded = 0
+              const hasPatterns = lcdkResult.patterns.length > 0
+              for (const { padIndex, file, mapping } of matched) {
+                try {
+                  const sample = await importFileAsSample(file, get, set)
+                  const padSettings = mapping.settings
+                  const hasPadSettings = Object.keys(padSettings).length > 0
+                  const isFirst = kitAdded === 0
+                  const updated: SampleAsset = {
+                    ...sample,
+                    autosampleRunId: runId,
+                    autosampleRunLabel: runLabel,
+                    autosamplePadIndex: padIndex,
+                    autosampleChokeGroup: padSettings.chokeGroup ?? 0,
+                    ...(mapping.trimStart ? { autosampleTrim: { start: mapping.trimStart, end: 1 } } : {}),
+                    ...(hasPadSettings ? { autosampleImportedPadSettings: padSettings } : {}),
+                    ...(isFirst && hasPatterns ? { autosamplePatterns: JSON.stringify(lcdkResult.patterns) } : {}),
+                  }
+                  await db.putSample(updated)
+                  set((s) => {
+                    const idx = s.samples.findIndex((x) => x.id === updated.id)
+                    if (idx >= 0) s.samples[idx] = updated
+                    s.sampleMap.set(updated.id, updated)
+                  })
+                  kitAdded++
+                } catch (e) {
+                  console.warn('Failed to import Loopcloud sample', file.name, e)
+                }
+              }
+              if (kitAdded > 0) {
+                kitNames.push(runLabel)
+                added += kitAdded
+              }
+            } catch (e) {
+              console.warn('Failed to parse Loopcloud kit', lcdkFile.name, e)
+            }
+          }
+
+          if (kitNames.length > 0) {
+            get().addToast(`Imported ${kitNames.length} Loopcloud kit${kitNames.length > 1 ? 's' : ''}: ${kitNames.join(', ')}`)
+          }
+          if (added > 0) return
+          return
         }
 
         // Normal file import loop (when no pgm files in drop)
@@ -4342,7 +4409,7 @@ export const useStore = create<AppState>()(
               envelope: null, filterType: null, filterFreq: null, filterQ: null,
               stackOffsetMs: null,
             }))
-            const mpc = primarySample.autosampleMpcPadSettings
+            const mpc = primarySample.autosampleImportedPadSettings
             return {
               ...p,
               name: noteGroup.baseName.replace(/\.[^.]+$/, ''),
@@ -4375,7 +4442,7 @@ export const useStore = create<AppState>()(
             }
           } else {
             // Single sample per pad
-            const mpc = primarySample.autosampleMpcPadSettings
+            const mpc = primarySample.autosampleImportedPadSettings
             return {
               ...p,
               name: primarySample.name,
@@ -4425,6 +4492,57 @@ export const useStore = create<AppState>()(
         for (const sample of updated) void db.putSample(sample)
 
         s.addToast(`Assigned ${noteGroups.length} note${noteGroups.length !== 1 ? 's' : ''} from group to ${assignMap.size} pads`)
+
+        // --- Import sequencer patterns from LCDK/imported kit data ---
+        const patternSource = groupSamples.find((sam) => sam.autosamplePatterns)
+        if (patternSource?.autosamplePatterns) {
+          try {
+            const patterns = JSON.parse(patternSource.autosamplePatterns) as Array<{ index: number; steps: Array<{ padIndex: number; step: number; velocity: number }> }>
+            if (patterns.length > 0) {
+              // Build padIndex → padId map (based on assignment order)
+              const padIndexToId = new Map<number, string>()
+              let assignIdx = 0
+              for (const [padId] of assignMap) {
+                padIndexToId.set(assignIdx, padId)
+                assignIdx++
+              }
+              const { project } = get()
+              if (project) {
+                const updatedSequences = [...project.sequences]
+                for (const pat of patterns) {
+                  // Map pattern index to our sequence patterns (create if needed)
+                  let seqPattern = updatedSequences[pat.index]
+                  if (!seqPattern) continue // only import into existing pattern slots
+
+                  // Build events from LCDK steps
+                  const newEvents: import('../types').SequenceEvent[] = []
+                  for (const step of pat.steps) {
+                    const padId = padIndexToId.get(step.padIndex)
+                    if (!padId) continue
+                    newEvents.push({
+                      id: uid(),
+                      step: step.step,
+                      padId,
+                      velocity: step.velocity,
+                      gate: 1,
+                    })
+                  }
+                  if (newEvents.length > 0) {
+                    // Merge with existing events (remove conflicting pad+step combos)
+                    const existingFiltered = seqPattern.events.filter((e) => {
+                      return !newEvents.some((n) => n.padId === e.padId && n.step === e.step)
+                    })
+                    seqPattern = { ...seqPattern, events: [...existingFiltered, ...newEvents] }
+                    updatedSequences[pat.index] = seqPattern
+                  }
+                }
+                await get().saveProject({ ...project, pads: get().project!.pads, sequences: updatedSequences })
+              }
+            }
+          } catch (e) {
+            console.warn('Failed to import sequencer patterns from kit', e)
+          }
+        }
       },
 
       // --- Autosample group management ---
