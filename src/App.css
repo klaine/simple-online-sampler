@@ -2208,6 +2208,8 @@ select.tb-led-value {
 .import-actions {
   display: flex;
   gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
 }
 
 .remove-unassigned-btn {
@@ -2215,6 +2217,13 @@ select.tb-led-value {
   color: #c66;
   border-color: rgba(204, 102, 102, 0.25);
   background: transparent;
+}
+
+.storage-usage {
+  font-size: 0.65rem;
+  color: #888;
+  margin-left: auto;
+  white-space: nowrap;
 }
 
 .conflicts {

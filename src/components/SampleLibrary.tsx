@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useRef } from 'react'
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react'
 import {
   useStore,
   selectSelectedPad,
@@ -69,6 +69,24 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
   const patchImportRef = useRef<HTMLInputElement>(null)
   const sampleImportRef = useRef<HTMLInputElement>(null)
   const folderImportRef = useRef<HTMLInputElement>(null)
+
+  // Storage usage estimate
+  const [storageUsage, setStorageUsage] = useState<string>('')
+  useEffect(() => {
+    const update = () => {
+      if (navigator.storage?.estimate) {
+        navigator.storage.estimate().then((est) => {
+          if (est.usage != null) {
+            const mb = est.usage / (1024 * 1024)
+            setStorageUsage(mb < 1024 ? `${mb.toFixed(1)} MB` : `${(mb / 1024).toFixed(2)} GB`)
+          }
+        }).catch(() => {})
+      }
+    }
+    update()
+    const interval = setInterval(update, 10000)
+    return () => clearInterval(interval)
+  }, [])
 
   const handleExportPatch = useCallback((patch: SynthPatch) => {
     const json = JSON.stringify(patch, null, 2)
@@ -778,6 +796,7 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
             <button type="button" onClick={() => openAutosampleDialog()} title="Automatically sample external MIDI gear">Auto-Sample</button>
             <button type="button" className="remove-unassigned-btn" onClick={() => void removeUnassignedSamples()}>Remove Unassigned</button>
             <button type="button" className="remove-unassigned-btn" onClick={() => void compactProject()} title="Remove unused pads/samples and consolidate to first banks">Compact Project</button>
+            {storageUsage && <span className="storage-usage" title="Local storage used by this app">{storageUsage}</span>}
           </div>
         </section>
       </div>
