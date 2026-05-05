@@ -157,8 +157,8 @@ export function parseLcdk(jsonString: string, filename: string): LcdkResult | nu
       settings: Object.keys(settings).length > 1 ? settings : settings, // always include playMode
     }
 
-    // Sample start → trim
-    if (pad.samplestart != null && pad.samplestart > 0) {
+    // Sample start → trim (only fractional values; 0 and 1 both mean "no trim")
+    if (pad.samplestart != null && pad.samplestart > 0 && pad.samplestart < 1) {
       mapping.trimStart = pad.samplestart
     }
 
