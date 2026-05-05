@@ -53,20 +53,20 @@ function lcdkLpToHz(value: number): number {
 
 /**
  * Map Loopcloud attack/hold time (0–1) to seconds.
- * 0 = instant, 0.5 ≈ 185ms, 1.0 = 4s
+ * 0 = instant, 0.5 ≈ 220ms, 0.778 ≈ 1.5s, 1.0 = 4s
  */
 function lcdkAttackToSec(value: number): number {
   if (value <= 0) return 0
-  return 4 * Math.pow(value, 4.43)
+  return 4 * Math.pow(value, 4.17)
 }
 
 /**
  * Map Loopcloud decay/release time (0–1) to seconds.
- * 0 = instant, 0.5 ≈ 225ms, 1.0 = 6s
+ * 0 = instant, 0.5 ≈ 250ms, 0.778 ≈ 2s, 1.0 = 6s
  */
 function lcdkDecayToSec(value: number): number {
   if (value <= 0) return 0
-  return 6 * Math.pow(value, 4.74)
+  return 6 * Math.pow(value, 4.56)
 }
 
 export function parseLcdk(jsonString: string, filename: string): LcdkResult | null {

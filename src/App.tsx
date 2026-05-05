@@ -1461,7 +1461,64 @@ function App() {
 
       {layoutMode === 'performance' ? (
         <section className="perf-layout" ref={perfDivContainerRef}>
-          <div className="perf-left" style={{ flex: perfSplitRatio }}>
+          <div
+            className="perf-left"
+            style={{ flex: perfSplitRatio }}
+            onDragOver={(e) => {
+              if (e.dataTransfer.types.includes('Files')) {
+                e.preventDefault()
+                e.dataTransfer.dropEffect = 'copy'
+              }
+            }}
+            onDrop={(e) => {
+              // Only intercept when NOT on library tab (library has its own handler)
+              if (performanceTab === 'library') return
+              const items = Array.from(e.dataTransfer.items)
+              const hasFiles = items.some((it) => it.kind === 'file')
+              if (!hasFiles) return
+              e.preventDefault()
+              e.stopPropagation()
+              // Switch to library tab
+              useStore.setState({ performanceTab: 'library' })
+              localStorage.setItem('performanceTab', 'library')
+              // Read entries (supports folders via webkitGetAsEntry)
+              const allFiles: File[] = []
+              const readEntry = (entry: FileSystemEntry): Promise<void> => {
+                if (entry.isFile) {
+                  return new Promise((resolve) => {
+                    (entry as FileSystemFileEntry).file((f) => { allFiles.push(f); resolve() }, () => resolve())
+                  })
+                } else if (entry.isDirectory) {
+                  return new Promise((resolve) => {
+                    const reader = (entry as FileSystemDirectoryEntry).createReader()
+                    const readBatch = () => {
+                      reader.readEntries(async (entries) => {
+                        if (entries.length === 0) { resolve(); return }
+                        for (const ent of entries) await readEntry(ent)
+                        readBatch()
+                      }, () => resolve())
+                    }
+                    readBatch()
+                  })
+                }
+                return Promise.resolve()
+              }
+              void (async () => {
+                for (const item of items) {
+                  const entry = (item as any).webkitGetAsEntry?.() as FileSystemEntry | null
+                  if (entry) {
+                    await readEntry(entry)
+                  } else if (item.kind === 'file') {
+                    const f = item.getAsFile()
+                    if (f) allFiles.push(f)
+                  }
+                }
+                if (allFiles.length > 0) {
+                  void useStore.getState().addSamplesToLibrary(allFiles)
+                }
+              })()
+            }}
+          >
             <div className="perf-tabs">
               {([
                 ['library', 'Samples'],
