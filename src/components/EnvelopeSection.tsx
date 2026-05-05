@@ -11,26 +11,28 @@ interface VerticalFaderProps {
   max: number
   step?: number
   logScale?: boolean
+  logExp?: number
   onChange: (v: number) => void
   formatValue?: (v: number) => string
 }
 
 const LOG_EXP = Math.log(5) / Math.log(2) // ≈ 2.322
 
-function logToLinear(norm: number): number {
-  return Math.pow(norm, LOG_EXP)
+function logToLinear(norm: number, exp: number = LOG_EXP): number {
+  return Math.pow(norm, exp)
 }
-function linearToLog(norm: number): number {
-  return Math.pow(norm, 1 / LOG_EXP)
+function linearToLog(norm: number, exp: number = LOG_EXP): number {
+  return Math.pow(norm, 1 / exp)
 }
 
-function VerticalFader({ label, value, min, max, step, logScale, onChange, formatValue, disabled }: VerticalFaderProps & { disabled?: boolean }) {
+function VerticalFader({ label, value, min, max, step, logScale, logExp, onChange, formatValue, disabled }: VerticalFaderProps & { disabled?: boolean }) {
   const trackRef = useRef<HTMLDivElement>(null)
+  const exp = logExp ?? LOG_EXP
 
   const norm = useMemo(() => {
     const raw = max > min ? (value - min) / (max - min) : 0
-    return logScale ? linearToLog(Math.max(0, Math.min(1, raw))) : Math.max(0, Math.min(1, raw))
-  }, [value, min, max, logScale])
+    return logScale ? linearToLog(Math.max(0, Math.min(1, raw)), exp) : Math.max(0, Math.min(1, raw))
+  }, [value, min, max, logScale, exp])
 
   const computeValue = useCallback(
     (clientY: number) => {
@@ -38,12 +40,12 @@ function VerticalFader({ label, value, min, max, step, logScale, onChange, forma
       if (!track) return value
       const rect = track.getBoundingClientRect()
       let ratio = 1 - Math.max(0, Math.min(1, (clientY - rect.top) / rect.height))
-      if (logScale) ratio = logToLinear(ratio)
+      if (logScale) ratio = logToLinear(ratio, exp)
       let v = min + ratio * (max - min)
       if (step) v = Math.round(v / step) * step
       return Math.max(min, Math.min(max, v))
     },
-    [min, max, value, step, logScale],
+    [min, max, value, step, logScale, exp],
   )
 
   const onPointerDown = useCallback(
@@ -198,16 +200,16 @@ export const EnvelopeSection = memo(function EnvelopeSection(props: EnvelopeSect
       <div className="envelope-faders">
         <VerticalFader label={levelLabel} value={levelValue} min={levelMin} max={levelMax} step={levelStep} onChange={onLevelChange} formatValue={formatLevel} />
         <div className="env-fader-separator" />
-        <VerticalFader label="A" value={attack} min={0} max={5} step={0.001} logScale onChange={onAttackChange} formatValue={formatTime} disabled={adsrDisabled} />
+        <VerticalFader label="A" value={attack} min={0} max={isAhr ? 4 : 5} step={0.001} logScale logExp={isAhr ? 4.43 : undefined} onChange={onAttackChange} formatValue={formatTime} disabled={adsrDisabled} />
         {isAhr ? (
-          <VerticalFader label="H" value={hold ?? 0} min={0} max={4} step={0.001} logScale onChange={onHoldChange ?? (() => {})} formatValue={formatTime} disabled={adsrDisabled} />
+          <VerticalFader label="H" value={hold ?? 0} min={0} max={4} step={0.001} logScale logExp={4.43} onChange={onHoldChange ?? (() => {})} formatValue={formatTime} disabled={adsrDisabled} />
         ) : (
           <VerticalFader label="D" value={decay} min={0} max={5} step={0.001} logScale onChange={onDecayChange} formatValue={formatTime} disabled={adsrDisabled} />
         )}
         {!isAhr && (
           <VerticalFader label="S" value={sustain} min={0} max={1} step={0.01} onChange={onSustainChange} formatValue={(v) => `${Math.round(v * 100)}%`} disabled={adsrDisabled} />
         )}
-        <VerticalFader label="R" value={release} min={0} max={isAhr ? 6 : 5} step={0.001} logScale onChange={onReleaseChange} formatValue={formatTime} disabled={adsrDisabled} />
+        <VerticalFader label="R" value={release} min={0} max={isAhr ? 6 : 5} step={0.001} logScale logExp={isAhr ? 4.74 : undefined} onChange={onReleaseChange} formatValue={formatTime} disabled={adsrDisabled} />
       </div>
     </div>
   )

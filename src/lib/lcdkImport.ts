@@ -52,12 +52,21 @@ function lcdkLpToHz(value: number): number {
 }
 
 /**
- * Map Loopcloud envelope time (0–1) to seconds.
- * 0 = instant, 1 = max (~5s)
+ * Map Loopcloud attack/hold time (0–1) to seconds.
+ * 0 = instant, 0.5 ≈ 185ms, 1.0 = 4s
  */
-function lcdkEnvToSec(value: number): number {
+function lcdkAttackToSec(value: number): number {
   if (value <= 0) return 0
-  return 5 * Math.pow(value, 2) // quadratic for musical feel
+  return 4 * Math.pow(value, 4.43)
+}
+
+/**
+ * Map Loopcloud decay/release time (0–1) to seconds.
+ * 0 = instant, 0.5 ≈ 225ms, 1.0 = 6s
+ */
+function lcdkDecayToSec(value: number): number {
+  if (value <= 0) return 0
+  return 6 * Math.pow(value, 4.74)
 }
 
 export function parseLcdk(jsonString: string, filename: string): LcdkResult | null {
@@ -75,13 +84,13 @@ export function parseLcdk(jsonString: string, filename: string): LcdkResult | nu
 
   for (const pad of data.pads) {
     if (!pad.filename) continue
-    // Skip muted or empty pads
-    if (pad.mute === true || pad.mute === 1) continue
 
     const settings: ImportedPadSettings = {}
 
-    // Volume → gain (direct 0–1)
-    if (pad.volume != null && pad.volume < 1) {
+    // Volume → gain. Muted pads get gain 0.
+    if (pad.mute === true || pad.mute === 1) {
+      settings.level = 0
+    } else if (pad.volume != null && pad.volume < 1) {
       settings.level = Math.max(0, Math.min(1, pad.volume))
     }
 
@@ -90,8 +99,10 @@ export function parseLcdk(jsonString: string, filename: string): LcdkResult | nu
       settings.pan = Math.max(-1, Math.min(1, (pad.pan - 0.5) * 2))
     }
 
-    // Tuning
-    if (pad.transposeSemitones != null && pad.transposeSemitones !== 0) {
+    // Tuning: coarsetune (0–1, 0.5=center, ±24 semitones) takes priority
+    if (pad.coarsetune != null && pad.coarsetune !== 0.5) {
+      settings.semitones = Math.round((pad.coarsetune - 0.5) * 48)
+    } else if (pad.transposeSemitones != null && pad.transposeSemitones !== 0) {
       settings.semitones = Math.round(pad.transposeSemitones)
     }
     if (pad.finetune != null && pad.finetune !== 0.5) {
@@ -121,15 +132,15 @@ export function parseLcdk(jsonString: string, filename: string): LcdkResult | nu
     const hasHold = pad.hold != null && pad.hold > 0
     const hasRelease = pad.release != null && pad.release > 0
     if (hasAttack) {
-      settings.attack = lcdkEnvToSec(pad.attack)
+      settings.attack = lcdkAttackToSec(pad.attack)
     }
     if (hasHold || hasRelease) {
       settings.playMode = 'ahr'
       if (hasHold) {
-        settings.hold = 4 * Math.pow(pad.hold, 2) // 0-1 → 0-4s quadratic
+        settings.hold = lcdkAttackToSec(pad.hold)
       }
       if (hasRelease) {
-        settings.release = 6 * Math.pow(pad.release, 2) // 0-1 → 0-6s quadratic
+        settings.release = lcdkDecayToSec(pad.release)
       }
     } else {
       settings.playMode = 'one-shot'
@@ -198,6 +209,16 @@ export interface LcdkMatchedPad {
   mapping: LcdkPadMapping
 }
 
+/** Extract numeric prefix like "evn_13" from "EVN_13_Rhodes_01.wav" for fuzzy matching */
+function extractPrefix(filename: string): string | null {
+  const base = filename.replace(/\.[^.]+$/, '')
+  const parts = base.split('_')
+  if (parts.length >= 2 && /\d/.test(parts[1])) {
+    return (parts[0] + '_' + parts[1]).toLowerCase()
+  }
+  return null
+}
+
 export function matchLcdkSamplesToFiles(
   pads: LcdkPadMapping[],
   files: File[],
@@ -210,7 +231,22 @@ export function matchLcdkSamplesToFiles(
 
   const result: LcdkMatchedPad[] = []
   for (const pad of pads) {
-    const file = fileMap.get(pad.filename.toLowerCase())
+    // Exact match first
+    let file = fileMap.get(pad.filename.toLowerCase())
+
+    // Fuzzy fallback: match by numeric prefix (e.g. "EVN_13")
+    if (!file) {
+      const prefix = extractPrefix(pad.filename)
+      if (prefix) {
+        for (const f of files) {
+          if (extractPrefix(f.name) === prefix) {
+            file = f
+            break
+          }
+        }
+      }
+    }
+
     if (file) {
       result.push({ padIndex: pad.index, file, mapping: pad })
     }
