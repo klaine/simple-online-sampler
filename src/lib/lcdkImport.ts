@@ -149,9 +149,9 @@ export function parseLcdk(jsonString: string, filename: string): LcdkResult | nu
       if (!pat.pattern_Note || !pat.pattern_Vel) continue
 
       const steps: LcdkPatternStep[] = []
-      // Layout: 16 pads × 16 steps (first 256 entries), remaining 16 are unused padding
+      // Layout: 16 pads × 17 slots = 272 (stride 17, slot 16 is unused separator per pad)
       for (let padIdx = 0; padIdx < 16; padIdx++) {
-        const offset = padIdx * 16
+        const offset = padIdx * 17
         for (let step = 0; step < 16; step++) {
           const noteVal = pat.pattern_Note[offset + step]
           if (noteVal > 0) {
