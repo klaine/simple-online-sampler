@@ -502,15 +502,29 @@ function App() {
           },
           getIsPlaying: () => useStore.getState().isPlaying,
           getIsRecordArmed: () => useStore.getState().seqRecordArmed,
-          getBankPage: () => Math.floor((useStore.getState().activeBank ?? 0) / 2),
+          getActiveBank: () => useStore.getState().activeBank ?? 0,
           triggerPad: (pad, velocity) => {
-            // Ensure AudioContext is resumed (launchpad input may not count as user gesture)
             audioEngine.unlockSync()
             const st = useStore.getState()
             if (st.padHoldRecordEnabled && !pad.settings.sampleId) {
               st.startPadHoldRecord(pad.id)
             } else {
               st.triggerPad(pad, velocity)
+            }
+          },
+          triggerChromatic: (pad, velocity, semitoneOffset) => {
+            audioEngine.unlockSync()
+            const st = useStore.getState()
+            const baseNote = (pad.settings.synthParams?.baseNote ?? 60) + (pad.settings.semitones ?? 0)
+            const midiNote = baseNote + semitoneOffset
+            audioEngine.playPad(pad, velocity, {
+              semitoneOffset,
+              hold: pad.settings.mode === 'adsr',
+              bpm: st.project?.bpm ?? 120,
+            })
+            // Record if armed
+            if (st.isPlaying && st.seqRecordArmed) {
+              st.recordPadHit(pad.id, Math.round(velocity * 127), midiNote)
             }
           },
           releasePad: (padId) => {
@@ -520,6 +534,18 @@ function App() {
             } else {
               audioEngine.releasePad(padId)
               releaseMidiNote(padId)
+            }
+          },
+          releaseChromatic: (padId, semitoneOffset) => {
+            const st = useStore.getState()
+            const pad = st.project?.pads.find((p) => p.id === padId)
+            if (!pad) return
+            audioEngine.releasePad(padId)
+            // Record gate length if recording
+            if (st.isPlaying && st.seqRecordArmed) {
+              const baseNote = (pad.settings.synthParams?.baseNote ?? 60) + (pad.settings.semitones ?? 0)
+              const midiNote = baseNote + semitoneOffset
+              st.recordPadRelease(padId, midiNote)
             }
           },
           toggleStep: (step, padId) => { void useStore.getState().toggleStep(step, padId) },
@@ -535,9 +561,8 @@ function App() {
           toggleRecord: () => {
             useStore.setState((s) => ({ seqRecordArmed: !s.seqRecordArmed }))
           },
-          setBankPage: (page) => {
-            // Set activeBank to the first bank of the page (so UI shows that bank)
-            useStore.setState({ activeBank: page * 2 })
+          setBank: (bank) => {
+            useStore.setState({ activeBank: bank })
           },
           subscribeStore: (listener) => useStore.subscribe(listener),
         })

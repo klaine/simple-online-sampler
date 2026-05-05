@@ -4,11 +4,13 @@
  * Grid layout (8×8):
  *   16-step mode:
  *     Rows 7-8 (top 2 rows):     16-step sequencer for last-triggered pad
- *     Rows 1-4 (bottom 4 rows):  Drum pads — Bank 1 (4×4 left) + Bank 2 (4×4 right)
  *     Rows 5-6:                   unused (dimmed)
+ *     Rows 1-4 (bottom 4 rows):  Left 4×4 = drum pads (1 bank), Right 4×4 = chromatic play
  *   32-step mode:
  *     Rows 5-8 (top 4 rows):     32-step sequencer (8 steps per row, top-to-bottom)
- *     Rows 1-4 (bottom 4 rows):  Drum pads — Bank 1 (4×4 left) + Bank 2 (4×4 right)
+ *     Rows 1-4 (bottom 4 rows):  Left 4×4 = drum pads (1 bank), Right 4×4 = chromatic play
+ *
+ * Bottom thin buttons (notes 1-8): switch between 8 banks directly
  *
  * Pad note numbers in Programmer Mode:
  *   Row 1 (bottom) = 11-18, Row 2 = 21-28, ..., Row 8 (top) = 81-88
@@ -24,98 +26,93 @@ const SYSEX_END = 0xf7
 // Enter Programmer mode
 const SYSEX_PROGRAMMER_MODE = [...SYSEX_HEADER, 0x0e, 0x01, SYSEX_END]
 
-// LED lighting (RGB): header + 03 03 <pad> <r> <g> <b> + F7
-// function buildLedSysEx(pad: number, r: number, g: number, b: number): number[] {
-//   return [...SYSEX_HEADER, 0x03, 0x03, pad, r & 0x7f, g & 0x7f, b & 0x7f, SYSEX_END]
-// }
-
-// Batch LED update (kept for potential future use)
-// function buildBatchLedSysEx(leds: Array<{ pad: number; r: number; g: number; b: number }>): number[] {
-//   const data = [...SYSEX_HEADER, 0x03]
-//   for (const led of leds) {
-//     data.push(0x03, led.pad, led.r & 0x7f, led.g & 0x7f, led.b & 0x7f)
-//   }
-//   data.push(SYSEX_END)
-//   return data
-// }
-
 // --- Colors (0-127 range for SysEx RGB) ---
 const COLOR_OFF: [number, number, number] = [0, 0, 0]
 const COLOR_PAD_EMPTY: [number, number, number] = [3, 3, 3]           // very dim (visible grid)
-const COLOR_PAD_B1_ASSIGNED: [number, number, number] = [0, 80, 0]    // green (bank 1)
-const COLOR_PAD_B1_ACTIVE: [number, number, number] = [0, 127, 0]     // bright green (bank 1 hit)
-const COLOR_PAD_B2_ASSIGNED: [number, number, number] = [80, 0, 80]   // purple (bank 2) — distinct from green
-const COLOR_PAD_B2_ACTIVE: [number, number, number] = [127, 0, 127]   // bright purple (bank 2 hit)
+const COLOR_PAD_ASSIGNED: [number, number, number] = [0, 80, 0]       // green
+const COLOR_PAD_ACTIVE: [number, number, number] = [0, 127, 0]        // bright green (hit flash)
 const COLOR_STEP_ON: [number, number, number] = [80, 80, 0]           // yellow
 const COLOR_STEP_OFF: [number, number, number] = [8, 8, 8]            // dim gray
+const COLOR_CHROMATIC_WHITE: [number, number, number] = [30, 30, 40]  // dim blueish white (natural notes)
+const COLOR_CHROMATIC_BLACK: [number, number, number] = [10, 10, 50]  // dim blue (accidentals)
+const COLOR_CHROMATIC_ACTIVE: [number, number, number] = [80, 80, 127] // bright blue (hit flash)
 
 // --- Launchpad Pro MK3 Programmer Mode button addresses ---
 // Bottom row below grid (left to right): notes 1-8
-// Left column (bottom to top): notes 10, 20, 30, 40, 50, 60, 70, 80
-// Right column (bottom to top): notes 19, 29, 39, 49, 59, 69, 79, 89
-// Top row: CCs 91-98
-
-// Bottom row notes used for bank page switching (text label row)
 const BOTTOM_ROW_NOTES = [1, 2, 3, 4, 5, 6, 7, 8]
 
-// Bottom narrow buttons (between grid and text row) — likely CCs or different notes
-// These will be confirmed via MIDI logging; trying common Programmer mode values
+// Bottom narrow buttons (CCs)
 const BOTTOM_NARROW_CCS = [101, 102, 103, 104, 105, 106, 107, 108]
 
-// Left column — Record and Play (trying both note and CC addresses)
-const LEFT_COL_RECORD = 10   // bottom-left button
-const LEFT_COL_PLAY = 20     // second from bottom-left
+// Left column — Record and Play
+const LEFT_COL_RECORD = 10
+const LEFT_COL_PLAY = 20
 
 // Colors for functional buttons
-const COLOR_RECORD_OFF: [number, number, number] = [20, 0, 0]     // dim red
-const COLOR_RECORD_ON: [number, number, number] = [127, 0, 0]     // bright red
-const COLOR_PLAY_OFF: [number, number, number] = [0, 20, 0]       // dim green
-const COLOR_PLAY_ON: [number, number, number] = [0, 127, 0]       // bright green
-const COLOR_BANK_PAGE_OFF: [number, number, number] = [10, 10, 10] // dim
-const COLOR_BANK_PAGE_ON: [number, number, number] = [127, 80, 0]  // orange (active page)
-// These are used as note-on velocity values on ch1 to set pad colors
+const COLOR_RECORD_OFF: [number, number, number] = [20, 0, 0]
+const COLOR_RECORD_ON: [number, number, number] = [127, 0, 0]
+const COLOR_PLAY_OFF: [number, number, number] = [0, 20, 0]
+const COLOR_PLAY_ON: [number, number, number] = [0, 127, 0]
+const COLOR_BANK_OFF: [number, number, number] = [10, 10, 10]
+const COLOR_BANK_ON: [number, number, number] = [127, 80, 0]   // orange (active bank)
+
+// Palette indices for note-velocity LED method
 const PAL_OFF = 0
 const PAL_DIM_GRAY = 1
-const PAL_GREEN = 21          // medium green
-const PAL_GREEN_BRIGHT = 17   // bright green
-const PAL_PURPLE = 53         // purple
-const PAL_PURPLE_BRIGHT = 57  // bright magenta/purple
-const PAL_YELLOW = 13         // yellow
-const PAL_DIM_WHITE = 2       // dim white
-const PAL_WHITE = 3           // white
-const PAL_ORANGE = 9          // orange
+const PAL_GREEN = 21
+const PAL_GREEN_BRIGHT = 17
+const PAL_YELLOW = 13
+const PAL_DIM_WHITE = 2
+const PAL_WHITE = 3
+const PAL_ORANGE = 9
+const PAL_BLUE = 45
+const PAL_BLUE_BRIGHT = 41
+const PAL_LIGHT_BLUE = 44
+
+type RGB = [number, number, number]
 
 // --- Pad layout mapping ---
 
-type RGB = [number, number, number]
-/** quadrant: 0 = left half of grid, 1 = right half */
-function bankAssignedColor(quadrant: number): RGB { return quadrant === 0 ? COLOR_PAD_B1_ASSIGNED : COLOR_PAD_B2_ASSIGNED }
-function bankActiveColor(quadrant: number): RGB { return quadrant === 0 ? COLOR_PAD_B1_ACTIVE : COLOR_PAD_B2_ACTIVE }
-
 /**
- * Drum grid: bottom 4 rows (rows 1-4), two 4×4 quadrants
- * Left quadrant (cols 1-4) = bank page's first bank
- * Right quadrant (cols 5-8) = bank page's second bank
- * Within each 4×4 block: bottom-left = pad 1, top-right = pad 16 (MPC layout)
+ * Drum grid: bottom 4 rows (rows 1-4), left 4 columns (cols 1-4)
+ * Bottom-left = pad 0, top-right = pad 15 (MPC layout)
  */
-function drumPadToNote(quadrant: number, padSlot: number): number {
-  const row = Math.floor(padSlot / 4)
-  const col = padSlot % 4
-  const noteRow = row + 1
-  const noteCol = (quadrant === 0 ? col : col + 4) + 1
-  return noteRow * 10 + noteCol
+function drumPadToNote(padSlot: number): number {
+  const row = Math.floor(padSlot / 4) + 1
+  const col = (padSlot % 4) + 1
+  return row * 10 + col
 }
 
 function noteToDrumPad(note: number): { bank: number; padSlot: number } | null {
   const row = Math.floor(note / 10)
   const col = note % 10
-  if (row < 1 || row > 4 || col < 1 || col > 8) return null
-  const quadrant = col <= 4 ? 0 : 1
-  const localCol = quadrant === 0 ? col - 1 : col - 5
-  const padSlot = (row - 1) * 4 + localCol
-  // Map quadrant to absolute bank using current bank page
-  const bank = _activeBankPage * 2 + quadrant
-  return { bank, padSlot }
+  if (row < 1 || row > 4 || col < 1 || col > 4) return null
+  const padSlot = (row - 1) * 4 + (col - 1)
+  return { bank: _activeBank, padSlot }
+}
+
+/**
+ * Chromatic grid: bottom 4 rows (rows 1-4), right 4 columns (cols 5-8)
+ * Bottom-left (row 1, col 5) = semitone offset 0
+ * Goes left-to-right, then bottom-to-top: 0-3 on row 1, 4-7 on row 2, etc.
+ */
+function noteToChromaticOffset(note: number): number | null {
+  const row = Math.floor(note / 10)
+  const col = note % 10
+  if (row < 1 || row > 4 || col < 5 || col > 8) return null
+  return (row - 1) * 4 + (col - 5)
+}
+
+function chromaticOffsetToNote(offset: number): number {
+  const row = Math.floor(offset / 4) + 1
+  const col = (offset % 4) + 5
+  return row * 10 + col
+}
+
+/** Returns true if semitone offset (mod 12) is a black key */
+function isBlackKey(offset: number): boolean {
+  const mod = offset % 12
+  return mod === 1 || mod === 3 || mod === 6 || mod === 8 || mod === 10
 }
 
 /**
@@ -130,23 +127,22 @@ function noteToDrumPad(note: number): { bank: number; padSlot: number } | null {
  *   Row 5:          steps 24-31 (notes 51-58)
  */
 function stepToNote(step: number): number {
-  if (step < 8) return 81 + step       // row 8: steps 0-7
-  if (step < 16) return 71 + (step - 8)  // row 7: steps 8-15
-  if (step < 24) return 61 + (step - 16) // row 6: steps 16-23
-  return 51 + (step - 24)               // row 5: steps 24-31
+  if (step < 8) return 81 + step
+  if (step < 16) return 71 + (step - 8)
+  if (step < 24) return 61 + (step - 16)
+  return 51 + (step - 24)
 }
 
 function noteToStep(note: number): number | null {
   const row = Math.floor(note / 10)
   const col = note % 10
   if (col < 1 || col > 8) return null
-  if (row === 8) return col - 1        // steps 0-7
-  if (row === 7) return 8 + (col - 1)  // steps 8-15
-  // Rows 5-6 only valid in 32-step mode
+  if (row === 8) return col - 1
+  if (row === 7) return 8 + (col - 1)
   const stepCount = _getStepCount?.() ?? 16
   if (stepCount > 16) {
-    if (row === 6) return 16 + (col - 1)  // steps 16-23
-    if (row === 5) return 24 + (col - 1)  // steps 24-31
+    if (row === 6) return 16 + (col - 1)
+    if (row === 5) return 24 + (col - 1)
   }
   return null
 }
@@ -163,19 +159,23 @@ let _getPads: (() => Pad[]) | null = null
 let _getEvents: (() => SequenceEvent[]) | null = null
 let _getStepCount: (() => number) | null = null
 let _triggerPadCb: ((pad: Pad, velocity: number) => void) | null = null
+let _triggerChromaticCb: ((pad: Pad, velocity: number, semitoneOffset: number) => void) | null = null
 let _releasePadCb: ((padId: string) => void) | null = null
+let _releaseChromaticCb: ((padId: string, semitoneOffset: number) => void) | null = null
 let _toggleStepCb: ((step: number, padId: string) => void) | null = null
 let _selectPadCb: ((padId: string) => void) | null = null
 let _togglePlayCb: (() => void) | null = null
 let _toggleRecordCb: (() => void) | null = null
-let _setBankPageCb: ((page: number) => void) | null = null
+let _setBankCb: ((bank: number) => void) | null = null
 let _getIsPlaying: (() => boolean) | null = null
 let _getIsRecordArmed: (() => boolean) | null = null
 
-let _activeBankPage = 0  // 0-3, each page shows 2 banks
-// Track flash state for drum pads — multiple simultaneous flashes
+let _activeBank = 0  // 0-7
+// Track flash state for pads
 const _flashTimers = new Map<number, ReturnType<typeof setTimeout>>()
-// Cached pad lookup for O(1) access in hot path
+// Track active chromatic notes for release
+const _activeChromaticNotes = new Map<number, number>() // LP note → semitoneOffset
+// Cached pad lookup
 let _padByIdCache: Map<string, Pad> | null = null
 let _padsByBankSlotCache: Map<string, Pad> | null = null
 let _cachedPadsRef: Pad[] | null = null
@@ -222,14 +222,16 @@ export function connect(
     getStepCount: () => number
     getIsPlaying: () => boolean
     getIsRecordArmed: () => boolean
-    getBankPage: () => number
+    getActiveBank: () => number
     triggerPad: (pad: Pad, velocity: number) => void
+    triggerChromatic: (pad: Pad, velocity: number, semitoneOffset: number) => void
     releasePad: (padId: string) => void
+    releaseChromatic: (padId: string, semitoneOffset: number) => void
     toggleStep: (step: number, padId: string) => void
     selectPad: (padId: string) => void
     togglePlay: () => void
     toggleRecord: () => void
-    setBankPage: (page: number) => void
+    setBank: (bank: number) => void
     subscribeStore: (listener: () => void) => () => void
   },
 ): void {
@@ -242,14 +244,16 @@ export function connect(
   _getIsPlaying = opts.getIsPlaying
   _getIsRecordArmed = opts.getIsRecordArmed
   _triggerPadCb = opts.triggerPad
+  _triggerChromaticCb = opts.triggerChromatic
   _releasePadCb = opts.releasePad
+  _releaseChromaticCb = opts.releaseChromatic
   _toggleStepCb = opts.toggleStep
   _selectPadCb = opts.selectPad
   _togglePlayCb = opts.togglePlay
   _toggleRecordCb = opts.toggleRecord
-  _setBankPageCb = opts.setBankPage
+  _setBankCb = opts.setBank
 
-  // Enter Programmer mode — send to ALL outputs to ensure the right port gets it
+  // Enter Programmer mode — send to ALL outputs
   for (const out of _allOutputs) {
     try {
       out.send(new Uint8Array(SYSEX_PROGRAMMER_MODE))
@@ -261,27 +265,27 @@ export function connect(
     inp.onmidimessage = handleMidiMessage
   }
 
-  // No transport visual subscription — we don't animate the playhead on the LP
-
-  // Subscribe to store changes (pad assignments, sequence edits) — debounced
+  // Subscribe to store changes — debounced repaint
   _unsubStore = opts.subscribeStore(() => {
     if (_repaintTimer) clearTimeout(_repaintTimer)
     _repaintTimer = setTimeout(() => {
       _repaintTimer = null
       repaintDrumGrid()
+      repaintChromaticGrid()
       repaintSequencer()
       repaintFunctionButtons()
     }, 50)
   })
 
   _connected = true
-  _activeBankPage = Math.floor((opts.getBankPage() ?? 0) / 2)
+  _activeBank = opts.getActiveBank() ?? 0
 
   // Delay initial repaint to let Programmer mode switch complete
   setTimeout(() => {
     if (!_connected) return
     console.log('[LaunchpadProMk3] Sending initial LED repaint')
     repaintDrumGrid()
+    repaintChromaticGrid()
     repaintSequencer()
     repaintFunctionButtons()
   }, 300)
@@ -299,6 +303,7 @@ export function disconnect(): void {
   _inputs = []
   _connected = false
   _lastTriggeredPadId = null
+  _activeChromaticNotes.clear()
 }
 
 /** Called externally when a pad is triggered (from UI, MIDI, or sequencer) */
@@ -306,7 +311,10 @@ export function notifyPadTriggered(padId: string): void {
   if (!_connected) return
   const changed = _lastTriggeredPadId !== padId
   _lastTriggeredPadId = padId
-  if (changed) repaintSequencer()
+  if (changed) {
+    repaintSequencer()
+    repaintChromaticGrid()
+  }
   flashDrumPad(padId)
 }
 
@@ -317,14 +325,10 @@ export function notifySequencerHit(padId: string): void {
 }
 
 function flashDrumPad(padId: string): void {
-  // Flash the drum pad briefly — only if the pad's bank is on the current page
   const pad = getPadById(padId)
-  if (!pad) return
-  const pageFirstBank = _activeBankPage * 2
-  const quadrant = pad.bank - pageFirstBank
-  if (quadrant < 0 || quadrant > 1) return  // not on current page
+  if (!pad || pad.bank !== _activeBank) return
 
-  const note = drumPadToNote(quadrant, pad.slot)
+  const note = drumPadToNote(pad.slot)
 
   // Cancel any existing flash on this note
   const existing = _flashTimers.get(note)
@@ -334,13 +338,30 @@ function flashDrumPad(padId: string): void {
   }
 
   // Flash bright
-  setLed(note, ...bankActiveColor(quadrant))
+  setLed(note, ...COLOR_PAD_ACTIVE)
 
   // Restore after 100ms
   _flashTimers.set(note, setTimeout(() => {
     _flashTimers.delete(note)
-    const hasContent = pad.settings.sampleId
-    setLed(note, ...(hasContent ? bankAssignedColor(quadrant) : COLOR_PAD_EMPTY))
+    const hasContent = pad.settings.sampleId || pad.settings.source === 'synth'
+    setLed(note, ...(hasContent ? COLOR_PAD_ASSIGNED : COLOR_PAD_EMPTY))
+  }, 100))
+}
+
+function flashChromaticPad(offset: number): void {
+  const note = chromaticOffsetToNote(offset)
+
+  const existing = _flashTimers.get(note)
+  if (existing) {
+    clearTimeout(existing)
+    _flashTimers.delete(note)
+  }
+
+  setLed(note, ...COLOR_CHROMATIC_ACTIVE)
+
+  _flashTimers.set(note, setTimeout(() => {
+    _flashTimers.delete(note)
+    setLed(note, ...(isBlackKey(offset) ? COLOR_CHROMATIC_BLACK : COLOR_CHROMATIC_WHITE))
   }, 100))
 }
 
@@ -354,20 +375,18 @@ function sendToAll(data: Uint8Array): void {
   }
 }
 
-// function sendSysEx(data: number[]): void {
-//   sendToAll(new Uint8Array(data))
-// }
-
-/** Map an RGB color to the closest palette index for note-velocity LED method */
+/** Map an RGB color to the closest palette index */
 function rgbToPalette(r: number, g: number, b: number): number {
   if (r === 0 && g === 0 && b === 0) return PAL_OFF
   if (r <= 8 && g <= 8 && b <= 8) return PAL_DIM_GRAY
-  // Green family (bank 1)
+  // Green family
   if (g > r && g > b && g >= 80) return PAL_GREEN_BRIGHT
   if (g > r && g > b) return PAL_GREEN
-  // Purple family (bank 2)
-  if (r > 0 && b > 0 && r >= 80 && b >= 80) return PAL_PURPLE_BRIGHT
-  if (r > 0 && b > 0 && g < r) return PAL_PURPLE
+  // Blue family
+  if (b > r && b > g && b >= 80) return PAL_BLUE_BRIGHT
+  if (b > r && b > g) return PAL_BLUE
+  // Blueish white (chromatic white keys)
+  if (r >= 20 && g >= 20 && b >= 30 && b > r) return PAL_LIGHT_BLUE
   // Yellow
   if (r > 40 && g > 40 && b < 20) return PAL_YELLOW
   // Orange
@@ -377,24 +396,25 @@ function rgbToPalette(r: number, g: number, b: number): number {
   return PAL_DIM_WHITE
 }
 
-/** Set LED using note-on velocity (palette) method — works reliably in Programmer mode */
+/** Set LED using note-on velocity (palette) method */
 function setLedNote(pad: number, paletteColor: number): void {
-  // Note-on on channel 1 (0x90), note = pad number, velocity = color index
-  // Velocity 0 = note-off (LED off)
   sendToAll(new Uint8Array([0x90, pad, paletteColor]))
 }
 
 function setLed(pad: number, r: number, g: number, b: number): void {
-  // Note-on palette method (reliable for all pads in Programmer mode)
   setLedNote(pad, rgbToPalette(r, g, b))
 }
 
 function clearAll(): void {
-  // Clear all 64 main pads
   for (let row = 1; row <= 8; row++) {
     for (let col = 1; col <= 8; col++) {
       setLed(row * 10 + col, ...COLOR_OFF)
     }
+  }
+  // Clear bottom row and narrow buttons
+  for (let i = 0; i < 8; i++) {
+    setLed(BOTTOM_ROW_NOTES[i], ...COLOR_OFF)
+    setLed(BOTTOM_NARROW_CCS[i], ...COLOR_OFF)
   }
 }
 
@@ -402,15 +422,20 @@ function repaintDrumGrid(): void {
   if (!_connected || !_getPads) return
   const pads = _getPads()
 
-  // Paint the two banks for the active bank page (quadrant 0 = left, 1 = right)
-  for (let quadrant = 0; quadrant < 2; quadrant++) {
-    const bank = _activeBankPage * 2 + quadrant
-    for (let slot = 0; slot < PADS_PER_BANK; slot++) {
-      const pad = pads.find((p) => p.bank === bank && p.slot === slot)
-      const note = drumPadToNote(quadrant, slot)
-      const hasContent = pad && pad.settings.sampleId
-      setLed(note, ...(hasContent ? bankAssignedColor(quadrant) : COLOR_PAD_EMPTY))
-    }
+  for (let slot = 0; slot < PADS_PER_BANK; slot++) {
+    const pad = pads.find((p) => p.bank === _activeBank && p.slot === slot)
+    const note = drumPadToNote(slot)
+    const hasContent = pad && (pad.settings.sampleId || pad.settings.source === 'synth')
+    setLed(note, ...(hasContent ? COLOR_PAD_ASSIGNED : COLOR_PAD_EMPTY))
+  }
+}
+
+function repaintChromaticGrid(): void {
+  if (!_connected) return
+
+  for (let offset = 0; offset < 16; offset++) {
+    const note = chromaticOffsetToNote(offset)
+    setLed(note, ...(isBlackKey(offset) ? COLOR_CHROMATIC_BLACK : COLOR_CHROMATIC_WHITE))
   }
 }
 
@@ -419,7 +444,6 @@ function repaintSequencer(): void {
 
   const stepCount = _getStepCount?.() ?? 16
 
-  // If no pad selected yet, show dim grid for all sequencer rows
   if (!_lastTriggeredPadId || !_getEvents) {
     for (let step = 0; step < stepCount; step++) {
       const note = stepToNote(step)
@@ -460,15 +484,8 @@ function handleMidiMessage(event: MIDIMessageEvent): void {
   const [status, note, velocity] = event.data
   const command = status & 0xf0
 
-  // Log ALL incoming messages for mapping discovery
-  // const cmdName = command === 0x90 ? 'NoteOn' : command === 0x80 ? 'NoteOff' : command === 0xb0 ? 'CC' : `0x${command.toString(16)}`
-  // console.log(`[LaunchpadProMk3] ${cmdName} ch${channel + 1} note/cc=${note} vel/val=${velocity}`)
-
   // --- CC messages ---
   if (command === 0xb0 && velocity > 0) {
-    // Left column CCs (Programmer mode): record, play, etc.
-    // Bottom narrow row CCs
-    // Try all — log will tell us which is which
     if (note === LEFT_COL_RECORD) {
       _toggleRecordCb?.()
       return
@@ -477,27 +494,34 @@ function handleMidiMessage(event: MIDIMessageEvent): void {
       _togglePlayCb?.()
       return
     }
-    // Bottom narrow row for bank pages
+    // Bottom narrow row CCs for bank switching (all 8)
     if (BOTTOM_NARROW_CCS.includes(note)) {
-      const page = BOTTOM_NARROW_CCS.indexOf(note)
-      if (page >= 0 && page < 4) {
-        _activeBankPage = page
-        _setBankPageCb?.(page)
-        repaintDrumGrid()
-        repaintFunctionButtons()
-      }
+      const bank = BOTTOM_NARROW_CCS.indexOf(note)
+      _activeBank = bank
+      _setBankCb?.(bank)
+      repaintDrumGrid()
+      repaintFunctionButtons()
       return
     }
     return
   }
 
-  // --- Note-off: release drum pads (gate mode, hold recording, etc.) ---
+  // --- Note-off: release drum pads and chromatic pads ---
   const isNoteOff = command === 0x80 || (command === 0x90 && velocity === 0)
   if (isNoteOff) {
+    // Drum pad release
     const drumPad = noteToDrumPad(note)
     if (drumPad && _releasePadCb) {
       const pad = getPadByBankSlot(drumPad.bank, drumPad.padSlot)
       if (pad) _releasePadCb(pad.id)
+      return
+    }
+    // Chromatic pad release
+    const chromaticOffset = noteToChromaticOffset(note)
+    if (chromaticOffset !== null && _releaseChromaticCb && _lastTriggeredPadId) {
+      _activeChromaticNotes.delete(note)
+      _releaseChromaticCb(_lastTriggeredPadId, chromaticOffset)
+      return
     }
     return
   }
@@ -514,17 +538,17 @@ function handleMidiMessage(event: MIDIMessageEvent): void {
     return
   }
 
-  // --- Bottom row notes (1-8) for bank pages ---
-  if (note >= 1 && note <= 4) {
-    const page = note - 1
-    _activeBankPage = page
-    _setBankPageCb?.(page)
+  // --- Bottom row notes (1-8) for bank switching ---
+  if (note >= 1 && note <= 8) {
+    const bank = note - 1
+    _activeBank = bank
+    _setBankCb?.(bank)
     repaintDrumGrid()
     repaintFunctionButtons()
     return
   }
 
-  // Check if it's a drum pad press (rows 1-4)
+  // --- Drum pad press (rows 1-4, cols 1-4) ---
   const drumPad = noteToDrumPad(note)
   if (drumPad) {
     const pad = getPadByBankSlot(drumPad.bank, drumPad.padSlot)
@@ -535,7 +559,19 @@ function handleMidiMessage(event: MIDIMessageEvent): void {
     return
   }
 
-  // Check if it's a sequencer step press (rows 5-8, depending on step count)
+  // --- Chromatic pad press (rows 1-4, cols 5-8) ---
+  const chromaticOffset = noteToChromaticOffset(note)
+  if (chromaticOffset !== null && _lastTriggeredPadId && _triggerChromaticCb) {
+    const pad = getPadById(_lastTriggeredPadId)
+    if (pad) {
+      _activeChromaticNotes.set(note, chromaticOffset)
+      _triggerChromaticCb(pad, velocity / 127, chromaticOffset)
+      flashChromaticPad(chromaticOffset)
+    }
+    return
+  }
+
+  // --- Sequencer step press (rows 5-8, depending on step count) ---
   const step = noteToStep(note)
   if (step !== null && _lastTriggeredPadId && _toggleStepCb) {
     _toggleStepCb(step, _lastTriggeredPadId)
@@ -543,24 +579,22 @@ function handleMidiMessage(event: MIDIMessageEvent): void {
   }
 }
 
-/** Repaint play/record LEDs and bank page buttons */
+/** Repaint play/record LEDs and bank buttons */
 function repaintFunctionButtons(): void {
   if (!_connected) return
 
-  // Record button (left column, bottom)
+  // Record button
   const isRecording = _getIsRecordArmed?.() ?? false
   setLed(LEFT_COL_RECORD, ...(isRecording ? COLOR_RECORD_ON : COLOR_RECORD_OFF))
 
-  // Play button (left column, second from bottom)
+  // Play button
   const isPlaying = _getIsPlaying?.() ?? false
   setLed(LEFT_COL_PLAY, ...(isPlaying ? COLOR_PLAY_ON : COLOR_PLAY_OFF))
 
-  // Bank page buttons — light both bottom narrow CCs and bottom note row
-  for (let i = 0; i < 4; i++) {
-    const color: RGB = i === _activeBankPage ? COLOR_BANK_PAGE_ON : COLOR_BANK_PAGE_OFF
-    // Narrow row (CC-addressed LEDs — use note-on method which may address them)
+  // Bank buttons — all 8 bottom row notes and narrow CCs
+  for (let i = 0; i < 8; i++) {
+    const color: RGB = i === _activeBank ? COLOR_BANK_ON : COLOR_BANK_OFF
     setLed(BOTTOM_NARROW_CCS[i], ...color)
-    // Text label row (note-addressed)
     setLed(BOTTOM_ROW_NOTES[i], ...color)
   }
 }
