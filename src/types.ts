@@ -138,6 +138,8 @@ export interface PadSettings {
   filterEnvelope?: FilterEnvelopeSettings
   /** Per-pad effect slots (used for synth pads, 2 slots) */
   padEffects?: [EffectSlot, EffectSlot]
+  /** Per-pad mute (undefined/false = not muted) */
+  mute?: boolean
 }
 
 export interface Pad {

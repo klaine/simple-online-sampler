@@ -253,7 +253,7 @@ export function PadGrid() {
               role="button"
               tabIndex={0}
               data-pad-id={pad.id}
-              className={`pad ${selected ? 'selected' : ''} ${isSequencedHit ? 'sequenced-hit' : ''} ${pad.id === padHoldRecordingPadId ? 'hold-recording' : ''}`}
+              className={`pad ${selected ? 'selected' : ''} ${isSequencedHit ? 'sequenced-hit' : ''} ${pad.id === padHoldRecordingPadId ? 'hold-recording' : ''} ${pad.settings.mute ? 'muted-pad' : ''}`}
               draggable={!!pad.settings.sampleId || pad.settings.source === 'synth'}
               onDragStart={(e) => {
                 e.dataTransfer.effectAllowed = 'copyMove'
@@ -735,6 +735,27 @@ export function PadGrid() {
                   title="Record to this pad"
                 >
                   ●
+                </button>
+              )}
+              {(pad.settings.sampleId || pad.settings.source === 'synth') && (
+                <button
+                  type="button"
+                  className={`pad-mute-btn${pad.settings.mute ? ' muted' : ''}`}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    e.preventDefault()
+                    const s = useStore.getState()
+                    if (!s.project) return
+                    const updatedPads = s.project.pads.map((p) =>
+                      p.id === pad.id ? { ...p, settings: { ...p.settings, mute: !p.settings.mute } } : p,
+                    )
+                    void s.saveProjectLight({ ...s.project, pads: updatedPads })
+                  }}
+                  onMouseDown={(e) => { e.stopPropagation() }}
+                  onTouchStart={(e) => { e.stopPropagation() }}
+                  title={pad.settings.mute ? 'Unmute pad' : 'Mute pad'}
+                >
+                  M
                 </button>
               )}
             </div>

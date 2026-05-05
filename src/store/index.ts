@@ -1615,6 +1615,7 @@ export const useStore = create<AppState>()(
       // --- Pad ---
 
       triggerPad: (pad: Pad, velocity = 1) => {
+        if (pad.settings.mute) return
         // Collect all sample IDs that might be needed (primary + layers)
         const neededSampleIds: string[] = []
         if (pad.settings.sampleId) neededSampleIds.push(pad.settings.sampleId)
@@ -2221,7 +2222,7 @@ export const useStore = create<AppState>()(
 
           result.events.forEach((event: { padId: string; velocity: number; gate: number; semitoneOffset: number; note?: number; atTimeSec: number; stepDurationSec: number }) => {
             const pad = currentSnapshot.padById.get(event.padId)
-            if (!pad || currentState.mutedLanePadIds.has(pad.id)) return
+            if (!pad || currentState.mutedLanePadIds.has(pad.id) || pad.settings.mute) return
 
             tickCount += 1
             const driftMs = Math.max(0, (audioEngine.nowSeconds() - event.atTimeSec) * 1000)

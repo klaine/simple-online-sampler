@@ -165,7 +165,7 @@ export const renderProjectAudioWav = async (
   options: RenderOptions,
 ): Promise<Blob> => {
   const sequencesById = new Map(project.sequences.map((sequence) => [sequence.id, sequence]))
-  const scheduled = buildScheduledEvents(project, options)
+  const scheduled = buildScheduledEvents(project, options).filter((e) => !e.pad.settings.mute)
   if (scheduled.length === 0) {
     throw new Error('No notes to export in the selected scope.')
   }
