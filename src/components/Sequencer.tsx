@@ -137,6 +137,7 @@ export function Sequencer() {
   const draggedChainEntryIdRef = useRef<string | null>(null)
   const chainGridRef = useRef<HTMLDivElement>(null)
   const [dragOverPatternId, setDragOverPatternId] = useState<string | null>(null)
+  const [pendingDeletePatternId, setPendingDeletePatternId] = useState<string | null>(null)
   const [fps, setFps] = useState(0)
 
   // Handle touch-drop events on chain area
@@ -172,6 +173,18 @@ export function Sequencer() {
     el.addEventListener('touch-drop', handler)
     return () => el.removeEventListener('touch-drop', handler)
   }, [])
+
+  // Dismiss pending pattern delete on outside click
+  useEffect(() => {
+    if (!pendingDeletePatternId) return
+    const handler = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest('.pattern-del-confirm, .pattern-del')) {
+        setPendingDeletePatternId(null)
+      }
+    }
+    document.addEventListener('pointerdown', handler)
+    return () => document.removeEventListener('pointerdown', handler)
+  }, [pendingDeletePatternId])
 
   // FPS counter (only active when perf stats visible)
   useEffect(() => {
@@ -364,7 +377,14 @@ export function Sequencer() {
               <ColorPicker color={sequence.color} onChange={(c) => void setPatternColor(sequence.id, c)} />
               <button type="button" className="pattern-dup" onClick={() => void duplicatePattern(sequence.id)}>Dup</button>
               {project.sequences.length > 1 && (
-                <button type="button" className="pattern-del" onClick={() => void deletePattern(sequence.id)} title="Delete pattern">&times;</button>
+                pendingDeletePatternId === sequence.id ? (
+                  <span className="pattern-del-confirm">
+                    <button type="button" className="pattern-del-yes" onClick={() => { setPendingDeletePatternId(null); void deletePattern(sequence.id) }}>Del</button>
+                    <button type="button" className="pattern-del-no" onClick={() => setPendingDeletePatternId(null)}>✕</button>
+                  </span>
+                ) : (
+                  <button type="button" className="pattern-del" onClick={() => setPendingDeletePatternId(sequence.id)} title="Delete pattern">&times;</button>
+                )
               )}
             </div>
           )

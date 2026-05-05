@@ -2758,8 +2758,6 @@ export const useStore = create<AppState>()(
         const s = get()
         if (!s.project) return
         if (s.project.sequences.length <= 1) return // must keep at least one
-        const confirmed = await showConfirm('Delete this pattern? This cannot be undone.')
-        if (!confirmed) return
         const remaining = s.project.sequences.filter((seq) => seq.id !== patternId)
         // Also remove from song chain
         const chain = s.project.songChain.filter((e) => e.patternId !== patternId)
@@ -3254,42 +3252,82 @@ export const useStore = create<AppState>()(
         let added = 0
         const importedSamples: SampleAsset[] = []
 
-        // --- MPC .pgm import: detect program file among dropped files ---
-        const pgmFile = files.find((f) => f.name.match(/\.pgm$/i))
-        if (pgmFile) {
-          try {
-            const pgmResult = parseMpcPgm(await pgmFile.arrayBuffer(), pgmFile.name)
-            if (pgmResult && pgmResult.pads.length > 0) {
-              const audioFiles = files.filter((f) => f !== pgmFile && (f.type.startsWith('audio/') || f.name.match(/\.(wav|mp3|ogg|flac|aiff?|m4a|webm)$/i)))
+        // --- MPC .pgm import: detect program files among dropped files ---
+        const pgmFiles = files.filter((f) => f.name.match(/\.pgm$/i))
+        if (pgmFiles.length > 0) {
+          const audioFiles = files.filter((f) => !f.name.match(/\.pgm$/i) && (f.type.startsWith('audio/') || f.name.match(/\.(wav|mp3|ogg|flac|aiff?|m4a|webm)$/i)))
+          const claimedFiles = new Set<File>() // track files consumed by pgms (for remaining handling)
+          const kitNames: string[] = []
+
+          for (const pgmFile of pgmFiles) {
+            try {
+              const pgmResult = parseMpcPgm(await pgmFile.arrayBuffer(), pgmFile.name)
+              if (!pgmResult || pgmResult.pads.length === 0) {
+                console.warn('Empty or invalid MPC program', pgmFile.name)
+                continue
+              }
               const matched = matchMpcSamplesToFiles(pgmResult.pads, audioFiles)
-              if (matched.length > 0) {
-                const runId = uid()
-                const runLabel = pgmResult.label
-                for (const { padIndex, file } of matched) {
-                  try {
-                    const sample = await importFileAsSample(file, get, set)
-                    const updated: SampleAsset = { ...sample, autosampleRunId: runId, autosampleRunLabel: runLabel, autosamplePadIndex: padIndex, autosampleMpc: true }
-                    await db.putSample(updated)
-                    set((s) => {
-                      const idx = s.samples.findIndex((x) => x.id === updated.id)
-                      if (idx >= 0) s.samples[idx] = updated
-                      s.sampleMap.set(updated.id, updated)
-                    })
-                    added++
-                  } catch (e) {
-                    console.warn('Failed to import MPC sample', file.name, e)
-                  }
+              if (matched.length === 0) {
+                get().addToast(`No matching audio files for "${pgmResult.label}"`)
+                continue
+              }
+              const runId = uid()
+              const runLabel = pgmResult.label
+              let kitAdded = 0
+              for (const { padIndex, file } of matched) {
+                try {
+                  const sample = await importFileAsSample(file, get, set)
+                  const updated: SampleAsset = { ...sample, autosampleRunId: runId, autosampleRunLabel: runLabel, autosamplePadIndex: padIndex, autosampleMpc: true }
+                  await db.putSample(updated)
+                  set((s) => {
+                    const idx = s.samples.findIndex((x) => x.id === updated.id)
+                    if (idx >= 0) s.samples[idx] = updated
+                    s.sampleMap.set(updated.id, updated)
+                  })
+                  kitAdded++
+                  claimedFiles.add(file)
+                } catch (e) {
+                  console.warn('Failed to import MPC sample', file.name, e)
                 }
-                if (added > 0) get().addToast(`Imported MPC kit "${runLabel}" (${added} samples)`)
-                else get().addToast('No matching audio files found for MPC program')
-                return
+              }
+              if (kitAdded > 0) {
+                kitNames.push(runLabel)
+                added += kitAdded
+              }
+            } catch (e) {
+              console.warn('Failed to parse MPC program', pgmFile.name, e)
+            }
+          }
+
+          if (kitNames.length > 0) {
+            get().addToast(`Imported ${kitNames.length} MPC kit${kitNames.length > 1 ? 's' : ''}: ${kitNames.join(', ')}`)
+          }
+
+          // Process remaining unclaimed audio files through normal import flow
+          const remainingAudioFiles = audioFiles.filter((f) => !claimedFiles.has(f))
+          if (remainingAudioFiles.length > 0) {
+            for (const file of remainingAudioFiles) {
+              try {
+                const sample = await importFileAsSample(file, get, set)
+                importedSamples.push(sample)
+                added++
+              } catch (e) {
+                console.warn('Failed to import file', file.name, e)
               }
             }
-          } catch (e) {
-            console.warn('Failed to parse MPC program', pgmFile.name, e)
           }
+
+          // If we had pgm files, skip the normal loop below (all files already processed)
+          if (remainingAudioFiles.length === 0) {
+            if (added > 0) return
+            if (audioFiles.length === 0) get().addToast('No audio files found in drop')
+            return
+          }
+          // Fall through to auto-grouping logic for remaining samples
         }
 
+        // Normal file import loop (when no pgm files in drop)
+        if (pgmFiles.length === 0) {
         for (const file of files) {
           // Handle ZIP files (autosample group import)
           if (file.name.endsWith('.zip') || file.type === 'application/zip') {
@@ -3330,6 +3368,7 @@ export const useStore = create<AppState>()(
             console.warn('Failed to import file', file.name, e)
           }
         }
+        } // end if pgmFiles.length === 0
         // Auto-group when multiple audio files dropped at once
         if (importedSamples.length >= 2) {
           const runId = uid()
@@ -3363,7 +3402,7 @@ export const useStore = create<AppState>()(
           for (const sample of updated) void db.putSample(sample)
         }
         if (added > 0) get().addToast(`Added ${added} sample${added > 1 ? 's' : ''} to library`)
-        else get().addToast('No audio files found in drop')
+        else if (!pgmFiles.length) get().addToast('No audio files found in drop')
       },
 
       // --- Synth Patches ---

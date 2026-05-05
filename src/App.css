@@ -2501,6 +2501,30 @@ select.tb-led-value {
   color: #f87171;
 }
 
+.pattern-del-confirm {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.pattern-del-yes {
+  font-size: 0.62rem !important;
+  padding: 0.1rem 0.26rem !important;
+  color: #f87171 !important;
+  border-color: rgba(248, 113, 113, 0.4) !important;
+  background: rgba(248, 113, 113, 0.1) !important;
+}
+
+.pattern-del-yes:hover {
+  background: rgba(248, 113, 113, 0.22) !important;
+}
+
+.pattern-del-no {
+  font-size: 0.6rem !important;
+  padding: 0.1rem 0.2rem !important;
+  opacity: 0.6;
+}
+
 .chain-grid {
   border: 1px dashed var(--border);
   border-radius: 10px;
@@ -2785,7 +2809,7 @@ select.tb-led-value {
 
 .lane-label {
   text-align: left;
-  font-size: 0.62rem;
+  font-size: 0.7rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
