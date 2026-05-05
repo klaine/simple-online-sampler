@@ -118,9 +118,9 @@ export function parseLcdk(jsonString: string, filename: string): LcdkResult | nu
     // Actually, let's not map release as decay — it's a different concept.
     // We'll leave release unmapped for now since our one-shot mode ignores decay.
 
-    // Choke group
+    // Choke group: LCDK stores as 0-1 float (0.25=group1, 0.5=group2, etc.)
     if (pad.chokegroup != null && pad.chokegroup > 0) {
-      settings.chokeGroup = Math.min(pad.chokegroup, 8)
+      settings.chokeGroup = Math.max(1, Math.min(8, Math.round(pad.chokegroup * 8)))
     }
 
     // Play mode: LCDK is always one-shot for drum pads
