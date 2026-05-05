@@ -79,6 +79,7 @@ export function Sequencer() {
   const mutedLanePadIds = useStore((s) => s.mutedLanePadIds)
   const selectedPadId = useStore((s) => s.selectedPadId)
   const hideEmptyLanes = useStore((s) => s.hideEmptyLanes)
+  const seqFollowPlayback = useStore((s) => s.seqFollowPlayback)
   const showSongChain = useStore((s) => s.showSongChain)
   const showGateResizeTip = useStore((s) => s.showGateResizeTip)
   const showSequencerHelp = useStore((s) => s.showSequencerHelp)
@@ -215,6 +216,16 @@ export function Sequencer() {
             <option value="pattern">Pattern</option>
             <option value="song">Song</option>
           </select>
+          {playbackScope === 'song' && (
+            <button
+              type="button"
+              className={`seq-action-btn ${seqFollowPlayback ? 'active' : ''}`}
+              onClick={() => useStore.setState((s) => ({ seqFollowPlayback: !s.seqFollowPlayback }))}
+              title="Follow playback: active pattern follows song chain during playback"
+            >
+              Follow
+            </button>
+          )}
           <select className="seq-select" value={visibleSequence.resolution} onChange={(e) => void setSequenceResolution(Number(e.target.value) as SequenceResolution)}>
             <option value={16}>1/16</option>
             <option value={32}>1/32</option>

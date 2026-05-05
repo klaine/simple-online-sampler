@@ -363,6 +363,7 @@ export interface AppState {
   selectedPadId: string | null
   selectedLayerId: string | null
   hideEmptyLanes: boolean
+  seqFollowPlayback: boolean  // when true + song mode, active pattern follows playing pattern
   seqExpandedBanks: Set<number>   // banks user explicitly expanded (overrides auto-collapse)
   seqCollapsedBanks: Set<number>  // banks user explicitly collapsed (overrides auto-expand)
   layoutMode: 'classic' | 'wide' | 'performance'
@@ -696,7 +697,7 @@ export const selectActiveSequence = (s: AppState): SequencePattern | null => {
 export const selectVisibleSequence = (s: AppState): SequencePattern | null => {
   const active = selectActiveSequence(s)
   if (!s.project || !active) return null
-  if (s.playbackScope === 'song' && s.isPlaying && s.playingPatternId) {
+  if (s.playbackScope === 'song' && s.isPlaying && s.playingPatternId && s.seqFollowPlayback) {
     return s.project.sequences.find((seq) => seq.id === s.playingPatternId) ?? active
   }
   return active
@@ -1247,6 +1248,7 @@ export const useStore = create<AppState>()(
       selectedPadId: null,
       selectedLayerId: null,
       hideEmptyLanes: true,
+      seqFollowPlayback: true,
       seqExpandedBanks: new Set<number>(),
       seqCollapsedBanks: new Set<number>(),
       layoutMode: (() => {
