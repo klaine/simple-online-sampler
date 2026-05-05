@@ -56,6 +56,7 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
     groupSamples,
     ungroupSample,
     assignGroupToPads,
+    importPatternsForGroupByRunId,
     renameAutosampleGroup,
     updateAutosampleGroupSettings,
     deleteAutosampleGroup,
@@ -593,6 +594,15 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
                         >
                           ⎘
                         </button>
+                        {item.samples.some((s) => s.autosamplePatterns) && (
+                          <button
+                            type="button"
+                            title="Import sequencer patterns from this kit"
+                            onClick={() => void importPatternsForGroupByRunId(item.key)}
+                          >
+                            ♫
+                          </button>
+                        )}
                         <button
                           type="button"
                           title="Edit group settings"

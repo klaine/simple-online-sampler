@@ -6,7 +6,7 @@ import { db } from '../lib/db'
 import { buildPlaybackSnapshot, type PlaybackSnapshot } from '../lib/playbackSnapshot'
 import { TransportScheduler } from '../lib/transportScheduler'
 import { createDefaultProject, touchProject } from '../lib/project'
-import { createDefaultEffectSlot, createDefaultMasterBus, createDefaultMixBuses } from '../lib/utils'
+import { createDefaultEffectSlot, createDefaultMasterBus, createDefaultMixBuses, createDefaultSequence } from '../lib/utils'
 import { encodeWavFromChannels } from '../lib/wavEncode'
 import { normalizePcm, computeSilenceTrim } from '../lib/autotrim'
 import { sendMidiNote, registerActiveNote } from '../lib/midiOut'
@@ -601,6 +601,8 @@ export interface AppState {
   groupSamples: (sampleIds: string[], label?: string) => void
   ungroupSample: (sampleId: string) => void
   assignGroupToPads: (runId: string, startBank?: number) => Promise<void>
+  importPatternsForGroup: (patternsJson: string, padIndexToId?: Map<number, string>) => Promise<void>
+  importPatternsForGroupByRunId: (runId: string) => Promise<void>
   renameAutosampleGroup: (runId: string, newLabel: string) => void
   updateAutosampleGroupSettings: (runId: string, patch: { bus?: BusId; chokeGroup?: number }) => void
   deleteAutosampleGroup: (runId: string) => Promise<void>
@@ -4496,53 +4498,114 @@ export const useStore = create<AppState>()(
         // --- Import sequencer patterns from LCDK/imported kit data ---
         const patternSource = groupSamples.find((sam) => sam.autosamplePatterns)
         if (patternSource?.autosamplePatterns) {
-          try {
-            const patterns = JSON.parse(patternSource.autosamplePatterns) as Array<{ index: number; steps: Array<{ padIndex: number; step: number; velocity: number }> }>
-            if (patterns.length > 0) {
-              // Build padIndex → padId map (based on assignment order)
-              const padIndexToId = new Map<number, string>()
-              let assignIdx = 0
-              for (const [padId] of assignMap) {
-                padIndexToId.set(assignIdx, padId)
-                assignIdx++
-              }
-              const { project } = get()
-              if (project) {
-                const updatedSequences = [...project.sequences]
-                for (const pat of patterns) {
-                  // Map pattern index to our sequence patterns (create if needed)
-                  let seqPattern = updatedSequences[pat.index]
-                  if (!seqPattern) continue // only import into existing pattern slots
+          // Build padIndex → padId map (based on assignment order)
+          const padIndexToId = new Map<number, string>()
+          let assignIdx = 0
+          for (const [padId] of assignMap) {
+            padIndexToId.set(assignIdx, padId)
+            assignIdx++
+          }
+          await get().importPatternsForGroup(patternSource.autosamplePatterns, padIndexToId)
+        }
+      },
 
-                  // Build events from LCDK steps
-                  const newEvents: import('../types').SequenceEvent[] = []
-                  for (const step of pat.steps) {
-                    const padId = padIndexToId.get(step.padIndex)
-                    if (!padId) continue
-                    newEvents.push({
-                      id: uid(),
-                      step: step.step,
-                      padId,
-                      velocity: step.velocity,
-                      gate: 1,
-                    })
-                  }
-                  if (newEvents.length > 0) {
-                    // Merge with existing events (remove conflicting pad+step combos)
-                    const existingFiltered = seqPattern.events.filter((e) => {
-                      return !newEvents.some((n) => n.padId === e.padId && n.step === e.step)
-                    })
-                    seqPattern = { ...seqPattern, events: [...existingFiltered, ...newEvents] }
-                    updatedSequences[pat.index] = seqPattern
-                  }
-                }
-                await get().saveProject({ ...project, pads: get().project!.pads, sequences: updatedSequences })
-              }
+      // Import sequencer patterns from JSON (LCDK/imported kit data)
+      // padIndexToId maps source pad indices to our pad IDs.
+      // If not provided, uses the currently assigned pads for the group (by autosamplePadIndex order).
+      importPatternsForGroup: async (patternsJson: string, padIndexToId?: Map<number, string>) => {
+        try {
+          const patterns = JSON.parse(patternsJson) as Array<{ index: number; steps: Array<{ padIndex: number; step: number; velocity: number }> }>
+          if (patterns.length === 0) return
+
+          const { project } = get()
+          if (!project) return
+
+          const updatedSequences = [...project.sequences]
+
+          // Create missing patterns up to the max index needed
+          const maxIdx = Math.max(...patterns.map((p) => p.index))
+          while (updatedSequences.length <= maxIdx) {
+            updatedSequences.push(createDefaultSequence())
+          }
+
+          let totalEvents = 0
+          for (const pat of patterns) {
+            let seqPattern = updatedSequences[pat.index]
+
+            // Build events from imported steps
+            const newEvents: import('../types').SequenceEvent[] = []
+            for (const step of pat.steps) {
+              const padId = padIndexToId?.get(step.padIndex)
+              if (!padId) continue
+              newEvents.push({
+                id: uid(),
+                step: step.step,
+                padId,
+                velocity: step.velocity,
+                gate: 1,
+              })
             }
-          } catch (e) {
-            console.warn('Failed to import sequencer patterns from kit', e)
+            if (newEvents.length > 0) {
+              // Merge: remove conflicting pad+step combos from existing
+              const existingFiltered = seqPattern.events.filter((e) => {
+                return !newEvents.some((n) => n.padId === e.padId && n.step === e.step)
+              })
+              seqPattern = { ...seqPattern, events: [...existingFiltered, ...newEvents] }
+              updatedSequences[pat.index] = seqPattern
+              totalEvents += newEvents.length
+            }
+          }
+
+          if (totalEvents > 0) {
+            await get().saveProject({ ...project, pads: project.pads, sequences: updatedSequences })
+            get().addToast(`Imported ${totalEvents} events into ${patterns.length} pattern${patterns.length !== 1 ? 's' : ''}`, 'success')
+          }
+        } catch (e) {
+          console.warn('Failed to import sequencer patterns', e)
+        }
+      },
+
+      // Import patterns for a group by runId (looks up assigned pads automatically)
+      importPatternsForGroupByRunId: async (runId: string) => {
+        const s = get()
+        if (!s.project) return
+        const groupSamples = s.samples.filter((sam) => sam.autosampleRunId === runId)
+        const patternSource = groupSamples.find((sam) => sam.autosamplePatterns)
+        if (!patternSource?.autosamplePatterns) {
+          s.addToast('No patterns found for this group')
+          return
+        }
+
+        // Find pads that have samples from this group assigned
+        // Build padIndex → padId based on which pads have group samples
+        const sampleIds = new Set(groupSamples.map((sam) => sam.id))
+        const padIndexToId = new Map<number, string>()
+
+        // Try to use autosamplePadIndex ordering
+        const padsWithGroup = s.project.pads.filter((p) => {
+          return p.settings.sampleId && sampleIds.has(p.settings.sampleId)
+        })
+
+        if (padsWithGroup.length === 0) {
+          s.addToast('Assign group to pads first, then import patterns')
+          return
+        }
+
+        // Map: find each pad's sample → that sample's padIndex
+        for (const pad of padsWithGroup) {
+          const sample = groupSamples.find((sam) => sam.id === pad.settings.sampleId)
+          if (sample?.autosamplePadIndex != null) {
+            padIndexToId.set(sample.autosamplePadIndex, pad.id)
           }
         }
+
+        // Fallback: if no autosamplePadIndex, use sequential order
+        if (padIndexToId.size === 0) {
+          const sorted = [...padsWithGroup].sort((a, b) => a.bank !== b.bank ? a.bank - b.bank : a.slot - b.slot)
+          sorted.forEach((p, i) => padIndexToId.set(i, p.id))
+        }
+
+        await get().importPatternsForGroup(patternSource.autosamplePatterns, padIndexToId)
       },
 
       // --- Autosample group management ---
