@@ -568,7 +568,42 @@ export function PadGrid() {
                         if (!targetPad) break
                         await assignFileToPad(targetPad, matched[i].file)
                         const updatedPad = useStore.getState().project?.pads.find((p) => p.id === targetPad.id)
-                        if (updatedPad?.settings.sampleId) assignedSampleIds.push(updatedPad.settings.sampleId)
+                        if (updatedPad?.settings.sampleId) {
+                          assignedSampleIds.push(updatedPad.settings.sampleId)
+                          // Apply MPC pad settings from mapping
+                          const mpc = matched[i].mapping
+                          const { project, saveProject } = useStore.getState()
+                          if (project && (mpc.chokeGroup || mpc.pan != null || mpc.level != null || mpc.filterType || mpc.attack != null || mpc.decay != null || mpc.semitones != null || mpc.fineCents != null || mpc.playMode)) {
+                            await saveProject({
+                              ...project,
+                              pads: project.pads.map((p) => {
+                                if (p.id !== targetPad.id) return p
+                                return {
+                                  ...p,
+                                  settings: {
+                                    ...p.settings,
+                                    ...(mpc.chokeGroup ? { chokeGroup: mpc.chokeGroup } : {}),
+                                    ...(mpc.pan != null ? { pan: mpc.pan } : {}),
+                                    ...(mpc.level != null ? { gain: mpc.level } : {}),
+                                    ...(mpc.semitones != null ? { semitones: mpc.semitones } : {}),
+                                    ...(mpc.fineCents != null ? { fineCents: mpc.fineCents } : {}),
+                                    ...(mpc.filterType ? { filterType: mpc.filterType } : {}),
+                                    ...(mpc.filterFreq != null ? { filterFreq: mpc.filterFreq } : {}),
+                                    ...(mpc.filterQ != null ? { filterQ: mpc.filterQ } : {}),
+                                    ...(mpc.playMode ? { mode: mpc.playMode } : {}),
+                                    ...(mpc.attack != null || mpc.decay != null ? {
+                                      envelope: {
+                                        ...p.settings.envelope,
+                                        ...(mpc.attack != null ? { attack: mpc.attack } : {}),
+                                        ...(mpc.decay != null ? { decay: mpc.decay } : {}),
+                                      },
+                                    } : {}),
+                                  },
+                                }
+                              }),
+                            })
+                          }
+                        }
                       }
                       if (assignedSampleIds.length >= 2) {
                         const { groupSamples: grp } = useStore.getState()

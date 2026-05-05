@@ -3304,10 +3304,36 @@ export const useStore = create<AppState>()(
               const runId = uid()
               const runLabel = pgmResult.label
               let kitAdded = 0
-              for (const { padIndex, file } of matched) {
+              for (const { padIndex, file, mapping, additionalLayerFiles } of matched) {
                 try {
                   const sample = await importFileAsSample(file, get, set)
-                  const updated: SampleAsset = { ...sample, autosampleRunId: runId, autosampleRunLabel: runLabel, autosamplePadIndex: padIndex, autosampleMpc: true }
+                  // Build MPC pad settings from parsed mapping
+                  const mpcSettings: import('../types').MpcPadImportSettings = {}
+                  if (mapping.pan != null) mpcSettings.pan = mapping.pan
+                  if (mapping.level != null) mpcSettings.level = mapping.level
+                  if (mapping.semitones != null) mpcSettings.semitones = mapping.semitones
+                  if (mapping.fineCents != null) mpcSettings.fineCents = mapping.fineCents
+                  if (mapping.filterType && mapping.filterType !== 'off') {
+                    mpcSettings.filterType = mapping.filterType
+                    if (mapping.filterFreq != null) mpcSettings.filterFreq = mapping.filterFreq
+                    if (mapping.filterQ != null) mpcSettings.filterQ = mapping.filterQ
+                  }
+                  if (mapping.attack != null) mpcSettings.attack = mapping.attack
+                  if (mapping.decay != null) mpcSettings.decay = mapping.decay
+                  if (mapping.playMode) mpcSettings.playMode = mapping.playMode
+                  const hasMpcSettings = Object.keys(mpcSettings).length > 0
+                  const hasMultiLayers = additionalLayerFiles && additionalLayerFiles.length > 0
+                  const velocityRanges = mapping.velocityRanges
+                  const updated: SampleAsset = {
+                    ...sample,
+                    autosampleRunId: runId,
+                    autosampleRunLabel: runLabel,
+                    autosamplePadIndex: padIndex,
+                    autosampleMpc: true,
+                    autosampleChokeGroup: mapping.chokeGroup ?? 0,
+                    ...(hasMpcSettings ? { autosampleMpcPadSettings: mpcSettings } : {}),
+                    ...(hasMultiLayers ? { autosampleMpcLayerIndex: 0, autosampleMpcVelocityMax: velocityRanges?.[0] ?? 127 } : {}),
+                  }
                   await db.putSample(updated)
                   set((s) => {
                     const idx = s.samples.findIndex((x) => x.id === updated.id)
@@ -3316,6 +3342,36 @@ export const useStore = create<AppState>()(
                   })
                   kitAdded++
                   claimedFiles.add(file)
+
+                  // Import additional velocity layers for this pad
+                  if (hasMultiLayers && additionalLayerFiles) {
+                    for (let li = 0; li < additionalLayerFiles.length; li++) {
+                      try {
+                        const layerSample = await importFileAsSample(additionalLayerFiles[li], get, set)
+                        const layerUpdated: SampleAsset = {
+                          ...layerSample,
+                          autosampleRunId: runId,
+                          autosampleRunLabel: runLabel,
+                          autosamplePadIndex: padIndex,
+                          autosampleMpc: true,
+                          autosampleChokeGroup: mapping.chokeGroup ?? 0,
+                          autosampleMpcLayerIndex: li + 1,
+                          autosampleMpcVelocityMax: velocityRanges?.[li + 1] ?? 127,
+                          ...(hasMpcSettings ? { autosampleMpcPadSettings: mpcSettings } : {}),
+                        }
+                        await db.putSample(layerUpdated)
+                        set((s) => {
+                          const idx = s.samples.findIndex((x) => x.id === layerUpdated.id)
+                          if (idx >= 0) s.samples[idx] = layerUpdated
+                          s.sampleMap.set(layerUpdated.id, layerUpdated)
+                        })
+                        kitAdded++
+                        claimedFiles.add(additionalLayerFiles[li])
+                      } catch (e) {
+                        console.warn('Failed to import MPC layer sample', additionalLayerFiles[li].name, e)
+                      }
+                    }
+                  }
                 } catch (e) {
                   console.warn('Failed to import MPC sample', file.name, e)
                 }
@@ -4170,27 +4226,52 @@ export const useStore = create<AppState>()(
           groupSamples.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
         }
 
-        // Detect velocity layers: samples whose names differ only by _vNN suffix
-        // Group by base name (strip _vNN before extension)
-        const veloRegex = /^(.+?)_v(\d+)(\.[^.]+)$/
+        // Detect velocity layers: MPC multi-layer (by padIndex + layerIndex) OR filename _vNN suffix
+        const hasMpcLayers = groupSamples.some((s) => s.autosampleMpcLayerIndex != null)
         const noteGroups: { baseName: string; samples: { sample: SampleAsset; velocity: number }[] }[] = []
-        const noteGroupMap = new Map<string, typeof noteGroups[0]>()
 
-        for (const sample of groupSamples) {
-          const m = veloRegex.exec(sample.name)
-          if (m) {
-            const baseKey = m[1] + m[3]  // e.g. "C3.wav"
-            let group = noteGroupMap.get(baseKey)
-            if (!group) {
-              group = { baseName: m[1] + m[3], samples: [] }
-              noteGroupMap.set(baseKey, group)
+        if (hasMpcLayers) {
+          // MPC multi-layer grouping: group by autosamplePadIndex
+          const padIndexMap = new Map<number, SampleAsset[]>()
+          for (const sample of groupSamples) {
+            const pi = sample.autosamplePadIndex ?? -1
+            let arr = padIndexMap.get(pi)
+            if (!arr) { arr = []; padIndexMap.set(pi, arr) }
+            arr.push(sample)
+          }
+          // Sort pad indices
+          const sortedPadIndices = [...padIndexMap.keys()].sort((a, b) => a - b)
+          for (const pi of sortedPadIndices) {
+            const samples = padIndexMap.get(pi)!
+            samples.sort((a, b) => (a.autosampleMpcLayerIndex ?? 0) - (b.autosampleMpcLayerIndex ?? 0))
+            const primary = samples[0]
+            const group = {
+              baseName: primary.name,
+              samples: samples.map((s) => ({ sample: s, velocity: s.autosampleMpcVelocityMax ?? 127 })),
+            }
+            noteGroups.push(group)
+          }
+        } else {
+          // Standard velocity detection by _vNN filename suffix
+          const veloRegex = /^(.+?)_v(\d+)(\.[^.]+)$/
+          const noteGroupMap = new Map<string, typeof noteGroups[0]>()
+
+          for (const sample of groupSamples) {
+            const m = veloRegex.exec(sample.name)
+            if (m) {
+              const baseKey = m[1] + m[3]  // e.g. "C3.wav"
+              let group = noteGroupMap.get(baseKey)
+              if (!group) {
+                group = { baseName: m[1] + m[3], samples: [] }
+                noteGroupMap.set(baseKey, group)
+                noteGroups.push(group)
+              }
+              group.samples.push({ sample, velocity: Number(m[2]) })
+            } else {
+              // Non-velocity sample — treat as single-layer note
+              const group = { baseName: sample.name, samples: [{ sample, velocity: 127 }] }
               noteGroups.push(group)
             }
-            group.samples.push({ sample, velocity: Number(m[2]) })
-          } else {
-            // Non-velocity sample — treat as single-layer note
-            const group = { baseName: sample.name, samples: [{ sample, velocity: 127 }] }
-            noteGroups.push(group)
           }
         }
 
@@ -4243,8 +4324,15 @@ export const useStore = create<AppState>()(
           const hasVeloLayers = noteGroup.samples.length > 1
 
           if (hasVeloLayers) {
-            // Build velocity layers
-            const splits = computeVelocitySplits(noteGroup.samples.length)
+            // Build velocity layers — use MPC ranges if available, otherwise compute evenly
+            const isMpcLayers = noteGroup.samples[0].sample.autosampleMpcLayerIndex != null
+            const splits = isMpcLayers
+              ? noteGroup.samples.map((entry, i) => {
+                  const low = i === 0 ? 1 : (noteGroup.samples[i - 1].velocity + 1)
+                  const high = i === noteGroup.samples.length - 1 ? 127 : entry.velocity
+                  return { velocityLow: Math.max(1, low), velocityHigh: Math.min(127, high) }
+                })
+              : computeVelocitySplits(noteGroup.samples.length)
             const layers: SampleLayer[] = noteGroup.samples.map((entry, i) => ({
               id: uid(),
               sampleId: entry.sample.id,
@@ -4254,6 +4342,7 @@ export const useStore = create<AppState>()(
               envelope: null, filterType: null, filterFreq: null, filterQ: null,
               stackOffsetMs: null,
             }))
+            const mpc = primarySample.autosampleMpcPadSettings
             return {
               ...p,
               name: noteGroup.baseName.replace(/\.[^.]+$/, ''),
@@ -4266,10 +4355,27 @@ export const useStore = create<AppState>()(
                 trim: { start: 0, end: 1 },  // per-layer trim overrides via SampleLayer.trim
                 bus: primarySample.autosampleBus ?? p.settings.bus,
                 chokeGroup: primarySample.autosampleChokeGroup ?? 0,
+                // Apply MPC pad settings if present
+                ...(mpc?.pan != null ? { pan: mpc.pan } : {}),
+                ...(mpc?.level != null ? { gain: mpc.level } : {}),
+                ...(mpc?.semitones != null ? { semitones: mpc.semitones } : {}),
+                ...(mpc?.fineCents != null ? { fineCents: mpc.fineCents } : {}),
+                ...(mpc?.filterType ? { filterType: mpc.filterType } : {}),
+                ...(mpc?.filterFreq != null ? { filterFreq: mpc.filterFreq } : {}),
+                ...(mpc?.filterQ != null ? { filterQ: mpc.filterQ } : {}),
+                ...(mpc?.playMode ? { mode: mpc.playMode } : {}),
+                ...(mpc?.attack != null || mpc?.decay != null ? {
+                  envelope: {
+                    ...p.settings.envelope,
+                    ...(mpc.attack != null ? { attack: mpc.attack } : {}),
+                    ...(mpc.decay != null ? { decay: mpc.decay } : {}),
+                  },
+                } : {}),
               },
             }
           } else {
             // Single sample per pad
+            const mpc = primarySample.autosampleMpcPadSettings
             return {
               ...p,
               name: primarySample.name,
@@ -4282,6 +4388,22 @@ export const useStore = create<AppState>()(
                 trim: primarySample.autosampleTrim ?? { start: 0, end: 1 },
                 bus: primarySample.autosampleBus ?? p.settings.bus,
                 chokeGroup: primarySample.autosampleChokeGroup ?? 0,
+                // Apply MPC pad settings if present
+                ...(mpc?.pan != null ? { pan: mpc.pan } : {}),
+                ...(mpc?.level != null ? { gain: mpc.level } : {}),
+                ...(mpc?.semitones != null ? { semitones: mpc.semitones } : {}),
+                ...(mpc?.fineCents != null ? { fineCents: mpc.fineCents } : {}),
+                ...(mpc?.filterType ? { filterType: mpc.filterType } : {}),
+                ...(mpc?.filterFreq != null ? { filterFreq: mpc.filterFreq } : {}),
+                ...(mpc?.filterQ != null ? { filterQ: mpc.filterQ } : {}),
+                ...(mpc?.playMode ? { mode: mpc.playMode } : {}),
+                ...(mpc?.attack != null || mpc?.decay != null ? {
+                  envelope: {
+                    ...p.settings.envelope,
+                    ...(mpc.attack != null ? { attack: mpc.attack } : {}),
+                    ...(mpc.decay != null ? { decay: mpc.decay } : {}),
+                  },
+                } : {}),
               },
             }
           }

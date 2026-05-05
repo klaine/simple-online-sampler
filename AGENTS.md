@@ -103,7 +103,7 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - `pcmRecorder.ts` — Shared PCM capture with disabled browser audio processing, system-default sample rate
 - `synthEngine.ts` — `createSynthVoice`, `stopSynthVoice`, `disposeSynthVoice`, `renderSynthToBuffer`
 - `midiExport.ts` — MIDI export
-- `mpcImport.ts` — MPC1000/MPC2500 `.pgm` program file parser: `parseMpcPgm` (extracts pad-to-sample mapping from binary), `matchMpcSamplesToFiles` (matches mapping to dropped audio files)
+- `mpcImport.ts` — MPC1000/MPC2500 `.pgm` program file parser: `parseMpcPgm` (extracts pad-to-sample mapping + per-pad settings from binary: choke group, pan, level, tuning, filter type/freq/Q, attack/decay, play mode, up to 4 velocity layers), `matchMpcSamplesToFiles` (matches mapping to dropped audio files, returns `MpcMatchedPad[]` with full mapping data including additional layer files)
 - `drumKitMap.ts` — Drum category classifier (`classifyDrumSample`, `looksLikeDrumKit`) and standard 16-pad layout mapper (`mapToStandardKit`)
 - `touchDrag.ts` — Touch-based drag-and-drop for iPad/mobile (floating ghost, `elementFromPoint` drop detection, custom `touch-drop` event, configurable `DROP_SELECTORS` for pads + song chain elements). Works alongside HTML5 DnD for desktop.
 - `constants.ts` — Constants (`BANK_COUNT=8`, `PADS_PER_BANK=16`, `TOTAL_PADS=128`)
@@ -195,7 +195,10 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - `SampleAsset.autosampleChokeGroup?: number` — choke group for group pads (0=off, 1–8)
 - `SampleAsset.autosamplePadIndex?: number` — original pad index from imported program file (MPC .pgm), used for ordered assignment
 - `SampleAsset.autosampleMpc?: boolean` — true only when imported via .pgm program file
-- `SampleAsset.autosamplePreset?: boolean` — true for factory preset samples loaded on first launch
+- `SampleAsset.autosamplePreset?: boolean` — true for factory preset samples
+- `SampleAsset.autosampleMpcPadSettings?: MpcPadImportSettings` — per-pad settings from .pgm (pan, level, tuning, filter, envelope, playMode)
+- `SampleAsset.autosampleMpcLayerIndex?: number` — velocity layer index within an MPC pad (0=primary, 1–3=additional)
+- `SampleAsset.autosampleMpcVelocityMax?: number` — MPC velocity range max for this layer
 - `Project.swing: number` (0–100)
 - `Project.mixBuses: [MixBus, MixBus, MixBus, MixBus]` — 4 mix buses with gain, pan, mute, solo, effects
 - `Project.masterBus: MasterBus` — master gain + 3 effect slots
@@ -215,7 +218,7 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - Shared `importFileAsSample` helper (module-level async function in store)
 - `addSamplesToLibrary(files: File[])` action processes files and shows toast
 - ZIP files are detected and imported as autosample groups (reads `metadata.json` for trim/bus/choke metadata)
-- **MPC .pgm import**: when a `.pgm` file is among dropped files, it is parsed for pad-to-sample mapping; matched WAV files are imported as a group with `autosamplePadIndex` metadata preserving the original pad order
+- **MPC .pgm import**: when a `.pgm` file is among dropped files, it is parsed for pad-to-sample mapping; matched WAV files are imported as a group with `autosamplePadIndex` metadata preserving the original pad order. Per-pad settings (choke group, pan, level, tuning, filter type/freq/Q, attack/decay, play mode) are stored on `SampleAsset.autosampleMpcPadSettings` and applied when samples are assigned to pads via `assignGroupToPads` or direct PadGrid drop. Up to 4 velocity layers per pad are supported with MPC velocity ranges preserved.
 - **Multi-file drop auto-grouping**: when ≥2 audio files are dropped at once, they are automatically grouped with a label derived from the common filename prefix
 - **Folder drop**: dropping a folder recursively reads all audio files using `webkitGetAsEntry`. If files look like a drum kit (≥40% match known categories), a confirm dialog offers to map them to a standard 16-pad MPC-style layout (kick→1, snare→2, clap→3, CH→4, OH→5, perc→6, toms→7-9, crash→10, ride→11, shaker→12, cowbell→13, conga→14, snap→15, other→16). Uses `autosamplePadIndex` for ordering on pad assignment. Folder name is used as group label (instead of common filename prefix).
 

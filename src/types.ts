@@ -164,6 +164,26 @@ export interface SampleAsset {
   autosamplePadIndex?: number     // original pad index from imported program file (MPC .pgm, etc.)
   autosampleMpc?: boolean         // true only when imported via .pgm program file
   autosamplePreset?: boolean      // true for factory preset samples
+  /** MPC .pgm pad settings (applied on pad assignment) */
+  autosampleMpcPadSettings?: MpcPadImportSettings
+  /** MPC velocity layer index within a pad (0=primary, 1–3=additional layers) */
+  autosampleMpcLayerIndex?: number
+  /** MPC velocity range max for this layer (used to compute velocity splits) */
+  autosampleMpcVelocityMax?: number
+}
+
+/** Per-pad settings extracted from MPC .pgm file, applied when sample is assigned to a pad */
+export interface MpcPadImportSettings {
+  pan?: number              // -1 to +1
+  level?: number            // 0.0–1.0
+  semitones?: number        // semitone offset
+  fineCents?: number        // fine tuning in cents
+  filterType?: FilterType   // 'off' | 'lp12' | 'highpass' | 'bandpass'
+  filterFreq?: number       // Hz
+  filterQ?: number          // Q value
+  attack?: number           // seconds
+  decay?: number            // seconds
+  playMode?: 'one-shot' | 'adsr'
 }
 
 export interface SequenceEvent {
@@ -233,6 +253,6 @@ export interface PackageManifest {
   exportedAt: number
   project: Project
   usedSampleIds: string[]
-  sampleMeta?: { id: string; name: string; chopPoints?: number[]; autosampleRunId?: string; autosampleRunLabel?: string; autosamplePadIndex?: number; autosampleTrim?: TrimSettings; autosampleBus?: BusId; autosampleChokeGroup?: number; autosampleMpc?: boolean; autosamplePreset?: boolean }[]
+  sampleMeta?: { id: string; name: string; chopPoints?: number[]; autosampleRunId?: string; autosampleRunLabel?: string; autosamplePadIndex?: number; autosampleTrim?: TrimSettings; autosampleBus?: BusId; autosampleChokeGroup?: number; autosampleMpc?: boolean; autosamplePreset?: boolean; autosampleMpcPadSettings?: MpcPadImportSettings; autosampleMpcLayerIndex?: number; autosampleMpcVelocityMax?: number }[]
   synthPatches?: SynthPatch[]
 }
