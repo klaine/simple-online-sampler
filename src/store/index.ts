@@ -2235,6 +2235,8 @@ export const useStore = create<AppState>()(
             let effectiveSemitoneOffset = event.semitoneOffset
             if (event.note != null && pad.settings.source === 'synth' && pad.settings.synthParams) {
               effectiveSemitoneOffset = event.note - (pad.settings.synthParams.baseNote + (pad.settings.semitones ?? 0))
+            } else if (event.note != null && pad.settings.source === 'sample') {
+              effectiveSemitoneOffset = event.note - (60 + (pad.settings.semitones ?? 0))
             }
 
             get().flashSequencedPadHit(pad.id)

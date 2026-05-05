@@ -367,7 +367,11 @@ export const renderProjectAudioWav = async (
     const source = offline.createBufferSource()
     source.buffer = sourceBuffer
 
-    const semitoneShift = (ms.semitones ?? 0) + (entry.event.semitones ?? 0)
+    let eventSemitones = entry.event.semitones ?? 0
+    if (entry.event.note != null) {
+      eventSemitones = entry.event.note - (60 + (ms.semitones ?? 0))
+    }
+    const semitoneShift = (ms.semitones ?? 0) + eventSemitones
     const fineShift = (ms.fineCents ?? 0) / 100
     source.playbackRate.value = Math.pow(2, (semitoneShift + fineShift) / 12)
 
