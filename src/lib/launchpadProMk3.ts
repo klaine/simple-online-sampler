@@ -183,7 +183,7 @@ let _repaintTimer: ReturnType<typeof setTimeout> | null = null
 
 export function isLaunchpadProMk3(name: string): boolean {
   const n = name.toLowerCase()
-  return n.includes('launchpad pro') && (n.includes('mk3') || n.includes('mk iii'))
+  return (n.includes('launchpad pro') && (n.includes('mk3') || n.includes('mk iii'))) || n.includes('lppromk3')
 }
 
 export function isConnected(): boolean {

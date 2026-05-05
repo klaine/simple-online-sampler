@@ -401,11 +401,17 @@ export function PadGrid() {
                 if (groupId) {
                   const groupSamples = samples.filter((s) => s.autosampleRunId === groupId)
                   if (groupSamples.length > 0) {
-                    groupSamples.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
+                    // Sort by autosamplePadIndex when present, otherwise by name
+                    const hasKitMap = groupSamples.some((s) => s.autosamplePadIndex != null)
+                    if (hasKitMap) {
+                      groupSamples.sort((a, b) => (a.autosamplePadIndex ?? 999) - (b.autosamplePadIndex ?? 999))
+                    } else {
+                      groupSamples.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
+                    }
 
                     // Detect velocity layers: group by base name (strip _vNN suffix)
                     const veloRegex = /^(.+?)_v(\d+)(\.[^.]+)$/
-                    const noteGroups: { baseName: string; samples: { sample: SampleAsset; velocity: number }[] }[] = []
+                    const noteGroups: { baseName: string; padIndex: number | null; samples: { sample: SampleAsset; velocity: number }[] }[] = []
                     const noteGroupMap = new Map<string, typeof noteGroups[0]>()
                     for (const sample of groupSamples) {
                       const m = veloRegex.exec(sample.name)
@@ -413,13 +419,13 @@ export function PadGrid() {
                         const baseKey = m[1] + m[3]
                         let group = noteGroupMap.get(baseKey)
                         if (!group) {
-                          group = { baseName: m[1] + m[3], samples: [] }
+                          group = { baseName: m[1] + m[3], padIndex: sample.autosamplePadIndex ?? null, samples: [] }
                           noteGroupMap.set(baseKey, group)
                           noteGroups.push(group)
                         }
                         group.samples.push({ sample, velocity: Number(m[2]) })
                       } else {
-                        noteGroups.push({ baseName: sample.name, samples: [{ sample, velocity: 127 }] })
+                        noteGroups.push({ baseName: sample.name, padIndex: sample.autosamplePadIndex ?? null, samples: [{ sample, velocity: 127 }] })
                       }
                     }
                     for (const group of noteGroups) group.samples.sort((a, b) => a.velocity - b.velocity)
@@ -431,11 +437,21 @@ export function PadGrid() {
                     if (startIdx === -1) return
 
                     // Build assignment map: padId → note group
+                    // Respect autosamplePadIndex offsets relative to drop target
                     const assignMap = new Map<string, typeof noteGroups[0]>()
-                    for (let i = 0; i < noteGroups.length; i++) {
-                      const targetPad = padsSorted[startIdx + i]
-                      if (!targetPad) break
-                      assignMap.set(targetPad.id, noteGroups[i])
+                    if (hasKitMap) {
+                      const minPadIdx = Math.min(...noteGroups.map((g) => g.padIndex ?? 0))
+                      for (const group of noteGroups) {
+                        const offset = (group.padIndex ?? 0) - minPadIdx
+                        const targetPad = padsSorted[startIdx + offset]
+                        if (targetPad) assignMap.set(targetPad.id, group)
+                      }
+                    } else {
+                      for (let i = 0; i < noteGroups.length; i++) {
+                        const targetPad = padsSorted[startIdx + i]
+                        if (!targetPad) break
+                        assignMap.set(targetPad.id, noteGroups[i])
+                      }
                     }
                     if (assignMap.size === 0) return
 

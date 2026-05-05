@@ -441,6 +441,9 @@ export function TopBar() {
         <button type="button" className="tb-secondary" onClick={() => void initializeCurrentProject()}>
           Init
         </button>
+        <button type="button" className="tb-secondary" onClick={() => window.location.reload()}>
+          Refresh
+        </button>
         <SettingsPopover />
       </div>
     </header>
