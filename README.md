@@ -8,7 +8,7 @@ A browser-based sampler/sequencer built with React, TypeScript, and the Web Audi
 - **128 pads** across 8 banks (16 pads per bank)
 - **Velocity-sensitive pads** — vertical click/touch position maps to velocity
 - **3 layout modes** — Classic (3-column), Wide (sequencer on top), Performance (pads + tabbed panels, auto-detected on landscape mobile)
-- **Touch support** for mobile/tablet pad triggering
+- **Touch support** for mobile/tablet pad triggering, touch drag-and-drop for samples and patterns to song chain
 - **Multisample** support: round-robin, random, velocity-layer, and stacked modes
 - **Per-pad settings**: gain, pitch (semitones + fine cents), playback mode (one-shot/ADSR), trim, MC-909 style AMP envelope (vertical faders, ADSR curve visualization), filter (LP/HP/BP) with filter envelope (ADSR+depth, both sample and synth pads), per-pad pan (with random pan mode), mix bus routing, choke groups (1–8), normalize, crop
 - **Additive synth engine** — each pad can be sample-based or synth-based (16 sine-wave harmonics with filter envelope and LFO)
@@ -87,6 +87,7 @@ A browser-based sampler/sequencer built with React, TypeScript, and the Web Audi
 - **Project import/export** as ZIP packages
 - **Import modes**: New Project, Merge, or Overwrite with conflict preview
 - **Editable project name** in the TopBar
+- **Multiple projects** — create, switch, duplicate, and delete projects (samples shared globally)
 - **Initialize project** button to reset to defaults
 - **Preset drum kits** — 3 factory kits (TR-7x7, TR-8x8, TR-9x9) auto-loaded and assigned to Banks 1–3 on first launch
 
@@ -142,7 +143,7 @@ Runs TypeScript type checking followed by Vite production build.
 
 ## Architecture
 
-Single-page app with all state in a Zustand store (~3700 lines). Audio runs on the Web Audio API with a worker-based transport clock for reliable timing. See [AGENTS.md](./AGENTS.md) for detailed architecture documentation.
+Single-page app with all state in a Zustand store (~4600 lines). Audio runs on the Web Audio API with a worker-based transport clock for reliable timing. See [AGENTS.md](./AGENTS.md) for detailed architecture documentation.
 
 ### Key Design Decisions
 

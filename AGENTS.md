@@ -71,12 +71,12 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - `ExportDialog.tsx` — Export format chooser with spinner
 - `ImportDialog.tsx` — Import dialog
 - `ConfirmDialog.tsx` — Promise-based confirm overlay (replaces all `window.confirm` calls)
-- `SampleLibrary.tsx` — Sample library sidebar with file drop, chop/spread buttons, "Remove Unassigned" cleanup, record button, autosample group UI (rename/delete/export/drag/assign-to-pads), group edit modal (name/bus/choke), manual sample grouping (multi-select + group button), per-sample ungroup, MPC badge on .pgm-imported groups, Preset badge on factory preset groups, ZIP import support, synth patches section (list/assign/export/import/delete), sidebar collapse button, projects section (list/new/duplicate/delete/switch)
+- `SampleLibrary.tsx` — Sample library sidebar with file drop, chop/spread buttons, "Remove Unassigned" cleanup, record button, Import Samples button, autosample group UI (rename/delete/export/drag/assign-to-pads), group edit modal (name/bus/choke), manual sample grouping (multi-select + group button), per-sample ungroup, MPC badge on .pgm-imported groups, Preset badge on factory preset groups, ZIP import support, synth patches section (list/assign/export/import/delete), sidebar collapse button, projects section (list/new/duplicate/delete/switch)
 - `PadEditor.tsx` — Collapsible pad settings, waveform trim with zoom (gain-scaled, layer-aware), filter knobs (LP12/LP24/HP/BP), MC-909 style AMP and FILTER envelope sections (vertical faders + ADSR curve visualization), filter envelope for both sample and synth pads, multisample layer UI, per-layer editing, stacked timeline (canvas waveforms + drag offset), bus selector, choke group selector, pan knob (with random pan toggle), MIDI Out section, source toggle (Sample/Synth), SynthEditor integration, per-pad effect slots (2 slots, synth pads), synth MIDI input section (channel/device), Crop button (destructively trims sample to trim markers), Normalize button (peak normalize to -0.3 dBFS), Reset Pad button (resets to defaults + clears sequencer events)
 - `EnvelopeSection.tsx` — Reusable MC-909 style envelope section with ADSR curve SVG visualization, vertical faders (with log-scale support), level/depth fader, used for both AMP and FILTER envelopes in PadEditor
 - `PadGrid.tsx` — Pad grid with bank nav (double-click to rename banks), pad drag (move/copy/swap), record button overlay on empty pads, MIDI debug display, autosample group drop with metadata (trim/bus/choke), group drop on bank tabs (assigns starting from pad 1 of target bank), MPC .pgm import on file drop, synth pad display ("~ Synth"), synth patch drop from library, touch event handling (preventDefault to avoid double-trigger on mobile)
 - `TopBar.tsx` — Header with transport, BPM, swing, tap tempo, VU meter, metronome toggle, sequencer record arm/quantize/overdub/count-in buttons, MIDI input cluster, Audio Out device selector, drag-to-adjust BPM/Swing inputs, settings popover (buffer size, metronome volume, wide layout toggle)
-- `Sequencer.tsx` — Pattern strip, song chain, sequencer matrix, inline ColorPicker (8×8 grid popover), performance stats overlay (FPS + tick drift)
+- `Sequencer.tsx` — Compact toolbar, draggable pattern strip (drag to reorder), song chain, sequencer matrix with collapsible bank groups (all 8 banks visible, auto-collapsed if no events in current pattern), inline ColorPicker (8×8 grid popover), performance stats overlay (FPS + tick drift)
 - `PianoRollLane.tsx` — Memoized inline piano roll for synth pad lanes: 24-row (2 octave) grid, click-to-toggle notes, velocity drag (Shift+drag), octave scroll buttons, note length drag (left/right edges adjust gate), aligned with sequencer step columns via shared CSS grid template
 - `Mixer.tsx` — Mix bus panel: custom drag faders, per-bus/master level meters (canvas), pan knobs, mute/solo, 3 effect slots per channel, sidechain source selector for SC Comp, input monitor strip, double-click bus name to rename
 - `Toasts.tsx` — Toast notification container
@@ -105,7 +105,7 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - `midiExport.ts` — MIDI export
 - `mpcImport.ts` — MPC1000/MPC2500 `.pgm` program file parser: `parseMpcPgm` (extracts pad-to-sample mapping from binary), `matchMpcSamplesToFiles` (matches mapping to dropped audio files)
 - `drumKitMap.ts` — Drum category classifier (`classifyDrumSample`, `looksLikeDrumKit`) and standard 16-pad layout mapper (`mapToStandardKit`)
-- `touchDrag.ts` — Touch-based drag-and-drop for iPad/mobile (floating ghost, `elementFromPoint` drop detection, custom `touch-drop` event). Works alongside HTML5 DnD for desktop.
+- `touchDrag.ts` — Touch-based drag-and-drop for iPad/mobile (floating ghost, `elementFromPoint` drop detection, custom `touch-drop` event, configurable `DROP_SELECTORS` for pads + song chain elements). Works alongside HTML5 DnD for desktop.
 - `constants.ts` — Constants (`BANK_COUNT=8`, `PADS_PER_BANK=16`, `TOTAL_PADS=128`)
 
 ### Workers (`src/workers/`)
@@ -352,6 +352,7 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 
 - Song Chain panel collapsed by default, persisted in localStorage.
 - Hide Empty Lanes defaults to on (unless persisted setting exists). When enabled, only lanes with events **in the active pattern** are shown (pad content alone is not sufficient).
+- Sequencer shows all 8 banks as collapsible groups. Banks with events in the current pattern are expanded by default; banks without events are collapsed. User can toggle any bank. State tracked via `seqExpandedBanks`/`seqCollapsedBanks` Sets. Selector: `selectSequencerBankGroups`.
 - Audio output device persisted in localStorage (`audioOutputDeviceId`), restored on app init, fallback to system default.
 - Sequencer is intentionally compact; avoid increasing vertical spacing without strong reason.
 - Sequencer/Mixer vertical split is draggable via horizontal divider; ratio (0.2–0.85) persisted in localStorage (`layout-seq-mixer-split`), default 60% sequencer.
@@ -359,7 +360,7 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - **Layout modes**: 3 modes selectable via settings popover (or Settings tab in performance mode), persisted in localStorage (`layoutMode`):
   - **Classic**: 3-column layout (library | pad editor + pad grid | sequencer + mixer). Uses `studio-col-left`, `studio-col-center`, `studio-col-right`.
   - **Wide** (default): sequencer on top, mixer + pad editor + pad grid on bottom row. Uses `studio-col-main` and `alt-bottom-row` CSS classes.
-  - **Performance**: optimized for landscape mobile / compact screens. Left panel with switchable content via bottom tab bar (Library, Pad Editor, Sequencer, Mixer, Settings), right panel always shows PadGrid. Drag-resizable vertical divider between left/right (ratio 0.25–0.75, persisted as `layout-perf-split`). No footer. Uses `perf-layout`, `perf-left`, `perf-right`, `perf-tabs`, `perf-divider` CSS classes.
+  - **Performance**: optimized for landscape mobile / compact screens. Left panel with switchable content via bottom tab bar (Samples, Pad Edit, Sequencer, Mixer, Projects, Settings), right panel always shows PadGrid. Drag-resizable vertical divider between left/right (ratio 0.25–0.75, persisted as `layout-perf-split`). No footer. Sub-headers hidden (CSS). All topbar buttons enlarged to 36px+ min-height for touch. `overscroll-behavior: none` + `touch-action: manipulation` prevents horizontal scroll on drag. Uses `perf-layout`, `perf-left`, `perf-right`, `perf-tabs`, `perf-divider` CSS classes.
   - Auto-detection: on mount, if `pointer: coarse` + landscape orientation + width ≤ 1099px and no explicit `layoutMode` in localStorage, defaults to performance mode.
   - State: `layoutMode: 'classic' | 'wide' | 'performance'` and `performanceTab: 'library' | 'padEditor' | 'sequencer' | 'mixer' | 'projects' | 'settings'` in Zustand store.
 

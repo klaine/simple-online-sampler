@@ -1412,10 +1412,6 @@ select.tb-led-value {
   gap: 0.15rem;
 }
 
-.perf-left > .sequencer > .sequencer-top > h2 {
-  display: none;
-}
-
 .perf-left > .sequencer .sequencer-controls-row {
   gap: 0.2rem;
   flex-wrap: wrap;
@@ -1467,7 +1463,7 @@ select.tb-led-value {
   align-items: center;
 }
 
-.perf-left > .sequencer .sequencer-primary-actions {
+.perf-left > .sequencer .sequencer-controls-row {
   gap: 0.2rem;
 }
 
@@ -1484,7 +1480,7 @@ select.tb-led-value {
   font-size: 0.57rem;
 }
 
-.perf-left > .sequencer .sequencer-primary-actions button {
+.perf-left > .sequencer .seq-action-btn {
   padding: 0.15rem 0.3rem;
   font-size: 0.68rem;
 }
@@ -2255,16 +2251,40 @@ select.tb-led-value {
 .sequencer-top {
   display: flex;
   flex-direction: column;
-  gap: 0.32rem;
-  align-items: stretch;
+  gap: 0.25rem;
 }
 
-.sequencer-primary-actions,
 .sequencer-controls-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.24rem;
+  gap: 0.3rem;
   align-items: center;
+}
+
+.seq-select {
+  font-size: 0.72rem;
+  padding: 0.15rem 0.3rem;
+}
+
+.seq-controls-spacer {
+  flex: 1;
+  min-width: 0.5rem;
+}
+
+.seq-action-btn {
+  font-size: 0.68rem !important;
+  padding: 0.14rem 0.4rem !important;
+  opacity: 0.7;
+}
+.seq-action-btn:hover {
+  opacity: 1;
+}
+
+.seq-status-inline {
+  font-size: 0.68rem;
+  color: var(--muted);
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 .seq-length-group {
@@ -2301,14 +2321,6 @@ select.tb-led-value {
   font-variant-numeric: tabular-nums;
 }
 
-.sequencer-primary-actions {
-  justify-content: flex-start;
-}
-
-.sequencer-primary-actions h2 {
-  margin-right: 0.4rem;
-}
-
 .sequencer-help {
   border: 1px dashed var(--border);
   border-radius: 10px;
@@ -2330,7 +2342,7 @@ select.tb-led-value {
 }
 
 .lane-tools-strip.compact {
-  border: 1px dashed var(--border);
+  background: rgba(255, 255, 255, 0.03);
   border-radius: 10px;
   padding: 0.35rem;
 }
@@ -2375,6 +2387,10 @@ select.tb-led-value {
 .pattern-chip.playing {
   box-shadow: inset 0 0 0 1px rgba(74, 158, 255, 0.5);
   border-color: rgba(74, 158, 255, 0.3);
+}
+
+.pattern-chip.drag-over {
+  border-left: 2px solid var(--blue);
 }
 
 .pattern-color {
@@ -2657,6 +2673,48 @@ select.tb-led-value {
 
 .sequencer-matrix-wrap.fit-sixteen {
   overflow-x: hidden;
+}
+
+/* Bank group headers */
+.seq-bank-group {
+  min-width: max-content;
+}
+.seq-bank-header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.03);
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.seq-bank-header:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--fg);
+}
+.seq-bank-header.has-events {
+  color: var(--fg);
+}
+.seq-bank-chevron {
+  font-size: 0.6rem;
+  width: 0.7rem;
+}
+.seq-bank-name {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.seq-bank-count {
+  font-size: 0.55rem;
+  opacity: 0.6;
+  margin-left: auto;
 }
 
 .sequencer-matrix-head,
@@ -3143,7 +3201,6 @@ select.tb-led-value {
     grid-template-columns: 1fr 1fr;
   }
 
-  .sequencer-primary-actions,
   .sequencer-controls-row {
     width: 100%;
   }

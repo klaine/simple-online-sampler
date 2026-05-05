@@ -363,6 +363,8 @@ export interface AppState {
   selectedPadId: string | null
   selectedLayerId: string | null
   hideEmptyLanes: boolean
+  seqExpandedBanks: Set<number>   // banks user explicitly expanded (overrides auto-collapse)
+  seqCollapsedBanks: Set<number>  // banks user explicitly collapsed (overrides auto-expand)
   layoutMode: 'classic' | 'wide' | 'performance'
   performanceTab: 'library' | 'padEditor' | 'sequencer' | 'mixer' | 'settings' | 'projects'
   showSongChain: boolean
@@ -495,6 +497,7 @@ export interface AppState {
   laneToolRandom: (padId: string) => Promise<void>
   duplicatePatternLength: (mode: 'double' | 'half') => Promise<void>
   toggleLaneMute: (padId: string) => void
+  toggleSeqBankCollapsed: (bank: number) => void
   setSequenceResolution: (resolution: SequenceResolution) => Promise<void>
   setSequenceLength: (lengthSteps: number) => Promise<void>
   commitSequenceLengthDraft: () => Promise<void>
@@ -512,6 +515,7 @@ export interface AppState {
   renamePattern: (patternId: string, name: string) => Promise<void>
   setPatternColor: (patternId: string, color: string) => Promise<void>
   duplicatePattern: (patternId: string) => Promise<void>
+  reorderPattern: (patternId: string, targetPatternId: string) => Promise<void>
   deletePattern: (patternId: string) => Promise<void>
 
   // Song Chain
@@ -831,6 +835,61 @@ export const selectSequenceLanes = memoize<AppState, Pad[]>(
     return bankPads
       .filter((pad) => activePadIds.has(pad.id))
       .sort((a, b) => b.midiNote - a.midiNote)
+  },
+)
+
+export interface SequencerBankGroup {
+  bank: number
+  name: string
+  pads: Pad[]
+  hasEvents: boolean
+  collapsed: boolean
+}
+
+export const selectSequencerBankGroups = memoize<AppState, SequencerBankGroup[]>(
+  (s) => [s.project?.pads, s.project?.bankNames, s.hideEmptyLanes, s.seqExpandedBanks, s.seqCollapsedBanks, selectVisibleSequence(s)?.id, selectVisibleSequence(s)?.events],
+  (s) => {
+    if (!s.project) return []
+    const visibleSeq = selectVisibleSequence(s)
+    const activePadIds = visibleSeq ? new Set(visibleSeq.events.map((e) => e.padId)) : new Set<string>()
+    const bankNames = s.project.bankNames ?? Array.from({ length: BANK_COUNT }, (_, i) => `Bank ${i + 1}`)
+
+    const groups: SequencerBankGroup[] = []
+    for (let bank = 0; bank < BANK_COUNT; bank++) {
+      const bankPads = s.project.pads.filter((p) => p.bank === bank).sort((a, b) => a.slot - b.slot)
+      // Skip banks where no pad has content (no sample, no synth, no MIDI out)
+      const hasPadContent = bankPads.some((p) => p.settings.sampleId || p.settings.source === 'synth' || p.settings.midiOut?.enabled)
+      if (!hasPadContent) continue
+      const hasEvents = bankPads.some((p) => activePadIds.has(p.id))
+
+      // Determine collapsed state
+      let collapsed: boolean
+      if (s.seqCollapsedBanks.has(bank)) {
+        collapsed = true
+      } else if (s.seqExpandedBanks.has(bank)) {
+        collapsed = false
+      } else {
+        // Default: collapsed if no events in current pattern
+        collapsed = !hasEvents
+      }
+
+      // Filter pads if hideEmptyLanes is on
+      let visiblePads: Pad[]
+      if (s.hideEmptyLanes) {
+        visiblePads = bankPads.filter((pad) => activePadIds.has(pad.id))
+      } else {
+        visiblePads = bankPads
+      }
+
+      groups.push({
+        bank,
+        name: bankNames[bank] ?? `Bank ${bank + 1}`,
+        pads: visiblePads.sort((a, b) => b.midiNote - a.midiNote),
+        hasEvents,
+        collapsed,
+      })
+    }
+    return groups
   },
 )
 
@@ -1188,6 +1247,8 @@ export const useStore = create<AppState>()(
       selectedPadId: null,
       selectedLayerId: null,
       hideEmptyLanes: true,
+      seqExpandedBanks: new Set<number>(),
+      seqCollapsedBanks: new Set<number>(),
       layoutMode: (() => {
         const stored = localStorage.getItem('layoutMode')
         if (stored === 'classic' || stored === 'wide' || stored === 'performance') return stored
@@ -2550,6 +2611,38 @@ export const useStore = create<AppState>()(
         })
       },
 
+      toggleSeqBankCollapsed: (bank: number) => {
+        set((s) => {
+          const expanded = new Set(s.seqExpandedBanks)
+          const collapsed = new Set(s.seqCollapsedBanks)
+          if (collapsed.has(bank)) {
+            // User is expanding a collapsed bank
+            collapsed.delete(bank)
+            expanded.add(bank)
+          } else if (expanded.has(bank)) {
+            // User is collapsing an expanded bank
+            expanded.delete(bank)
+            collapsed.add(bank)
+          } else {
+            // No explicit state — toggle from default
+            // Default: collapsed if no events, expanded if has events
+            // So toggling means: if it was showing (has events), collapse it; if hidden (no events), expand it
+            const state = get()
+            const visibleSeq = selectVisibleSequence(state)
+            const activePadIds = visibleSeq ? new Set(visibleSeq.events.map((e) => e.padId)) : new Set<string>()
+            const bankPads = state.project?.pads.filter((p) => p.bank === bank) ?? []
+            const hasEvents = bankPads.some((p) => activePadIds.has(p.id))
+            if (hasEvents) {
+              collapsed.add(bank)
+            } else {
+              expanded.add(bank)
+            }
+          }
+          s.seqExpandedBanks = expanded
+          s.seqCollapsedBanks = collapsed
+        })
+      },
+
       setSequenceResolution: async (resolution: SequenceResolution) => {
         const s = get()
         const visible = selectVisibleSequence(s)
@@ -2645,6 +2738,18 @@ export const useStore = create<AppState>()(
         }
         await s.saveProject({ ...s.project, sequences: [...s.project.sequences, clone] })
         set((d) => { d.activeSequenceId = clone.id })
+      },
+
+      reorderPattern: async (patternId: string, targetPatternId: string) => {
+        const s = get()
+        if (!s.project || patternId === targetPatternId) return
+        const sequences = [...s.project.sequences]
+        const srcIdx = sequences.findIndex((seq) => seq.id === patternId)
+        const tgtIdx = sequences.findIndex((seq) => seq.id === targetPatternId)
+        if (srcIdx === -1 || tgtIdx === -1) return
+        const [moved] = sequences.splice(srcIdx, 1)
+        sequences.splice(tgtIdx, 0, moved)
+        await s.saveProject({ ...s.project, sequences })
       },
 
       deletePattern: async (patternId: string) => {

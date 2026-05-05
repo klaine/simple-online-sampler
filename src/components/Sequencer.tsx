@@ -12,7 +12,7 @@ import {
   selectVisibleSequence,
   selectEventsByPadAndStep,
   selectSpanningByPadAndStep,
-  selectSequenceLanes,
+  selectSequencerBankGroups,
   selectEventsByPad,
   PATTERN_COLORS,
 } from '../store'
@@ -96,7 +96,7 @@ export function Sequencer() {
   const visibleSequence = useStore(selectVisibleSequence)
   const eventsByPadAndStep = useStore(selectEventsByPadAndStep)
   const spanningByPadAndStep = useStore(selectSpanningByPadAndStep)
-  const sequenceLanes = useStore(selectSequenceLanes)
+  const bankGroups = useStore(selectSequencerBankGroups)
   const eventsByPad = useStore(selectEventsByPad)
   const expandedPianoRollPads = useStore((s) => s.expandedPianoRollPads)
   const pianoRollOctaveOffset = useStore((s) => s.pianoRollOctaveOffset)
@@ -128,11 +128,14 @@ export function Sequencer() {
     copySelectedChainEntry,
     pasteChainEntry,
     togglePianoRollExpanded,
+    toggleSeqBankCollapsed,
+    reorderPattern,
   } = useStore.getState()
 
   const draggedPatternIdRef = useRef<string | null>(null)
   const draggedChainEntryIdRef = useRef<string | null>(null)
   const chainGridRef = useRef<HTMLDivElement>(null)
+  const [dragOverPatternId, setDragOverPatternId] = useState<string | null>(null)
   const [fps, setFps] = useState(0)
 
   // Handle touch-drop events on chain area
@@ -203,64 +206,62 @@ export function Sequencer() {
     if (!pattern) return []
     return [{ entry, pattern }]
   })
-  const hasEventsInActivePattern = Boolean(activeSequence.events.length)
 
   return (
     <section className="sequencer studio-sequencer">
       <div className="sequencer-top">
-        <h2>Sequencer</h2>
-        <div className="sequencer-primary-actions">
-          <button type="button" onClick={() => void addSequence()}>+ Pattern</button>
-          <button type="button" onClick={() => useStore.setState((s) => ({ showSequencerTools: !s.showSequencerTools }))}>
-            {showSequencerTools ? 'Hide Tools' : 'Tools'}
-          </button>
-          <button type="button" onClick={() => useStore.setState((s) => ({ showSequencerHelp: !s.showSequencerHelp }))}>
-            {showSequencerHelp ? 'Hide Help' : 'Help'}
-          </button>
-        </div>
         <div className="sequencer-controls-row">
-          <label>
-            Playback
-            <select value={playbackScope} onChange={(e) => useStore.setState({ playbackScope: e.target.value as 'pattern' | 'song' })}>
-              <option value="pattern">Pattern</option>
-              <option value="song">Song Chain</option>
-            </select>
-          </label>
-          <label>
-            Resolution
-            <select value={visibleSequence.resolution} onChange={(e) => void setSequenceResolution(Number(e.target.value) as SequenceResolution)}>
-              <option value={16}>1/16</option>
-              <option value={32}>1/32</option>
-            </select>
-          </label>
+          <select className="seq-select" value={playbackScope} onChange={(e) => useStore.setState({ playbackScope: e.target.value as 'pattern' | 'song' })}>
+            <option value="pattern">Pattern</option>
+            <option value="song">Song</option>
+          </select>
+          <select className="seq-select" value={visibleSequence.resolution} onChange={(e) => void setSequenceResolution(Number(e.target.value) as SequenceResolution)}>
+            <option value={16}>1/16</option>
+            <option value={32}>1/32</option>
+          </select>
           <div className="seq-length-group">
-              <span className="seq-length-label">Steps</span>
-              {[16, 32, 64].map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  className={`seq-length-btn${visibleSequence.lengthSteps === n && sequenceLengthDraft === String(n) ? ' active' : ''}`}
-                  onClick={() => { useStore.setState({ sequenceLengthDraft: String(n) }); void commitSeqLength() }}
-                >
-                  {n}
-                </button>
-              ))}
-              <input
-                type="number"
-                className="seq-length-custom"
-                min={MIN_SEQUENCE_STEPS}
-                max={MAX_SEQUENCE_STEPS}
-                value={sequenceLengthDraft}
-                onChange={(e) => useStore.setState({ sequenceLengthDraft: e.target.value })}
-                onBlur={() => void commitSeqLength()}
-                onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
-                title="Custom step count"
-              />
-            </div>
+            <span className="seq-length-label">Steps</span>
+            {[16, 32, 64].map((n) => (
+              <button
+                key={n}
+                type="button"
+                className={`seq-length-btn${visibleSequence.lengthSteps === n && sequenceLengthDraft === String(n) ? ' active' : ''}`}
+                onClick={() => { useStore.setState({ sequenceLengthDraft: String(n) }); void commitSeqLength() }}
+              >
+                {n}
+              </button>
+            ))}
+            <input
+              type="number"
+              className="seq-length-custom"
+              min={MIN_SEQUENCE_STEPS}
+              max={MAX_SEQUENCE_STEPS}
+              value={sequenceLengthDraft}
+              onChange={(e) => useStore.setState({ sequenceLengthDraft: e.target.value })}
+              onBlur={() => void commitSeqLength()}
+              onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+              title="Custom step count"
+            />
+          </div>
           <label className="sequencer-toggle">
             <input type="checkbox" checked={hideEmptyLanes} onChange={(e) => useStore.setState({ hideEmptyLanes: e.target.checked })} />
-            Hide Empty Lanes
+            Hide Empty
           </label>
+          <span className="seq-controls-spacer" />
+          <button type="button" className="seq-action-btn" onClick={() => void addSequence()}>+ Pattern</button>
+          <button type="button" className="seq-action-btn" onClick={() => useStore.setState((s) => ({ showSequencerTools: !s.showSequencerTools }))}>
+            Tools
+          </button>
+          <button type="button" className="seq-action-btn" onClick={() => useStore.setState((s) => ({ showSequencerHelp: !s.showSequencerHelp }))}>
+            ?
+          </button>
+          <span className="seq-status-inline">
+            {isPlaying
+              ? playbackScope === 'song' && playingChainIndex !== null
+                ? `Chain ${playingChainIndex + 1}/${playingChainRepeat}`
+                : `▶ ${project.sequences.find((s) => s.id === playingPatternId)?.name ?? ''}`
+              : 'Stopped'}
+          </span>
         </div>
       </div>
 
@@ -294,29 +295,33 @@ export function Sequencer() {
         </div>
       )}
 
-      <p className="sequencer-status">
-        {isPlaying
-          ? playbackScope === 'song' && playingChainIndex !== null
-            ? `Playing chain ${playingChainIndex + 1} (repeat ${playingChainRepeat})`
-            : `Playing ${project.sequences.find((s) => s.id === playingPatternId)?.name ?? 'pattern'}`
-          : 'Stopped'}
-      </p>
-      {!hasEventsInActivePattern && <p className="sequencer-status">No notes in active pattern.</p>}
-
-      <div className="pattern-strip">
+      <div className="pattern-strip" onDragLeave={() => setDragOverPatternId(null)}>
         {project.sequences.map((sequence) => {
           const isActive = sequence.id === activeSequence.id
           const isPlayingPat = sequence.id === playingPatternId
           return (
              <div
               key={sequence.id}
-              className={`pattern-chip ${isActive ? 'active' : ''} ${isPlayingPat ? 'playing' : ''}`}
+              className={`pattern-chip ${isActive ? 'active' : ''} ${isPlayingPat ? 'playing' : ''} ${dragOverPatternId === sequence.id ? 'drag-over' : ''}`}
               style={{ borderColor: sequence.color }}
               draggable
               onDragStart={() => {
                 draggedPatternIdRef.current = sequence.id
                 draggedChainEntryIdRef.current = null
               }}
+              onDragOver={(e) => {
+                e.preventDefault()
+                if (draggedPatternIdRef.current && draggedPatternIdRef.current !== sequence.id && !draggedChainEntryIdRef.current) {
+                  setDragOverPatternId(sequence.id)
+                }
+              }}
+              onDrop={() => {
+                if (draggedPatternIdRef.current && draggedPatternIdRef.current !== sequence.id && !draggedChainEntryIdRef.current) {
+                  void reorderPattern(draggedPatternIdRef.current, sequence.id)
+                }
+                setDragOverPatternId(null)
+              }}
+              onDragEnd={() => setDragOverPatternId(null)}
               onClick={() => useStore.setState({ activeSequenceId: sequence.id })}
               {...makeTouchDragHandlers({ 'x-pattern-id': sequence.id }, sequence.name)}
             >
@@ -503,80 +508,95 @@ export function Sequencer() {
           ))}
         </div>
 
-        {sequenceLanes.map((pad) => {
-          const selectedLane = selectedPadId === pad.id
-          const padExactMap = eventsByPadAndStep.get(pad.id)
-          const padSpanMap = spanningByPadAndStep.get(pad.id)
-          const isSynth = pad.settings.source === 'synth'
-          const isPianoRollExpanded = isSynth && expandedPianoRollPads.has(pad.id)
-          return (
-            <div key={pad.id} className={isPianoRollExpanded ? 'sequencer-lane-group' : undefined}>
-              <div
-                className={`sequencer-row ${selectedLane ? 'selected-lane' : ''} ${fitSteps ? 'fit-sixteen' : ''}`}
-                style={{ gridTemplateColumns: sequenceGridColumns }}
-              >
-                <button
-                  type="button"
-                  className="lane-label"
-                  onClick={() => {
-                    useStore.setState({ selectedPadId: pad.id })
-                    void triggerPad(pad, 0.9)
-                  }}
-                >
-                  {isSynth && <span className="lane-synth-badge">~</span>}
-                  {pad.slot + 1} - {pad.name}
-                </button>
-                <button
-                  type="button"
-                  className={`lane-action ${mutedLanePadIds.has(pad.id) ? 'active' : ''}`}
-                  onClick={() => toggleLaneMute(pad.id)}
-                >M</button>
-                <button type="button" className="lane-action" onClick={() => void clearLane(pad.id)}>C</button>
-                {isSynth ? (
-                  <button
-                    type="button"
-                    className={`lane-action ${isPianoRollExpanded ? 'active' : ''}`}
-                    onClick={() => togglePianoRollExpanded(pad.id)}
-                    title={isPianoRollExpanded ? 'Collapse piano roll' : 'Expand piano roll'}
-                  >&#x266B;</button>
-                ) : (
-                  <button type="button" className="lane-action" onClick={() => void clearLane(pad.id)} title="Delete lane events">D</button>
-                )}
-                {Array.from({ length: visibleSequence.lengthSteps }, (_, step) => {
-                  const exactEvent = padExactMap?.get(step)
-                  const spanningEvent = padSpanMap?.get(step)
-                  return (
-                    <SequencerStep
-                      key={`${pad.id}-${step}`}
-                      padId={pad.id}
-                      step={step}
-                      exactEvent={exactEvent}
-                      spanningEvent={spanningEvent}
-                      isPlayhead={playheadStep === step}
-                      isGateMode={pad.settings.mode === 'adsr'}
-                      fitSixteen={fitSteps}
-                      showGateResizeTip={showGateResizeTip}
-                      patternId={visibleSequence.id}
-                    />
-                  )
-                })}
-              </div>
-              {isPianoRollExpanded && (
-                <PianoRollLane
-                  padId={pad.id}
-                  baseNote={pad.settings.synthParams?.baseNote ?? 60}
-                  octaveOffset={pianoRollOctaveOffset[pad.id] ?? 0}
-                  lengthSteps={visibleSequence.lengthSteps}
-                  events={eventsByPad.get(pad.id) ?? []}
-                  playheadStep={playheadStep}
-                  stepGridColumns={stepGridColumns}
-                  fitSixteen={fitSteps}
-                />
+        {bankGroups.map((group) => (
+          <div key={group.bank} className="seq-bank-group">
+            <button
+              type="button"
+              className={`seq-bank-header ${group.collapsed ? 'collapsed' : ''} ${group.hasEvents ? 'has-events' : ''}`}
+              onClick={() => toggleSeqBankCollapsed(group.bank)}
+            >
+              <span className="seq-bank-chevron">{group.collapsed ? '\u25B8' : '\u25BE'}</span>
+              <span className="seq-bank-name">{group.name}</span>
+              {group.collapsed && group.pads.length > 0 && (
+                <span className="seq-bank-count">{group.pads.length}</span>
               )}
-            </div>
-          )
-        })}
-        {sequenceLanes.length === 0 && <p className="sequencer-status">No visible lanes for current filter.</p>}
+            </button>
+            {!group.collapsed && group.pads.map((pad) => {
+              const selectedLane = selectedPadId === pad.id
+              const padExactMap = eventsByPadAndStep.get(pad.id)
+              const padSpanMap = spanningByPadAndStep.get(pad.id)
+              const isSynth = pad.settings.source === 'synth'
+              const isPianoRollExpanded = isSynth && expandedPianoRollPads.has(pad.id)
+              return (
+                <div key={pad.id} className={isPianoRollExpanded ? 'sequencer-lane-group' : undefined}>
+                  <div
+                    className={`sequencer-row ${selectedLane ? 'selected-lane' : ''} ${fitSteps ? 'fit-sixteen' : ''}`}
+                    style={{ gridTemplateColumns: sequenceGridColumns }}
+                  >
+                    <button
+                      type="button"
+                      className="lane-label"
+                      onClick={() => {
+                        useStore.setState({ selectedPadId: pad.id })
+                        void triggerPad(pad, 0.9)
+                      }}
+                    >
+                      {isSynth && <span className="lane-synth-badge">~</span>}
+                      {pad.slot + 1} - {pad.name}
+                    </button>
+                    <button
+                      type="button"
+                      className={`lane-action ${mutedLanePadIds.has(pad.id) ? 'active' : ''}`}
+                      onClick={() => toggleLaneMute(pad.id)}
+                    >M</button>
+                    <button type="button" className="lane-action" onClick={() => void clearLane(pad.id)}>C</button>
+                    {isSynth ? (
+                      <button
+                        type="button"
+                        className={`lane-action ${isPianoRollExpanded ? 'active' : ''}`}
+                        onClick={() => togglePianoRollExpanded(pad.id)}
+                        title={isPianoRollExpanded ? 'Collapse piano roll' : 'Expand piano roll'}
+                      >&#x266B;</button>
+                    ) : (
+                      <button type="button" className="lane-action" onClick={() => void clearLane(pad.id)} title="Delete lane events">D</button>
+                    )}
+                    {Array.from({ length: visibleSequence.lengthSteps }, (_, step) => {
+                      const exactEvent = padExactMap?.get(step)
+                      const spanningEvent = padSpanMap?.get(step)
+                      return (
+                        <SequencerStep
+                          key={`${pad.id}-${step}`}
+                          padId={pad.id}
+                          step={step}
+                          exactEvent={exactEvent}
+                          spanningEvent={spanningEvent}
+                          isPlayhead={playheadStep === step}
+                          isGateMode={pad.settings.mode === 'adsr'}
+                          fitSixteen={fitSteps}
+                          showGateResizeTip={showGateResizeTip}
+                          patternId={visibleSequence.id}
+                        />
+                      )
+                    })}
+                  </div>
+                  {isPianoRollExpanded && (
+                    <PianoRollLane
+                      padId={pad.id}
+                      baseNote={pad.settings.synthParams?.baseNote ?? 60}
+                      octaveOffset={pianoRollOctaveOffset[pad.id] ?? 0}
+                      lengthSteps={visibleSequence.lengthSteps}
+                      events={eventsByPad.get(pad.id) ?? []}
+                      playheadStep={playheadStep}
+                      stepGridColumns={stepGridColumns}
+                      fitSixteen={fitSteps}
+                    />
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        ))}
+        {bankGroups.every((g) => g.collapsed || g.pads.length === 0) && <p className="sequencer-status">No visible lanes. Expand a bank or disable "Hide Empty Lanes".</p>}
       </div>
       {showGateResizeTip && <p className="gate-tip">Tip: drag note edges to resize gate note length.</p>}
     </section>
