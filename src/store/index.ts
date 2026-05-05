@@ -326,6 +326,7 @@ export interface AppState {
   midiInputEnabled: boolean
   midiInputDeviceId: string | null   // null = all inputs
   padMidiChannel: number | null      // null = all channels, 1–16 = specific channel
+  launchpadSpecialMode: boolean      // true = use custom LP Pro MK3 integration, false = treat as generic MIDI
    midiInputs: Array<{ id: string; name: string }>
   midiOutputs: Array<{ id: string; name: string }>
   lastMidiNote: { note: number; velocity: number } | null
@@ -1243,6 +1244,7 @@ export const useStore = create<AppState>()(
       midiInputEnabled: true,
       midiInputDeviceId: null,
       padMidiChannel: null,
+      launchpadSpecialMode: localStorage.getItem('launchpadSpecialMode') !== 'false',
       midiInputs: [],
       midiOutputs: [],
       lastMidiNote: null,

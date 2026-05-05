@@ -448,6 +448,17 @@ function App() {
     }
 
     const tryConnectLaunchpad = (access: MIDIAccess) => {
+      // If special mode is disabled, disconnect and treat as generic MIDI
+      if (!useStore.getState().launchpadSpecialMode) {
+        if (launchpad.isConnected()) launchpad.disconnect()
+        // Ensure generic handler is attached to LP inputs
+        access.inputs.forEach((input) => {
+          if (launchpad.isLaunchpadProMk3(input.name || '')) {
+            input.onmidimessage = onMessage
+          }
+        })
+        return
+      }
       // Check if launchpad disappeared
       if (launchpad.isConnected()) {
         let found = false
@@ -538,8 +549,8 @@ function App() {
         const access = await navigator.requestMIDIAccess?.({ sysex: true })
         if (!access || cancelled) return
         access.inputs.forEach((input) => {
-          // Don't attach generic handler to Launchpad — it has its own
-          if (!launchpad.isLaunchpadProMk3(input.name || '')) {
+          // Don't attach generic handler to Launchpad if special mode is on
+          if (!useStore.getState().launchpadSpecialMode || !launchpad.isLaunchpadProMk3(input.name || '')) {
             input.onmidimessage = onMessage
           }
         })
@@ -559,9 +570,9 @@ function App() {
 
         // Keep lists in sync when devices connect/disconnect
         access.onstatechange = () => {
-          access.inputs.forEach((input) => {
-            // Don't override launchpad's own handler
-            if (!launchpad.isConnected() || !launchpad.isLaunchpadProMk3(input.name || '')) {
+           access.inputs.forEach((input) => {
+            // Don't override launchpad's own handler when special mode is active
+            if (!useStore.getState().launchpadSpecialMode || !launchpad.isConnected() || !launchpad.isLaunchpadProMk3(input.name || '')) {
               input.onmidimessage = onMessage
             }
           })

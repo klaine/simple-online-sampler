@@ -70,6 +70,7 @@ export function SettingsContent() {
   const midiInputEnabled = useStore((s) => s.midiInputEnabled)
   const midiInputDeviceId = useStore((s) => s.midiInputDeviceId)
   const padMidiChannel = useStore((s) => s.padMidiChannel)
+  const launchpadSpecialMode = useStore((s) => s.launchpadSpecialMode)
   const midiInputs = useStore((s) => s.midiInputs)
   const audioOutputs = useStore((s) => s.audioOutputs)
   const audioOutputDeviceId = useStore((s) => s.audioOutputDeviceId)
@@ -115,6 +116,21 @@ export function SettingsContent() {
               ))}
             </select>
           </label>
+          {midiInputs.some((d) => d.name.toLowerCase().includes('launchpad') || d.name.toLowerCase().includes('lppromk3')) && (
+            <label className="settings-row">
+              <span>LP Pro MK3 Mode</span>
+              <input
+                type="checkbox"
+                checked={launchpadSpecialMode}
+                onChange={(e) => {
+                  useStore.setState({ launchpadSpecialMode: e.target.checked })
+                  localStorage.setItem('launchpadSpecialMode', String(e.target.checked))
+                  // Force reconnect by reloading
+                  window.location.reload()
+                }}
+              />
+            </label>
+          )}
         </>
       )}
       {midiInputEnabled && midiInputs.length === 0 && (

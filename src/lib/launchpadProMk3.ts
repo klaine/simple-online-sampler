@@ -25,10 +25,9 @@ const SYSEX_END = 0xf7
 const SYSEX_PROGRAMMER_MODE = [...SYSEX_HEADER, 0x0e, 0x01, SYSEX_END]
 
 // LED lighting (RGB): header + 03 03 <pad> <r> <g> <b> + F7
-// For single pad:
-function buildLedSysEx(pad: number, r: number, g: number, b: number): number[] {
-  return [...SYSEX_HEADER, 0x03, 0x03, pad, r & 0x7f, g & 0x7f, b & 0x7f, SYSEX_END]
-}
+// function buildLedSysEx(pad: number, r: number, g: number, b: number): number[] {
+//   return [...SYSEX_HEADER, 0x03, 0x03, pad, r & 0x7f, g & 0x7f, b & 0x7f, SYSEX_END]
+// }
 
 // Batch LED update (kept for potential future use)
 // function buildBatchLedSysEx(leds: Array<{ pad: number; r: number; g: number; b: number }>): number[] {
@@ -176,6 +175,30 @@ let _getIsRecordArmed: (() => boolean) | null = null
 let _activeBankPage = 0  // 0-3, each page shows 2 banks
 // Track flash state for drum pads — multiple simultaneous flashes
 const _flashTimers = new Map<number, ReturnType<typeof setTimeout>>()
+// Cached pad lookup for O(1) access in hot path
+let _padByIdCache: Map<string, Pad> | null = null
+let _padsByBankSlotCache: Map<string, Pad> | null = null
+let _cachedPadsRef: Pad[] | null = null
+
+function getPadById(id: string): Pad | undefined {
+  const pads = _getPads?.() ?? []
+  if (pads !== _cachedPadsRef) {
+    _cachedPadsRef = pads
+    _padByIdCache = new Map(pads.map((p) => [p.id, p]))
+    _padsByBankSlotCache = new Map(pads.map((p) => [`${p.bank}:${p.slot}`, p]))
+  }
+  return _padByIdCache!.get(id)
+}
+
+function getPadByBankSlot(bank: number, slot: number): Pad | undefined {
+  const pads = _getPads?.() ?? []
+  if (pads !== _cachedPadsRef) {
+    _cachedPadsRef = pads
+    _padByIdCache = new Map(pads.map((p) => [p.id, p]))
+    _padsByBankSlotCache = new Map(pads.map((p) => [`${p.bank}:${p.slot}`, p]))
+  }
+  return _padsByBankSlotCache!.get(`${bank}:${slot}`)
+}
 
 let _repaintTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -285,7 +308,6 @@ export function notifyPadTriggered(padId: string): void {
   _lastTriggeredPadId = padId
   if (changed) repaintSequencer()
   flashDrumPad(padId)
-  flashDrumPad(padId)
 }
 
 /** Called from sequencer tick — only flashes drum pad LED, does NOT change sequencer display */
@@ -296,8 +318,7 @@ export function notifySequencerHit(padId: string): void {
 
 function flashDrumPad(padId: string): void {
   // Flash the drum pad briefly — only if the pad's bank is on the current page
-  const pads = _getPads?.() ?? []
-  const pad = pads.find((p) => p.id === padId)
+  const pad = getPadById(padId)
   if (!pad) return
   const pageFirstBank = _activeBankPage * 2
   const quadrant = pad.bank - pageFirstBank
@@ -333,9 +354,9 @@ function sendToAll(data: Uint8Array): void {
   }
 }
 
-function sendSysEx(data: number[]): void {
-  sendToAll(new Uint8Array(data))
-}
+// function sendSysEx(data: number[]): void {
+//   sendToAll(new Uint8Array(data))
+// }
 
 /** Map an RGB color to the closest palette index for note-velocity LED method */
 function rgbToPalette(r: number, g: number, b: number): number {
@@ -364,10 +385,8 @@ function setLedNote(pad: number, paletteColor: number): void {
 }
 
 function setLed(pad: number, r: number, g: number, b: number): void {
-  // Primary: note-on palette method (reliable for all pads in Programmer mode)
+  // Note-on palette method (reliable for all pads in Programmer mode)
   setLedNote(pad, rgbToPalette(r, g, b))
-  // Also send SysEx RGB for more accurate color (may not work on all rows)
-  sendSysEx(buildLedSysEx(pad, r, g, b))
 }
 
 function clearAll(): void {
@@ -440,11 +459,10 @@ function handleMidiMessage(event: MIDIMessageEvent): void {
   if (!event.data || event.data.length < 3) return
   const [status, note, velocity] = event.data
   const command = status & 0xf0
-  const channel = status & 0x0f
 
   // Log ALL incoming messages for mapping discovery
-  const cmdName = command === 0x90 ? 'NoteOn' : command === 0x80 ? 'NoteOff' : command === 0xb0 ? 'CC' : `0x${command.toString(16)}`
-  console.log(`[LaunchpadProMk3] ${cmdName} ch${channel + 1} note/cc=${note} vel/val=${velocity}`)
+  // const cmdName = command === 0x90 ? 'NoteOn' : command === 0x80 ? 'NoteOff' : command === 0xb0 ? 'CC' : `0x${command.toString(16)}`
+  // console.log(`[LaunchpadProMk3] ${cmdName} ch${channel + 1} note/cc=${note} vel/val=${velocity}`)
 
   // --- CC messages ---
   if (command === 0xb0 && velocity > 0) {
@@ -478,8 +496,7 @@ function handleMidiMessage(event: MIDIMessageEvent): void {
   if (isNoteOff) {
     const drumPad = noteToDrumPad(note)
     if (drumPad && _releasePadCb) {
-      const pads = _getPads?.() ?? []
-      const pad = pads.find((p) => p.bank === drumPad.bank && p.slot === drumPad.padSlot)
+      const pad = getPadByBankSlot(drumPad.bank, drumPad.padSlot)
       if (pad) _releasePadCb(pad.id)
     }
     return
@@ -510,8 +527,7 @@ function handleMidiMessage(event: MIDIMessageEvent): void {
   // Check if it's a drum pad press (rows 1-4)
   const drumPad = noteToDrumPad(note)
   if (drumPad) {
-    const pads = _getPads?.() ?? []
-    const pad = pads.find((p) => p.bank === drumPad.bank && p.slot === drumPad.padSlot)
+    const pad = getPadByBankSlot(drumPad.bank, drumPad.padSlot)
     if (pad && _triggerPadCb) {
       _triggerPadCb(pad, velocity / 127)
       if (_selectPadCb) _selectPadCb(pad.id)
