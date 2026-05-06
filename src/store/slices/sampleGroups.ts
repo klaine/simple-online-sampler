@@ -35,6 +35,8 @@ export const createSampleGroupActions = (ctx: StoreContext) => ({
         s.autosampleChokeGroup = undefined
         s.autosamplePadIndex = undefined
         s.autosampleMpc = undefined
+        s.autosamplePreset = undefined
+        s.autosampleLcdk = undefined
       }
     })
     const sample = ctx.get().samples.find((s) => s.id === sampleId)
