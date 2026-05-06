@@ -73,6 +73,7 @@ export function createFilterChain(
     lp.type = 'lowpass'
     lp.frequency.value = settings.filterFreq2 ?? 20000
     lp.Q.value = settings.filterQ ?? 0.7
+    hp.connect(lp)
     return { nodes: [hp, lp], input: hp, output: lp }
   }
   const resolved = resolveFilterType(settings.filterType)
@@ -87,6 +88,7 @@ export function createFilterChain(
     f2.type = resolved.biquadType
     f2.frequency.value = settings.filterFreq ?? 1000
     f2.Q.value = settings.filterQ ?? 1
+    f1.connect(f2)
     nodes.push(f2)
   }
   return { nodes, input: nodes[0], output: nodes[nodes.length - 1] }
