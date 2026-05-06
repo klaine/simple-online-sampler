@@ -80,9 +80,9 @@ export function parseLcdk(jsonString: string, filename: string): LcdkResult | nu
 
     const settings: ImportedPadSettings = {}
 
-    // Volume → gain. Muted pads get gain 0.
+    // Volume → gain. Muted pads are flagged; volume < 1 maps to gain.
     if (pad.mute === true || pad.mute === 1) {
-      settings.level = 0
+      settings.mute = true
     } else if (pad.volume != null && (pad.volume as number) < 1) {
       settings.level = Math.max(0, Math.min(1, pad.volume as number))
     }

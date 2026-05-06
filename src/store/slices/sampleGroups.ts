@@ -185,9 +185,10 @@ export const createSampleGroupActions = (ctx: StoreContext) => ({
             trim: { start: 0, end: 1 },  // per-layer trim overrides via SampleLayer.trim
             bus: primarySample.autosampleBus ?? p.settings.bus,
             chokeGroup: primarySample.autosampleChokeGroup ?? 0,
-            // Apply MPC pad settings if present
+            // Apply imported pad settings if present
             ...(mpc?.pan != null ? { pan: mpc.pan } : {}),
             ...(mpc?.level != null ? { gain: mpc.level } : {}),
+            ...(mpc?.mute ? { mute: true } : {}),
             ...(mpc?.semitones != null ? { semitones: mpc.semitones } : {}),
             ...(mpc?.fineCents != null ? { fineCents: mpc.fineCents } : {}),
             ...(mpc?.filterType ? { filterType: mpc.filterType } : {}),
@@ -222,9 +223,10 @@ export const createSampleGroupActions = (ctx: StoreContext) => ({
             trim: primarySample.autosampleTrim ?? { start: 0, end: 1 },
             bus: primarySample.autosampleBus ?? p.settings.bus,
             chokeGroup: primarySample.autosampleChokeGroup ?? 0,
-            // Apply MPC pad settings if present
+            // Apply imported pad settings if present
             ...(mpc?.pan != null ? { pan: mpc.pan } : {}),
             ...(mpc?.level != null ? { gain: mpc.level } : {}),
+            ...(mpc?.mute ? { mute: true } : {}),
             ...(mpc?.semitones != null ? { semitones: mpc.semitones } : {}),
             ...(mpc?.fineCents != null ? { fineCents: mpc.fineCents } : {}),
             ...(mpc?.filterType ? { filterType: mpc.filterType } : {}),

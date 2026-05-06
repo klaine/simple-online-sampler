@@ -655,6 +655,7 @@ export function PadGrid() {
                                       ...(lcdk.chokeGroup ? { chokeGroup: lcdk.chokeGroup } : {}),
                                       ...(lcdk.pan != null ? { pan: lcdk.pan } : {}),
                                       ...(lcdk.level != null ? { gain: lcdk.level } : {}),
+                                      ...(lcdk.mute ? { mute: true } : {}),
                                       ...(lcdk.semitones != null ? { semitones: lcdk.semitones } : {}),
                                       ...(lcdk.fineCents != null ? { fineCents: lcdk.fineCents } : {}),
                                       ...(lcdk.filterType ? { filterType: lcdk.filterType } : {}),

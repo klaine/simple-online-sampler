@@ -182,6 +182,7 @@ export interface SampleAsset {
 export interface ImportedPadSettings {
   pan?: number              // -1 to +1
   level?: number            // 0.0–1.0
+  mute?: boolean            // true = muted pad
   semitones?: number        // semitone offset
   fineCents?: number        // fine tuning in cents
   filterType?: FilterType   // 'off' | 'lp12' | 'highpass' | 'bandpass' | 'lphp'
