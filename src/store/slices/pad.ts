@@ -88,7 +88,7 @@ export const createPadActions = (ctx: StoreContext) => ({
       let hasPadPatch = false
       const padPatch: Partial<Pad['settings']> = {}
 
-      const LAYER_FIELDS = ['gain', 'semitones', 'fineCents', 'trim', 'envelope', 'filterType', 'filterFreq', 'filterQ', 'stackOffsetMs'] as const
+      const LAYER_FIELDS = ['gain', 'semitones', 'fineCents', 'trim', 'envelope', 'stackOffsetMs'] as const
       for (const key of LAYER_FIELDS) {
         if (key in patch) {
           (layerPatch as Record<string, unknown>)[key] = (patch as Record<string, unknown>)[key]
@@ -105,22 +105,23 @@ export const createPadActions = (ctx: StoreContext) => ({
         ctx.get().updateLayerSettings(layer.id, layerPatch)
       }
       if (hasPadPatch) {
-        s.saveProjectLight({
-          ...s.project,
-          pads: s.project.pads.map((p) =>
+        const fresh = ctx.get()
+        if (!fresh.project) return
+        fresh.saveProjectLight({
+          ...fresh.project,
+          pads: fresh.project.pads.map((p) =>
             p.id === pad.id ? { ...p, settings: { ...p.settings, ...padPatch } } : p,
           ),
         })
       }
-      return
+    } else {
+      s.saveProjectLight({
+        ...s.project,
+        pads: s.project.pads.map((p) =>
+          p.id === pad.id ? { ...p, settings: { ...p.settings, ...patch } } : p,
+        ),
+      })
     }
-
-    s.saveProjectLight({
-      ...s.project,
-      pads: s.project.pads.map((p) =>
-        p.id === pad.id ? { ...p, settings: { ...p.settings, ...patch } } : p,
-      ),
-    })
 
     // Live-update filter params on active voices
     if ('filterType' in patch || 'filterFreq' in patch || 'filterQ' in patch || 'filterFreq2' in patch) {

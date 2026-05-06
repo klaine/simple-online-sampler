@@ -314,7 +314,7 @@ export function SynthLfoEditor() {
           const file = new File([wavBlob], filename, { type: 'audio/wav' })
           const doDownload = async () => {
             if (typeof navigator !== 'undefined' && typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })) {
-              try { await navigator.share({ files: [file], title: filename }); return } catch (err) { if (err instanceof Error && err.name === 'AbortError') return }
+              try { await navigator.share({ files: [file] }); return } catch (err) { if (err instanceof Error && err.name === 'AbortError') return }
             }
             const url = URL.createObjectURL(wavBlob)
             const a = document.createElement('a')

@@ -92,7 +92,7 @@ async function downloadOrShare(blob: Blob, filename: string): Promise<void> {
     navigator.canShare({ files: [file] })
   ) {
     try {
-      await navigator.share({ files: [file], title: filename })
+      await navigator.share({ files: [file] })
       return
     } catch (err) {
       // User cancelled share sheet (AbortError) — not an error worth toasting

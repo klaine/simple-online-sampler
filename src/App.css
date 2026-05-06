@@ -818,6 +818,10 @@ select.tb-led-value {
   pointer-events: none;
 }
 
+.pattern-chip {
+  touch-action: none;
+}
+
 .pattern-drag-handle {
   font-size: 0.65rem;
   color: var(--muted);
