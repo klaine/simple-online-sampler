@@ -310,12 +310,20 @@ export function SynthLfoEditor() {
           const settings = selectedPad!.settings
           const { buffer, loopStart, loopEnd } = renderSynthToBuffer(synth, settings)
           const wavBlob = encodeWav(buffer, { startFrame: loopStart, endFrame: loopEnd })
-          const url = URL.createObjectURL(wavBlob)
-          const a = document.createElement('a')
-          a.href = url
-          a.download = `${selectedPad!.name.replace(/\s+/g, '-')}-synth.wav`
-          a.click()
-          URL.revokeObjectURL(url)
+          const filename = `${selectedPad!.name.replace(/\s+/g, '-')}-synth.wav`
+          const file = new File([wavBlob], filename, { type: 'audio/wav' })
+          const doDownload = async () => {
+            if (typeof navigator !== 'undefined' && typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })) {
+              try { await navigator.share({ files: [file], title: filename }); return } catch (err) { if (err instanceof Error && err.name === 'AbortError') return }
+            }
+            const url = URL.createObjectURL(wavBlob)
+            const a = document.createElement('a')
+            a.href = url
+            a.download = filename
+            a.click()
+            setTimeout(() => URL.revokeObjectURL(url), 60_000)
+          }
+          void doDownload()
           useStore.getState().addToast('Exported synth WAV', 'success')
         }}
       >

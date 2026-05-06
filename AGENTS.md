@@ -387,7 +387,7 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - **Update README.md** when user-facing features are added or changed (feature lists, keyboard shortcuts, architecture notes). Keep it in sync with AGENTS.md where relevant.
 - Prefer minimal targeted changes over broad refactors.
 - Preserve existing naming/style conventions in touched files.
-- For export/download features, keep click-download behavior as reliable fallback.
+- For export/download features, use the `downloadOrShare()` helper in `App.tsx` (module-level async fn). It tries `navigator.share({ files })` first (required for iOS Safari PWA where anchor-click downloads are silently blocked), then falls back to anchor click with a 60s deferred `revokeObjectURL`. AbortError from share sheet cancellation is swallowed silently.
 - `tone` has been removed from `package.json` — raw Web Audio API is used exclusively.
 - Keep single `App.css` file — no CSS splitting.
 - immer + DOM elements don't mix — use `as any` cast when storing DOM refs in store.
