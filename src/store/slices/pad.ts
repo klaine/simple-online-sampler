@@ -91,12 +91,12 @@ export const createPadActions = (ctx: StoreContext) => ({
       const LAYER_FIELDS = ['gain', 'semitones', 'fineCents', 'trim', 'envelope', 'filterType', 'filterFreq', 'filterQ', 'stackOffsetMs'] as const
       for (const key of LAYER_FIELDS) {
         if (key in patch) {
-          (layerPatch as any)[key] = (patch as any)[key]
+          (layerPatch as Record<string, unknown>)[key] = (patch as Record<string, unknown>)[key]
         }
       }
       for (const key of Object.keys(patch) as (keyof typeof patch)[]) {
         if (!(LAYER_FIELDS as readonly string[]).includes(key)) {
-          (padPatch as any)[key] = (patch as any)[key]
+          (padPatch as Record<string, unknown>)[key] = (patch as Record<string, unknown>)[key]
           hasPadPatch = true
         }
       }

@@ -81,7 +81,7 @@ export const createUiActions = (ctx: StoreContext) => ({
   exportAllMidi: () => {},
   exportPack: async () => {},
   exportStandalonePage: async () => {},
-  exportAudio: async (_mode: 'pattern' | 'song') => {},
+  exportAudio: async (mode: 'pattern' | 'song') => { void mode },
   previewImport: async () => {},
   runImport: async () => {},
 })

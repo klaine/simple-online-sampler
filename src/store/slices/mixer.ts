@@ -1,4 +1,4 @@
-import type { BusId, EffectSlot, EffectType } from '../../types'
+import type { BusId, EffectSlot, EffectType, MixBus } from '../../types'
 import { audioEngine } from '../../lib/audioEngine'
 import { createDefaultEffectSlot } from '../../lib/utils'
 import { getDefaultEffectParams } from '../helpers'
@@ -13,7 +13,7 @@ export const createMixerActions = (ctx: StoreContext) => ({
       ...s.project,
       mixBuses: s.project.mixBuses.map((b) =>
         b.id === busId ? { ...b, name } : b,
-      ) as [any, any, any, any],
+      ) as [MixBus, MixBus, MixBus, MixBus],
     })
   },
 
@@ -33,7 +33,7 @@ export const createMixerActions = (ctx: StoreContext) => ({
       ...s.project,
       mixBuses: s.project.mixBuses.map((b) =>
         b.id === busId ? { ...b, gain: clamped } : b,
-      ) as [any, any, any, any],
+      ) as [MixBus, MixBus, MixBus, MixBus],
     })
   },
 
@@ -44,7 +44,7 @@ export const createMixerActions = (ctx: StoreContext) => ({
       ...s.project,
       mixBuses: s.project.mixBuses.map((b) =>
         b.id === busId ? { ...b, pan: Math.max(-1, Math.min(1, pan)) } : b,
-      ) as [any, any, any, any],
+      ) as [MixBus, MixBus, MixBus, MixBus],
     })
   },
 
@@ -55,7 +55,7 @@ export const createMixerActions = (ctx: StoreContext) => ({
       ...s.project,
       mixBuses: s.project.mixBuses.map((b) =>
         b.id === busId ? { ...b, mute } : b,
-      ) as [any, any, any, any],
+      ) as [MixBus, MixBus, MixBus, MixBus],
     })
   },
 
@@ -66,7 +66,7 @@ export const createMixerActions = (ctx: StoreContext) => ({
       ...s.project,
       mixBuses: s.project.mixBuses.map((b) =>
         b.id === busId ? { ...b, solo } : b,
-      ) as [any, any, any, any],
+      ) as [MixBus, MixBus, MixBus, MixBus],
     })
   },
 
@@ -80,7 +80,7 @@ export const createMixerActions = (ctx: StoreContext) => ({
         const effects = [...b.effects] as [EffectSlot, EffectSlot, EffectSlot]
         effects[slotIndex] = { ...effects[slotIndex], type: effectType, params: effectType === 'off' ? {} : getDefaultEffectParams(effectType) }
         return { ...b, effects }
-      }) as [any, any, any, any],
+      }) as [MixBus, MixBus, MixBus, MixBus],
     })
   },
 
@@ -94,7 +94,7 @@ export const createMixerActions = (ctx: StoreContext) => ({
         const effects = [...b.effects] as [EffectSlot, EffectSlot, EffectSlot]
         effects[slotIndex] = { ...effects[slotIndex], enabled }
         return { ...b, effects }
-      }) as [any, any, any, any],
+      }) as [MixBus, MixBus, MixBus, MixBus],
     })
   },
 
@@ -108,7 +108,7 @@ export const createMixerActions = (ctx: StoreContext) => ({
         const effects = [...b.effects] as [EffectSlot, EffectSlot, EffectSlot]
         effects[slotIndex] = { ...effects[slotIndex], params: { ...effects[slotIndex].params, [paramName]: value } }
         return { ...b, effects }
-      }) as [any, any, any, any],
+      }) as [MixBus, MixBus, MixBus, MixBus],
     })
   },
 
@@ -122,7 +122,7 @@ export const createMixerActions = (ctx: StoreContext) => ({
         const effects = [...b.effects] as [EffectSlot, EffectSlot, EffectSlot]
         effects[slotIndex] = { ...effects[slotIndex], sidechainSource: source }
         return { ...b, effects }
-      }) as [any, any, any, any],
+      }) as [MixBus, MixBus, MixBus, MixBus],
     })
   },
 

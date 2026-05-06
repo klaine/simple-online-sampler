@@ -128,6 +128,10 @@ export const createRecordingActions = (ctx: StoreContext) => ({
       try { mutableRefs.holdRecSource.disconnect() } catch { /* */ }
       mutableRefs.holdRecSource = null
     }
+    if (mutableRefs.holdRecStream) {
+      mutableRefs.holdRecStream.getTracks().forEach((t) => t.stop())
+      mutableRefs.holdRecStream = null
+    }
 
     const elapsed = Date.now() - mutableRefs.holdRecStartTime
     if (elapsed < HOLD_REC_MIN_MS || mutableRefs.holdRecChunks.length === 0) {

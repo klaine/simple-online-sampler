@@ -49,7 +49,7 @@ export const createSynthPatchActions = (ctx: StoreContext) => ({
       pad.settings.source = 'synth'
       pad.settings.synthParams = { ...patch.params }
       pad.settings.mode = patch.padSettings.mode
-      pad.settings.envelope = { ...patch.padSettings.envelope, sustain: (patch.padSettings.envelope as any).sustain ?? 0 }
+      pad.settings.envelope = { ...patch.padSettings.envelope, sustain: ((patch.padSettings.envelope as unknown) as Record<string, unknown>).sustain as number | undefined ?? 0 }
       pad.settings.filterType = patch.padSettings.filterType
       pad.settings.filterFreq = patch.padSettings.filterFreq
       pad.settings.filterQ = patch.padSettings.filterQ

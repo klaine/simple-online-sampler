@@ -208,6 +208,20 @@ export function Sequencer() {
 
   const layoutMode = useStore((s) => s.layoutMode)
 
+  const chainWithPatterns = useMemo(() => {
+    if (!project) return []
+    return project.songChain.flatMap((entry) => {
+      const pattern = project.sequences.find((seq) => seq.id === entry.patternId)
+      if (!pattern) return []
+      return [{ entry, pattern }]
+    })
+  }, [project?.songChain, project?.sequences])
+
+  const stepIndices = useMemo(() => {
+    const len = visibleSequence?.lengthSteps ?? 0
+    return Array.from({ length: len }, (_, i) => i)
+  }, [visibleSequence?.lengthSteps])
+
   if (!project || !activeSequence || !visibleSequence) return null
 
   const fitSteps = layoutMode === 'wide' || layoutMode === 'performance' || visibleSequence.lengthSteps <= 16
@@ -215,15 +229,6 @@ export function Sequencer() {
   const laneLabelWidth = layoutMode === 'performance' ? 172 : 148
   const sequenceGridColumns = `${laneLabelWidth}px repeat(3, 26px) repeat(${visibleSequence.lengthSteps}, ${stepColSize})`
   const stepGridColumns = `repeat(${visibleSequence.lengthSteps}, ${stepColSize})`
-  const chainWithPatterns = useMemo(() => {
-    return project.songChain.flatMap((entry) => {
-      const pattern = project.sequences.find((seq) => seq.id === entry.patternId)
-      if (!pattern) return []
-      return [{ entry, pattern }]
-    })
-  }, [project.songChain, project.sequences])
-
-  const stepIndices = useMemo(() => Array.from({ length: visibleSequence.lengthSteps }, (_, i) => i), [visibleSequence?.lengthSteps])
 
   return (
     <section className="sequencer studio-sequencer">

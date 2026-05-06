@@ -38,17 +38,20 @@ function saveState(s: ColumnState): void {
 export function useResizableColumns(altLayout = false) {
   const [state, setState] = useState<ColumnState>(loadState)
   const stateRef = useRef(state)
-  stateRef.current = state
   const altLayoutRef = useRef(altLayout)
-  altLayoutRef.current = altLayout
 
   // Persist on change
   useEffect(() => { saveState(state) }, [state])
+  useEffect(() => { stateRef.current = state }, [state])
+  useEffect(() => { altLayoutRef.current = altLayout }, [altLayout])
 
   const dragging = useRef<'left' | 'right' | null>(null)
   const startX = useRef(0)
   const startVal = useRef(0)
   const rafId = useRef(0)
+
+  const onPointerMoveRef = useRef<(e: PointerEvent) => void>(() => {})
+  const onPointerUpRef = useRef<() => void>(() => {})
 
   const onPointerMove = useCallback((e: PointerEvent) => {
     const dx = e.clientX - startX.current
@@ -73,9 +76,12 @@ export function useResizableColumns(altLayout = false) {
     dragging.current = null
     document.body.style.cursor = ''
     document.body.style.userSelect = ''
-    window.removeEventListener('pointermove', onPointerMove)
-    window.removeEventListener('pointerup', onPointerUp)
-  }, [onPointerMove])
+    window.removeEventListener('pointermove', onPointerMoveRef.current)
+    window.removeEventListener('pointerup', onPointerUpRef.current)
+  }, [])
+
+  useEffect(() => { onPointerMoveRef.current = onPointerMove }, [onPointerMove])
+  useEffect(() => { onPointerUpRef.current = onPointerUp }, [onPointerUp])
 
   const makeDownHandler = useCallback((side: 'left' | 'right') => (e: React.PointerEvent) => {
     e.preventDefault()
@@ -85,9 +91,9 @@ export function useResizableColumns(altLayout = false) {
     startVal.current = side === 'left' ? s.leftWidth : s.rightWidth
     document.body.style.cursor = 'col-resize'
     document.body.style.userSelect = 'none'
-    window.addEventListener('pointermove', onPointerMove)
-    window.addEventListener('pointerup', onPointerUp)
-  }, [onPointerMove, onPointerUp])
+    window.addEventListener('pointermove', onPointerMoveRef.current)
+    window.addEventListener('pointerup', onPointerUpRef.current)
+  }, [])
 
   const makeDblClickHandler = useCallback((side: 'left' | 'right') => () => {
     setState(prev => side === 'left'

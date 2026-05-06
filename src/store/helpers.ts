@@ -72,16 +72,16 @@ export const normalizeProject = (incoming: Project): Project => {
       settings: {
         ...pad.settings,
         mode: ((m: string) => m === 'adr' || m === 'gate' ? 'adsr' as const : m === 'trigger' ? 'one-shot' as const : pad.settings.mode)(pad.settings.mode as string),
-        envelope: { ...pad.settings.envelope, sustain: (pad.settings.envelope as any).sustain ?? 0 },
+        envelope: { ...pad.settings.envelope, sustain: pad.settings.envelope.sustain ?? 0 },
         filterType: (pad.settings.filterType as string) === 'lowpass' ? 'lp12' as const : pad.settings.filterType ?? 'off',
-        layers: (pad.settings.layers ?? []).map((layer: any) => ({
+        layers: (pad.settings.layers ?? []).map((layer) => ({
           ...layer,
           gain: layer.gain ?? null,
           semitones: layer.semitones ?? null,
           fineCents: layer.fineCents ?? null,
           trim: layer.trim ?? null,
           envelope: layer.envelope ? { ...layer.envelope, sustain: layer.envelope.sustain ?? 0 } : null,
-          filterType: layer.filterType === 'lowpass' ? 'lp12' : (layer.filterType ?? null),
+          filterType: (layer.filterType as string | null) === 'lowpass' ? 'lp12' : (layer.filterType ?? null),
           filterFreq: layer.filterFreq ?? null,
           filterQ: layer.filterQ ?? null,
         })),
@@ -89,16 +89,17 @@ export const normalizeProject = (incoming: Project): Project => {
         filterFreq: pad.settings.filterFreq ?? 1000,
         filterQ: pad.settings.filterQ ?? 1,
         bus: pad.settings.bus ?? 'A',
-        chokeGroup: (pad.settings as any).chokeGroup ?? 0,
-        source: (pad.settings as any).source ?? 'sample',
-        ...((pad.settings as any).synthParams?.lfo && 'target' in ((pad.settings as any).synthParams?.lfo ?? {}) ? {
+        chokeGroup: pad.settings.chokeGroup ?? 0,
+        source: pad.settings.source ?? 'sample',
+        ...(pad.settings.synthParams?.lfo && 'target' in ((pad.settings.synthParams!.lfo as unknown) as Record<string, unknown>) ? {
           synthParams: {
-            ...(pad.settings as any).synthParams,
+            ...pad.settings.synthParams,
             lfo: (() => {
-              const old = (pad.settings as any).synthParams.lfo
-              const { target, depth, ...rest } = old
+              const old = (pad.settings.synthParams!.lfo as unknown) as Record<string, unknown>
+              const target = old.target as string | undefined
+              const depth = old.depth as number | undefined
               return {
-                ...rest,
+                ...(old as unknown as import('../types').LfoSettings),
                 pitchDepth: target === 'pitch' ? (depth ?? 0) : 0,
                 filterDepth: target === 'filter' ? (depth ?? 0) : 0,
                 gainDepth: target === 'gain' ? (depth ?? 0) : 0,
@@ -115,8 +116,8 @@ export const normalizeProject = (incoming: Project): Project => {
     songChain: normalizedChain,
     songLoopStart: normalizedChain.length === 0 ? null : loopStart,
     songLoopEnd: normalizedChain.length === 0 ? null : loopEnd,
-    mixBuses: (incoming as any).mixBuses ?? createDefaultMixBuses(),
-    masterBus: (incoming as any).masterBus ?? createDefaultMasterBus(),
+    mixBuses: incoming.mixBuses ?? createDefaultMixBuses(),
+    masterBus: incoming.masterBus ?? createDefaultMasterBus(),
   }
 }
 

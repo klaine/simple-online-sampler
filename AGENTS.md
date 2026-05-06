@@ -17,9 +17,9 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 ## Architecture
 
 ### State Management
-- Single Zustand store with immer middleware: `src/store/index.ts` (~4420 lines)
+- Single Zustand store with immer middleware: `src/store/index.ts` (~574 lines)
 - All state, actions, and selectors live in the store
-- App.tsx (~1160 lines) is a thin shell: effects, drag handlers, export callbacks, layout, computer keyboard chromatic input handler, per-synth MIDI channel routing
+- App.tsx (~1683 lines) is a thin shell: effects, drag handlers, export callbacks, layout, computer keyboard chromatic input handler, per-synth MIDI channel routing
 - Sequencer render is optimized with pre-computed `Map<padId, Map<step, event>>` selectors
 - Module-level `storeRefs` object exposes mutable refs (not reactive) for drag state, frozen zoom range, etc.
 - **Transport visual state** (`playheadStep`, `sequencedPadHits`) lives in a lightweight `transportVisualStore` (not immer) — subscribed via `useSyncExternalStore` for performance
@@ -59,9 +59,9 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 ## Important Files
 
 ### Core
-- `src/store/index.ts` — Zustand store: all state, actions, selectors, `transportVisualStore`, `showConfirm`/`resolveConfirmDialog` (~4596 lines)
+- `src/store/index.ts` — Zustand store: all state, actions, selectors, `transportVisualStore`, `showConfirm`/`resolveConfirmDialog` (~574 lines)
 - `src/App.tsx` — App shell: effects, drag handlers, export callbacks, layout (~1535 lines)
-- `src/App.css` — All styling (single file, ~4440 lines)
+- `src/App.css` — All styling (single file, ~2393 lines)
 - `src/types.ts` — Core types: Pad, PadSettings, SampleLayer, SampleAsset, Project, BusId, EffectSlot, MixBus, MasterBus, TrimSettings, MidiOutConfig, PadSource, SynthParams, LfoSettings, FilterEnvelopeSettings, SynthPatch, etc.
 
 ### Components (`src/components/`)

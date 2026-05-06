@@ -676,8 +676,9 @@ export class AudioEngine {
     this.polyphony = polyphony
   }
 
-  setBpm(_bpm: number): void {
+  setBpm(bpm: number): void {
     // BPM is handled by TransportScheduler, not by the audio context.
+    void bpm
   }
 
   hasSample(sampleId: string): boolean {

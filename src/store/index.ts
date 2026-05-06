@@ -41,7 +41,7 @@ import { createAudioMonitorActions } from './slices/audioMonitor'
 
 export const useStore = create<AppState>()(
   immer((set, get) => {
-    registerConfirmDialog((dialog) => set((s) => { s.confirmDialog = dialog as any }))
+    registerConfirmDialog((dialog) => set((s) => { s.confirmDialog = dialog }))
 
     // Track snapshot-relevant fields to avoid unnecessary rebuilds
     let _lastSnapshotPads: unknown = null

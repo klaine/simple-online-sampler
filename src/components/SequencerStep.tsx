@@ -40,7 +40,7 @@ export const SequencerStep = memo(function SequencerStep({
         onPointerDown={(event) => {
           event.preventDefault()
           const s = store.getState()
-          s.selectedPadId !== padId && store.setState({ selectedPadId: padId })
+          if (s.selectedPadId !== padId) store.setState({ selectedPadId: padId })
           store.setState({
             selectedGateNote: exactEvent ? { padId, eventId: exactEvent.id } : null,
           })

@@ -1,11 +1,11 @@
-import { Midi } from '@tonejs/midi'
 import type { Pad, SequencePattern } from '../types'
 
-export const buildMidiForSequence = (
+export const buildMidiForSequence = async (
   sequence: SequencePattern,
   pads: Pad[],
   bpm: number,
-): Uint8Array => {
+): Promise<Uint8Array> => {
+  const { Midi } = await import('@tonejs/midi')
   const midi = new Midi()
   midi.header.setTempo(bpm)
   midi.header.name = sequence.name

@@ -3,7 +3,6 @@ import type { AppState } from './types'
 import { db } from '../lib/db'
 import { audioEngine } from '../lib/audioEngine'
 import { arrayBufferToHex, uid } from '../lib/utils'
-import JSZip from 'jszip'
 
 // ---------------------------------------------------------------------------
 // Shared helper: import a File as a SampleAsset (dedup by hash)
@@ -58,6 +57,7 @@ export async function loadPresetKits(
       const resp = await fetch(`/${filename}`)
       if (!resp.ok) continue
       const buf = await resp.arrayBuffer()
+      const JSZip = (await import('jszip')).default
       const zip = await JSZip.loadAsync(buf)
       const metaFile = zip.file('metadata.json')
       const meta = metaFile ? JSON.parse(await metaFile.async('text')) as {

@@ -5,7 +5,6 @@ import { encodeWavFromChannels } from '../../lib/wavEncode'
 import { PADS_PER_BANK } from '../../lib/constants'
 import type { SampleAsset, BusId } from '../../types'
 import { showConfirm } from '../confirmDialog'
-import JSZip from 'jszip'
 import { parseMpcPgm, matchMpcSamplesToFiles } from '../../lib/mpcImport'
 import { parseLcdk, matchLcdkSamplesToFiles } from '../../lib/lcdkImport'
 import { importFileAsSample } from '../importHelpers'
@@ -129,8 +128,8 @@ export const createLibraryActions = (ctx: StoreContext) => ({
     // Update store: replace sample, reset trim to full range
     ctx.set((d) => {
       const idx = d.samples.findIndex((sa) => sa.id === sampleId)
-      if (idx !== -1) d.samples[idx] = updatedSample as any
-      d.sampleMap.set(sampleId, updatedSample as any)
+      if (idx !== -1) d.samples[idx] = updatedSample
+      d.sampleMap.set(sampleId, updatedSample)
     })
 
     // Reset trim markers on all pads using this sample (including layers)
@@ -215,8 +214,8 @@ export const createLibraryActions = (ctx: StoreContext) => ({
 
     ctx.set((d) => {
       const idx = d.samples.findIndex((sa) => sa.id === sampleId)
-      if (idx !== -1) d.samples[idx] = updatedSample as any
-      d.sampleMap.set(sampleId, updatedSample as any)
+      if (idx !== -1) d.samples[idx] = updatedSample
+      d.sampleMap.set(sampleId, updatedSample)
     })
 
     s.addToast(`Normalized (${gain > 1 ? '+' : ''}${(20 * Math.log10(gain)).toFixed(1)} dB)`, 'success')
@@ -598,6 +597,7 @@ export const createLibraryActions = (ctx: StoreContext) => ({
       // Handle ZIP files (autosample group import)
       if (file.name.endsWith('.zip') || file.type === 'application/zip') {
         try {
+          const JSZip = (await import('jszip')).default
           const zip = await JSZip.loadAsync(await file.arrayBuffer())
           const metaFile = zip.file('metadata.json')
           const meta = metaFile ? JSON.parse(await metaFile.async('text')) as { label?: string; samples?: { name: string; autosampleTrim?: { start: number; end: number } | null; autosampleBus?: BusId | null; autosampleChokeGroup?: number | null; autosamplePadIndex?: number | null; autosampleMpc?: boolean }[] } : null

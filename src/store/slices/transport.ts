@@ -271,6 +271,10 @@ export const createTransportActions = (ctx: StoreContext) => ({
       worker.postMessage({ type: 'start', intervalMs: schedulerMs })
     } catch (e) {
       console.error('[startTransport] failed:', e)
+      if (mutableRefs.transportWorker) {
+        mutableRefs.transportWorker.terminate()
+        mutableRefs.transportWorker = null
+      }
       ctx.set((d) => { d.isPlaying = false })
     }
   },

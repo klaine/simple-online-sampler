@@ -13,7 +13,7 @@ import {
   readProjectFromPackage,
 } from './lib/packageIO'
 import { PADS_PER_BANK } from './lib/constants'
-import type { SampleAsset } from './types'
+import type { SampleAsset, Pad, Project } from './types'
 import {
   useStore,
   selectSelectedPad,
@@ -354,8 +354,8 @@ function App() {
     if (!navigator.requestMIDIAccess) return
 
     let cancelled = false
-    let midiNoteMap: Map<number, any> | null = null
-    let midiNoteMapProject: any = null
+    let midiNoteMap: Map<number, Pad> | null = null
+    let midiNoteMapProject: Project | null = null
     const onMessage = (message: MIDIMessageEvent) => {
       if (!message.data || message.data.length < 3) return
 
@@ -1312,15 +1312,15 @@ function App() {
   }, [])
 
   // --- Export actions ---
-  const exportAllMidi = useCallback(() => {
+  const exportAllMidi = useCallback(async () => {
     if (!project) return
-    project.sequences.forEach((sequence) => {
-      const bytes = buildMidiForSequence(sequence, project.pads, project.bpm)
+    for (const sequence of project.sequences) {
+      const bytes = await buildMidiForSequence(sequence, project.pads, project.bpm)
       const safeBytes = new Uint8Array(bytes.length)
       safeBytes.set(bytes)
       const blob = new Blob([safeBytes], { type: 'audio/midi' })
       void downloadOrShare(blob, `${sequence.name}.mid`)
-    })
+    }
   }, [project])
 
   const exportPack = useCallback(async () => {
@@ -1416,12 +1416,12 @@ function App() {
     const result = await importProjectPackage(importFile, importMode, project)
     const normalized = normalizeProject(result.project)
     const allSamples = await db.getAllSamples()
-    const stateUpdate: Record<string, any> = {
+    const stateUpdate: Partial<ReturnType<typeof useStore.getState>> = {
       project: normalized,
       selectedPadId: normalized.pads[0]?.id ?? null,
       activeSequenceId: normalized.sequences[0]?.id ?? null,
       samples: allSamples,
-      sampleMap: new Map(allSamples.map((s: any) => [s.id, s])),
+      sampleMap: new Map(allSamples.map((s: SampleAsset) => [s.id, s])),
       bpmDraft: String(normalized.bpm),
       swingDraft: String(normalized.swing ?? 0),
       projectNameDraft: normalized.name,
@@ -1539,7 +1539,7 @@ function App() {
               }
               void (async () => {
                 for (const item of items) {
-                  const entry = (item as any).webkitGetAsEntry?.() as FileSystemEntry | null
+                  const entry = (item as unknown as { webkitGetAsEntry?: () => FileSystemEntry | null }).webkitGetAsEntry?.()
                   if (entry) {
                     await readEntry(entry)
                   } else if (item.kind === 'file') {

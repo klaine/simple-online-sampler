@@ -143,12 +143,16 @@ export const VirtualizedSequencerLanes = memo(function VirtualizedSequencerLanes
     const container = scrollContainerRef.current
     if (!container) return
     container.addEventListener('scroll', updateRange, { passive: true })
-    updateRange()
-    return () => container.removeEventListener('scroll', updateRange)
+    const raf = requestAnimationFrame(updateRange)
+    return () => {
+      cancelAnimationFrame(raf)
+      container.removeEventListener('scroll', updateRange)
+    }
   }, [updateRange, scrollContainerRef])
 
   useEffect(() => {
-    updateRange()
+    const raf = requestAnimationFrame(updateRange)
+    return () => cancelAnimationFrame(raf)
   }, [bankGroups, offsets, totalHeight, updateRange])
 
   const topPadding = offsets[startIndex] ?? 0

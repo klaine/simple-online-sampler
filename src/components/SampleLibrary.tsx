@@ -227,6 +227,64 @@ const SampleRow = memo(function SampleRow({
   )
 })
 
+// Group samples by autosampleRunId into collapsible batches
+type VeloSubgroup = { baseName: string; samples: SampleAsset[] }
+type LibItem = { type: 'single'; sample: SampleAsset } | { type: 'group'; key: string; label: string; samples: SampleAsset[]; veloSubgroups: VeloSubgroup[] }
+
+const veloRegex = /^(.+?)_v(\d+)(\.[^.]+)$/
+
+const buildVeloSubgroups = (samples: SampleAsset[]): VeloSubgroup[] => {
+  const subgroupMap = new Map<string, VeloSubgroup>()
+  const ordered: (VeloSubgroup | SampleAsset)[] = []
+  const singleBucket: SampleAsset[] = []
+
+  for (const sample of samples) {
+    const m = veloRegex.exec(sample.name)
+    if (m) {
+      const baseKey = m[1] + m[3]
+      let sg = subgroupMap.get(baseKey)
+      if (!sg) {
+        sg = { baseName: baseKey, samples: [] }
+        subgroupMap.set(baseKey, sg)
+        // Flush any accumulated singles before this subgroup
+        if (singleBucket.length > 0) {
+          for (const s of singleBucket) ordered.push(s)
+          singleBucket.length = 0
+        }
+        ordered.push(sg)
+      }
+      sg.samples.push(sample)
+    } else {
+      singleBucket.push(sample)
+    }
+  }
+  // Flush remaining singles
+  for (const s of singleBucket) ordered.push(s)
+
+  // Sort samples within each subgroup by velocity ascending
+  for (const sg of subgroupMap.values()) {
+    sg.samples.sort((a, b) => {
+      const ma = veloRegex.exec(a.name)
+      const mb = veloRegex.exec(b.name)
+      return (ma ? Number(ma[2]) : 0) - (mb ? Number(mb[2]) : 0)
+    })
+  }
+
+  // Only return subgroups that have ≥2 samples; demote singles back
+  // Build final list preserving order
+  const result: VeloSubgroup[] = []
+  for (const entry of ordered) {
+    if ('baseName' in entry) {
+      if (entry.samples.length >= 2) {
+        result.push(entry)
+      }
+      // Singles within a subgroup with <2 entries are not included here;
+      // they stay in the flat samples list
+    }
+  }
+  return result
+}
+
 export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
   const sampleQuery = useStore((s) => s.sampleQuery)
   const sampleSort = useStore((s) => s.sampleSort)
@@ -327,7 +385,7 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
           const patch: SynthPatch = { ...data, id: uid(), createdAt: Date.now() }
           useStore.setState((s) => ({ synthPatches: [...s.synthPatches, patch] }))
           // persist
-          try { localStorage.setItem('synthPatches', JSON.stringify(useStore.getState().synthPatches)) } catch {}
+          try { localStorage.setItem('synthPatches', JSON.stringify(useStore.getState().synthPatches)) } catch { /* ignore */ }
           addToast(`Imported patch "${patch.name}"`, 'success')
         } catch {
           addToast(`Failed to import "${file.name}"`, 'error')
@@ -374,7 +432,7 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
 
     // Check if any item is a directory (use webkitGetAsEntry for folder support)
     const hasDirectory = items.some((item) => {
-      const entry = (item as any).webkitGetAsEntry?.() as FileSystemEntry | null
+      const entry = (item as unknown as { webkitGetAsEntry?: () => FileSystemEntry | null }).webkitGetAsEntry?.()
       return entry?.isDirectory
     })
 
@@ -405,7 +463,7 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
       }
       void (async () => {
         for (const item of items) {
-          const entry = (item as any).webkitGetAsEntry?.() as FileSystemEntry | null
+          const entry = (item as unknown as { webkitGetAsEntry?: () => FileSystemEntry | null }).webkitGetAsEntry?.()
           if (entry) await readEntry(entry)
         }
         if (allFiles.length === 0) return
@@ -469,64 +527,6 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
       return next
     })
   }, [])
-
-  // Group samples by autosampleRunId into collapsible batches
-  type VeloSubgroup = { baseName: string; samples: SampleAsset[] }
-  type LibItem = { type: 'single'; sample: SampleAsset } | { type: 'group'; key: string; label: string; samples: SampleAsset[]; veloSubgroups: VeloSubgroup[] }
-
-  const veloRegex = /^(.+?)_v(\d+)(\.[^.]+)$/
-
-  const buildVeloSubgroups = (samples: SampleAsset[]): VeloSubgroup[] => {
-    const subgroupMap = new Map<string, VeloSubgroup>()
-    const ordered: (VeloSubgroup | SampleAsset)[] = []
-    const singleBucket: SampleAsset[] = []
-
-    for (const sample of samples) {
-      const m = veloRegex.exec(sample.name)
-      if (m) {
-        const baseKey = m[1] + m[3]
-        let sg = subgroupMap.get(baseKey)
-        if (!sg) {
-          sg = { baseName: baseKey, samples: [] }
-          subgroupMap.set(baseKey, sg)
-          // Flush any accumulated singles before this subgroup
-          if (singleBucket.length > 0) {
-            for (const s of singleBucket) ordered.push(s)
-            singleBucket.length = 0
-          }
-          ordered.push(sg)
-        }
-        sg.samples.push(sample)
-      } else {
-        singleBucket.push(sample)
-      }
-    }
-    // Flush remaining singles
-    for (const s of singleBucket) ordered.push(s)
-
-    // Sort samples within each subgroup by velocity ascending
-    for (const sg of subgroupMap.values()) {
-      sg.samples.sort((a, b) => {
-        const ma = veloRegex.exec(a.name)
-        const mb = veloRegex.exec(b.name)
-        return (ma ? Number(ma[2]) : 0) - (mb ? Number(mb[2]) : 0)
-      })
-    }
-
-    // Only return subgroups that have ≥2 samples; demote singles back
-    // Build final list preserving order
-    const result: VeloSubgroup[] = []
-    for (const entry of ordered) {
-      if ('baseName' in entry) {
-        if (entry.samples.length >= 2) {
-          result.push(entry)
-        }
-        // Singles within a subgroup with <2 entries are not included here;
-        // they stay in the flat samples list
-      }
-    }
-    return result
-  }
 
   const libraryItems: LibItem[] = useMemo(() => {
     // Collect run groups

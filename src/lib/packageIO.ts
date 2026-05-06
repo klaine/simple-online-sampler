@@ -1,4 +1,4 @@
-import JSZip from 'jszip'
+import type JSZip from 'jszip'
 import { db } from './db'
 import { buildMidiForSequence } from './midiExport'
 import { touchProject } from './project'
@@ -41,6 +41,7 @@ const dedupeSampleByHash = async (sample: SampleAsset): Promise<SampleAsset> => 
 }
 
 export const exportProjectPackage = async (project: Project, allSamples?: SampleAsset[], synthPatches?: SynthPatch[]): Promise<Blob> => {
+  const JSZip = (await import('jszip')).default
   const zip = new JSZip()
 
   const usedSampleIds = Array.from(
@@ -77,10 +78,10 @@ export const exportProjectPackage = async (project: Project, allSamples?: Sample
     zip.file(`samples/${sample.id}${marker}${sample.name}${ext}`, sample.blob)
   })
 
-  project.sequences.forEach((sequence) => {
-    const midi = buildMidiForSequence(sequence, project.pads, project.bpm)
+  for (const sequence of project.sequences) {
+    const midi = await buildMidiForSequence(sequence, project.pads, project.bpm)
     zip.file(`midi/${sequence.id}.mid`, midi)
-  })
+  }
 
   const manifest: PackageManifest = {
     schemaVersion: 1,
@@ -320,6 +321,7 @@ export const importProjectPackage = async (
   mode: ImportMode,
   activeProject: Project,
 ): Promise<{ project: Project; preview: ImportPreview; synthPatches?: SynthPatch[] }> => {
+  const JSZip = (await import('jszip')).default
   const zip = await JSZip.loadAsync(payload)
   const manifestRaw = await zip.file('manifest.json')?.async('string')
   if (!manifestRaw) {
@@ -474,6 +476,7 @@ export const importProjectPackage = async (
 }
 
 export const readProjectFromPackage = async (payload: Blob): Promise<Project> => {
+  const JSZip = (await import('jszip')).default
   const zip = await JSZip.loadAsync(payload)
   const manifestRaw = await zip.file('manifest.json')?.async('string')
   if (!manifestRaw) {

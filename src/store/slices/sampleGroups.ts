@@ -2,7 +2,6 @@ import { uid, midiToName } from '../../lib/utils'
 import { db } from '../../lib/db'
 import { showConfirm } from '../confirmDialog'
 import { createDefaultSequence } from '../../lib/utils'
-import JSZip from 'jszip'
 import type { SampleAsset, SampleLayer, BusId } from '../../types'
 import type { StoreContext } from '../context'
 
@@ -473,6 +472,7 @@ export const createSampleGroupActions = (ctx: StoreContext) => ({
     const samples = ctx.get().samples.filter((s) => s.autosampleRunId === runId)
     if (samples.length === 0) return
     const label = samples[0].autosampleRunLabel || 'autosample'
+    const JSZip = (await import('jszip')).default
     const zip = new JSZip()
     for (const sample of samples) {
       zip.file(sample.name, sample.blob)
