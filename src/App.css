@@ -46,6 +46,7 @@
   flex-wrap: nowrap !important;
   min-height: 38px !important;
   padding: 0.2rem 0.4rem !important;
+  padding-top: calc(0.2rem + env(safe-area-inset-top, 0)) !important;
   gap: 0 !important;
 }
 
@@ -228,6 +229,7 @@ html:has(.app-perf-layout) {
   top: 0;
   z-index: 40;
   padding: 0.35rem 0.5rem;
+  padding-top: calc(0.35rem + env(safe-area-inset-top, 0));
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: rgba(18, 20, 24, 0.88);
