@@ -3,31 +3,13 @@ import { immer } from 'zustand/middleware/immer'
 import { enableMapSet } from 'immer'
 import { audioEngine } from '../lib/audioEngine'
 import { db } from '../lib/db'
-import { buildPlaybackSnapshot, type PlaybackSnapshot } from '../lib/playbackSnapshot'
-import { TransportScheduler } from '../lib/transportScheduler'
+import { buildPlaybackSnapshot } from '../lib/playbackSnapshot'
 import { createDefaultProject, touchProject } from '../lib/project'
-import { createDefaultEffectSlot, createDefaultMasterBus, createDefaultMixBuses, createDefaultSequence } from '../lib/utils'
+import { createDefaultEffectSlot, createDefaultSequence } from '../lib/utils'
 import { encodeWavFromChannels } from '../lib/wavEncode'
 import { normalizePcm, computeSilenceTrim } from '../lib/autotrim'
 import { sendMidiNote, registerActiveNote } from '../lib/midiOut'
 import { notifyPadTriggered as notifyLaunchpad, notifySequencerHit as notifyLaunchpadSeqHit } from '../lib/launchpadProMk3'
-// constants used by selectors are re-exported from lib
-
-enableMapSet()
-
-/** Default parameter values for each effect type */
-export const getDefaultEffectParams = (type: EffectType): Record<string, number> => {
-  switch (type) {
-    case 'compressor': return { threshold: -18, ratio: 4, knee: 10, attack: 0.003, release: 0.25 }
-    case 'sidechain-compressor': return { threshold: -18, ratio: 4, knee: 10, attack: 0.003, release: 0.25 }
-    case 'eq3': return { lowGain: 0, midGain: 0, highGain: 0, midFreq: 1000 }
-    case 'delay': return { time: 0.3, feedback: 0.35, mix: 0.3 }
-    case 'reverb': return { decay: 1.5, mix: 0.25 }
-    case 'chorus': return { rate: 1.5, depth: 5, mix: 0.3 }
-    default: return {}
-  }
-}
-
 import { arrayBufferToHex, clampSequenceLength, midiToName, uid } from '../lib/utils'
 import { BANK_COUNT, PADS_PER_BANK } from '../lib/constants'
 import { parseMpcPgm, matchMpcSamplesToFiles } from '../lib/mpcImport'
@@ -52,1103 +34,38 @@ import type {
   TrimSettings,
 } from '../types'
 
-// ---------------------------------------------------------------------------
-// Synth Patch Persistence (localStorage)
-// ---------------------------------------------------------------------------
-
-function loadSynthPatches(): SynthPatch[] {
-  try {
-    const raw = localStorage.getItem('synthPatches')
-    if (raw) return JSON.parse(raw)
-  } catch { /* ignore */ }
-  return []
-}
-
-function saveSynthPatches(patches: SynthPatch[]): void {
-  try {
-    localStorage.setItem('synthPatches', JSON.stringify(patches))
-  } catch { /* ignore */ }
-}
-
-// ---------------------------------------------------------------------------
-// Transport Visual Store (lightweight, no immer — high-frequency updates)
-// ---------------------------------------------------------------------------
-
-type TransportVisualListener = () => void
-
-let _tvPlayheadStep: number | null = null
-let _tvSequencedPadHits = new Set<string>()
-const _tvListeners = new Set<TransportVisualListener>()
-
-function _tvNotify() {
-  for (const listener of _tvListeners) listener()
-}
-
-export const transportVisualStore = {
-  getPlayheadStep: () => _tvPlayheadStep,
-  getSequencedPadHits: () => _tvSequencedPadHits,
-
-  setPlayheadStep(step: number | null) {
-    if (step === _tvPlayheadStep) return
-    _tvPlayheadStep = step
-    _tvNotify()
-  },
-
-  flashPadHit(padId: string) {
-    if (_tvSequencedPadHits.has(padId)) return
-    _tvSequencedPadHits = new Set(_tvSequencedPadHits)
-    _tvSequencedPadHits.add(padId)
-    _tvNotify()
-  },
-
-  clearPadHit(padId: string) {
-    if (!_tvSequencedPadHits.has(padId)) return
-    _tvSequencedPadHits = new Set(_tvSequencedPadHits)
-    _tvSequencedPadHits.delete(padId)
-    _tvNotify()
-  },
-
-  reset() {
-    _tvPlayheadStep = null
-    _tvSequencedPadHits = new Set()
-    _tvNotify()
-  },
-
-  subscribe(listener: TransportVisualListener): () => void {
-    _tvListeners.add(listener)
-    return () => { _tvListeners.delete(listener) }
-  },
-
-  getSnapshot: () => ({ playheadStep: _tvPlayheadStep, sequencedPadHits: _tvSequencedPadHits }),
-}
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-const PATTERN_COLORS = [
-  // Row 1 — pastels / light
-  '#f8b4b4', '#f8c9a4', '#f8e3a1', '#a8e6a3', '#a1e8d8', '#a4cff8', '#c4b4f8', '#f0b4e8',
-  // Row 2 — soft
-  '#f28b8b', '#f2a86b', '#f2d06b', '#7dd87a', '#6bd8c2', '#6bb0f2', '#a08bf2', '#e88bd8',
-  // Row 3 — medium
-  '#ef6f7a', '#f28f3b', '#f2c12e', '#57c08b', '#3dcbab', '#59a9ff', '#8b6ff2', '#d96fbf',
-  // Row 4 — vivid
-  '#e8445a', '#e87030', '#e8b020', '#3aad6e', '#2ab896', '#3d8ef0', '#7350e8', '#c850a8',
-  // Row 5 — saturated
-  '#d42848', '#d45828', '#d49818', '#289858', '#1da080', '#2878d4', '#5e38d4', '#b03890',
-  // Row 6 — deep
-  '#b82040', '#b84820', '#b88018', '#208048', '#188868', '#2060b8', '#4828b8', '#982878',
-  // Row 7 — dark
-  '#981838', '#983818', '#986810', '#186838', '#107050', '#184898', '#381898', '#801860',
-  // Row 8 — very dark
-  '#781030', '#782810', '#785008', '#105028', '#085838', '#103878', '#280878', '#680848',
-]
-
-/** First 8 vivid colors used for auto-assigning new patterns */
-const PATTERN_COLORS_CYCLE = PATTERN_COLORS.slice(16, 24)
-const MIN_STEP_SEMITONES = -24
-const MAX_STEP_SEMITONES = 24
-
-// ---------------------------------------------------------------------------
-// Helpers (moved from App.tsx)
-// ---------------------------------------------------------------------------
-
-const createLayer = (sampleId: string, overrides?: Partial<SampleLayer>): SampleLayer => ({
-  id: uid(),
-  sampleId,
-  velocityLow: 1,
-  velocityHigh: 127,
-  gain: null,
-  semitones: null,
-  fineCents: null,
-  trim: null,
-  envelope: null,
-  filterType: null,
-  filterFreq: null,
-  filterQ: null,
-  stackOffsetMs: null,
-  ...overrides,
-})
-
-export const normalizeProject = (incoming: Project): Project => {
-  const normalizedChain = (incoming.songChain ?? []).map((entry) => ({
-    ...entry,
-    repeats: Math.max(1, entry.repeats ?? 1),
-  }))
-
-  const maxIndex = Math.max(0, normalizedChain.length - 1)
-  const clampLoop = (value: number | null | undefined): number | null => {
-    if (value === null || value === undefined) {
-      return null
-    }
-    return Math.max(0, Math.min(maxIndex, value))
-  }
-
-  const loopStart = clampLoop(incoming.songLoopStart)
-  const loopEnd = clampLoop(incoming.songLoopEnd)
-
-  return {
-    ...incoming,
-    swing: incoming.swing ?? 0,
-    pads: incoming.pads.map((pad) => ({
-      ...pad,
-      settings: {
-        ...pad.settings,
-        // Migrate 'adr' → 'adsr', 'trigger' → 'one-shot', 'gate' → 'adsr'
-        mode: ((m: string) => m === 'adr' || m === 'gate' ? 'adsr' as const : m === 'trigger' ? 'one-shot' as const : pad.settings.mode)(pad.settings.mode as string),
-        // Ensure sustain field exists (default 0 for legacy projects)
-        envelope: { ...pad.settings.envelope, sustain: (pad.settings.envelope as any).sustain ?? 0 },
-        // Migrate 'lowpass' → 'lp12'
-        filterType: (pad.settings.filterType as string) === 'lowpass' ? 'lp12' as const : pad.settings.filterType ?? 'off',
-        layers: (pad.settings.layers ?? []).map((layer: any) => ({
-          ...layer,
-          gain: layer.gain ?? null,
-          semitones: layer.semitones ?? null,
-          fineCents: layer.fineCents ?? null,
-          trim: layer.trim ?? null,
-          envelope: layer.envelope ? { ...layer.envelope, sustain: layer.envelope.sustain ?? 0 } : null,
-          filterType: layer.filterType === 'lowpass' ? 'lp12' : (layer.filterType ?? null),
-          filterFreq: layer.filterFreq ?? null,
-          filterQ: layer.filterQ ?? null,
-        })),
-        multiMode: pad.settings.multiMode ?? 'single',
-        filterFreq: pad.settings.filterFreq ?? 1000,
-        filterQ: pad.settings.filterQ ?? 1,
-        bus: pad.settings.bus ?? 'A',
-        chokeGroup: (pad.settings as any).chokeGroup ?? 0,
-        source: (pad.settings as any).source ?? 'sample',
-        // Migrate LFO: old { depth, target } → per-target depths
-        ...((pad.settings as any).synthParams?.lfo && 'target' in ((pad.settings as any).synthParams?.lfo ?? {}) ? {
-          synthParams: {
-            ...(pad.settings as any).synthParams,
-            lfo: (() => {
-              const old = (pad.settings as any).synthParams.lfo
-              const { target, depth, ...rest } = old
-              return {
-                ...rest,
-                pitchDepth: target === 'pitch' ? (depth ?? 0) : 0,
-                filterDepth: target === 'filter' ? (depth ?? 0) : 0,
-                gainDepth: target === 'gain' ? (depth ?? 0) : 0,
-              }
-            })(),
-          },
-        } : {}),
-      },
-    })),
-    sequences: incoming.sequences.map((sequence, index) => ({
-      ...sequence,
-      color: sequence.color ?? PATTERN_COLORS_CYCLE[index % PATTERN_COLORS_CYCLE.length],
-    })),
-    songChain: normalizedChain,
-    songLoopStart: normalizedChain.length === 0 ? null : loopStart,
-    songLoopEnd: normalizedChain.length === 0 ? null : loopEnd,
-    mixBuses: (incoming as any).mixBuses ?? createDefaultMixBuses(),
-    masterBus: (incoming as any).masterBus ?? createDefaultMasterBus(),
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-export type SequencerHistorySnapshot = {
-  sequences: Project['sequences']
-  songChain: Project['songChain']
-  songLoopStart: Project['songLoopStart']
-  songLoopEnd: Project['songLoopEnd']
-  activeSequenceId: string | null
-}
-
-export interface GateResizeState {
-  padId: string
-  eventId: string
-  side: 'left' | 'right'
-  originX: number
-  stepPitch: number
-  initialStart: number
-  initialEnd: number
-}
-
-export interface VelocityDragState {
-  padId: string
-  eventId: string
-  originY: number
-  initialVelocity: number
-  patternId: string
-}
-
-export interface PitchDragState {
-  padId: string
-  eventId: string
-  originY: number
-  initialSemitones: number
-  patternId: string
-}
-
-export type ToastType = 'info' | 'success' | 'error'
-
-export interface Toast {
-  id: string
-  message: string
-  type: ToastType
-}
-
-export interface PerfStatsState {
-  tickCount: number
-  lateNotes: number
-  maxDriftMs: number
-  p95DriftMs: number
-}
-
-// ---------------------------------------------------------------------------
-// Store interface
-// ---------------------------------------------------------------------------
-
-export interface AppState {
-  // --- Project / Persistence ---
-  project: Project | null
-  samples: SampleAsset[]
-  sampleMap: Map<string, SampleAsset>
-
-  // --- Transport / Playback ---
-  isPlaying: boolean
-  playbackScope: 'pattern' | 'song'
-  playingPatternId: string | null
-  playingChainIndex: number | null
-  playingChainRepeat: number
-  loopEnabled: boolean
-  playheadStep: number | null
-  showPerfStats: boolean
-  perfStats: PerfStatsState
-
-  // --- Audio ---
-  midiStatus: string
-  midiInputEnabled: boolean
-  midiInputDeviceId: string | null   // null = all inputs
-  padMidiChannel: number | null      // null = all channels, 1–16 = specific channel
-  launchpadSpecialMode: boolean      // true = use custom LP Pro MK3 integration, false = treat as generic MIDI
-   midiInputs: Array<{ id: string; name: string }>
-  midiOutputs: Array<{ id: string; name: string }>
-  lastMidiNote: { note: number; velocity: number } | null
-  // Audio input monitor
-  audioMonitorEnabled: boolean
-  audioMonitorDeviceId: string | null   // null = default
-  audioMonitorBusId: BusId
-  // Audio output device
-  audioOutputs: Array<{ id: string; name: string }>
-  audioOutputDeviceId: string | null   // null = system default
-  // Audio input device
-  audioInputs: Array<{ id: string; name: string }>
-  audioInputDeviceId: string | null    // null = system default
-  sequencedPadHits: Set<string>
-
-  // --- Recording ---
-  showRecordDialog: boolean
-  recordTargetPadId: string | null
-  padHoldRecordEnabled: boolean
-  padHoldRecordingPadId: string | null
-
-  // --- Sequencer Editing ---
-  activeSequenceId: string | null
-  mutedLanePadIds: Set<string>
-  selectedGateNote: { padId: string; eventId: string } | null
-  gateResize: GateResizeState | null
-  velocityDrag: VelocityDragState | null
-  pitchDrag: PitchDragState | null
-  historyPast: SequencerHistorySnapshot[]
-  historyFuture: SequencerHistorySnapshot[]
-  historySilenced: boolean
-
-  // --- UI / View ---
-  activeBank: number
-  selectedPadId: string | null
-  selectedLayerId: string | null
-  hideEmptyLanes: boolean
-  seqFollowPlayback: boolean  // when true + song mode, active pattern follows playing pattern
-  seqExpandedBanks: Set<number>   // banks user explicitly expanded (overrides auto-collapse)
-  seqCollapsedBanks: Set<number>  // banks user explicitly collapsed (overrides auto-expand)
-  layoutMode: 'classic' | 'wide' | 'performance'
-  performanceTab: 'library' | 'padEditor' | 'sequencer' | 'mixer' | 'settings' | 'projects'
-  showSongChain: boolean
-  padEditorCollapsed: boolean
-  showLibraryWaveforms: boolean
-  showExportDialog: boolean
-  isExporting: boolean
-  showImportDialog: boolean
-  showGateResizeTip: boolean
-  toasts: Toast[]
-  showSequencerHelp: boolean
-  showSequencerTools: boolean
-  bpmDraft: string
-  swingDraft: string
-  projectNameDraft: string
-  sequenceLengthDraft: string
-  trimDraft: { start: number; end: number }
-  waveformZoom: 'full' | 'trim'
-  patternRenameId: string | null
-  patternRenameDraft: string
-  importMode: ImportMode
-  previewText: string
-  conflicts: string[]
-  importFile: File | null
-  waveformPeaks: number[]
-
-  // --- Sample Library ---
-  sampleQuery: string
-  sampleSort: 'recent' | 'name' | 'size'
-  showFavoritesOnly: boolean
-  favoriteSampleIds: Set<string>
-  libraryWavePeaks: Record<string, number[]>
-  previewSampleId: string | null
-
-  // --- Synth Patches ---
-  synthPatches: SynthPatch[]
-
-  // --- Piano Roll ---
-  expandedPianoRollPads: Set<string>
-  pianoRollOctaveOffset: Record<string, number>  // per-pad octave offset for piano roll view
-
-  // --- Computer Keyboard Input ---
-  computerKeyboardEnabled: boolean
-  computerKeyboardOctave: number  // base octave (default 3 → C3-B4)
-
-  // --- Sample Assign Prompt ---
-  sampleAssignPrompt: { padId: string; sample: SampleAsset } | null
-
-  // --- Confirm Dialog ---
-  confirmDialog: { message: string; confirmLabel?: string; cancelLabel?: string } | null
-
-  // --- Chop Modal ---
-  chopModalSampleId: string | null
-
-  // --- Chromatic Spread ---
-  chromaticSpreadSampleId: string | null
-
-  // --- Pad Drag ---
-  padDragPrompt: { sourcePadId: string; targetPadId: string } | null
-
-  // --- Sequencer Recording ---
-  seqRecordArmed: boolean
-  seqRecordQuantize: boolean
-  seqRecordOverdub: boolean
-
-  // --- Metronome ---
-  metronomeEnabled: boolean
-  metronomeVolume: number        // 0–1
-  countdownBars: number          // 0 = off, 1–4 bars of count-in before recording
-
-  // --- Song Chain ---
-  selectedChainEntryId: string | null
-  copiedChainPatternId: string | null
-
-  // --- Project List ---
-  projectList: { id: string; name: string; updatedAt: number }[]
-
-  // --- Internal refs (non-reactive, accessed via getState()) ---
-  // (Mutable refs moved to module-level variables, see storeRefs export)
-  // (Mutable refs moved to module-level variables, see storeRefs export)
-
-  // --- Actions ---
-
-  // Project
-  hydrate: () => Promise<void>
-  saveProject: (next: Project) => Promise<void>
-  saveProjectLight: (next: Project, flushImmediately?: boolean) => void
-  flushPendingProjectSave: () => void
-  initializeCurrentProject: () => Promise<void>
-  refreshProjectList: () => Promise<void>
-  switchProject: (projectId: string) => Promise<void>
-  createNewProject: () => Promise<void>
-  deleteProject: (projectId: string) => Promise<void>
-  duplicateProject: () => Promise<void>
-
-  // Pad
-  triggerPad: (pad: Pad, velocity?: number) => void
-  updatePadSettings: (patch: Partial<Pad['settings']>) => void
-  assignFileToPad: (pad: Pad, file: File) => Promise<void>
-  assignSampleToPad: (sample: SampleAsset, padId: string) => Promise<void>
-  assignSampleToSelectedPad: (sample: SampleAsset) => Promise<void>
-  addLayerFile: (file: File) => Promise<void>
-  addLayerSample: (sample: SampleAsset) => void
-  removeLayer: (layerId: string) => void
-  updateLayerVelocity: (layerId: string, low: number, high: number) => void
-  selectLayer: (layerId: string | null) => void
-  updateLayerSettings: (layerId: string, patch: Partial<SampleLayer>) => void
-  renamePad: (name: string) => Promise<void>
-  resetSelectedPadName: () => Promise<void>
-  resetPad: (padId: string) => Promise<void>
-  resetBank: (bank: number) => Promise<void>
-
-  // Transport
-  startTransport: () => Promise<void>
-  stopTransport: () => void
-  togglePlayPause: () => void
-  flashSequencedPadHit: (padId: string) => void
-
-  // Sequencer
-  toggleStep: (step: number, padId: string) => Promise<void>
-  pushSequencerHistory: (state: Project, sequenceId: string | null) => void
-  beginDragHistoryCapture: () => void
-  finishDragHistoryCapture: () => void
-  undoSequencer: () => Promise<void>
-  redoSequencer: () => Promise<void>
-  clearLane: (padId: string) => Promise<void>
-  duplicateLaneToNext: (padId: string) => Promise<void>
-  laneToolFill: (padId: string, interval: number) => Promise<void>
-  laneToolShift: (padId: string, direction: -1 | 1) => Promise<void>
-  laneToolRandom: (padId: string) => Promise<void>
-  duplicatePatternLength: (mode: 'double' | 'half') => Promise<void>
-  toggleLaneMute: (padId: string) => void
-  toggleSeqBankCollapsed: (bank: number) => void
-  setSequenceResolution: (resolution: SequenceResolution) => Promise<void>
-  setSequenceLength: (lengthSteps: number) => Promise<void>
-  commitSequenceLengthDraft: () => Promise<void>
-
-  // Piano Roll
-  togglePianoRollExpanded: (padId: string) => void
-  togglePianoRollNote: (step: number, padId: string, note: number) => Promise<void>
-  setPianoRollNoteVelocity: (eventId: string, velocity: number) => Promise<void>
-  setPianoRollNoteGate: (eventId: string, gate: number) => Promise<void>
-  setPianoRollNoteStartAndGate: (eventId: string, step: number, gate: number) => Promise<void>
-  setPianoRollOctaveOffset: (padId: string, offset: number) => void
-
-  // Patterns
-  addSequence: () => Promise<void>
-  renamePattern: (patternId: string, name: string) => Promise<void>
-  setPatternColor: (patternId: string, color: string) => Promise<void>
-  duplicatePattern: (patternId: string) => Promise<void>
-  reorderPattern: (patternId: string, targetPatternId: string) => Promise<void>
-  deletePattern: (patternId: string) => Promise<void>
-
-  // Song Chain
-  addChainEntry: (patternId: string) => Promise<void>
-  addChainEntryAt: (patternId: string, targetIndex: number) => Promise<void>
-  removeChainEntry: (entryId: string) => Promise<void>
-  moveChainEntry: (dragId: string, targetId: string) => Promise<void>
-  updateChainRepeats: (entryId: string, repeats: number) => Promise<void>
-  setSongLoopStart: (index: number | null, skipHistory?: boolean) => Promise<void>
-  setSongLoopEnd: (index: number | null, skipHistory?: boolean) => Promise<void>
-  copySelectedChainEntry: () => void
-  pasteChainEntry: () => Promise<void>
-
-  // Library
-  previewSample: (sample: SampleAsset) => Promise<void>
-  deleteSampleFromLibrary: (sample: SampleAsset) => Promise<void>
-  cropSampleToTrim: (padId: string) => Promise<void>
-  normalizeSample: (padId: string) => Promise<void>
-  removeUnassignedSamples: () => Promise<void>
-  compactProject: () => Promise<void>
-  toggleFavoriteSample: (sampleId: string) => void
-  addSamplesToLibrary: (files: File[], padIndexMap?: Map<string, number>, groupLabel?: string) => Promise<void>
-
-  // Synth Patches
-  saveSynthPatch: (name: string, pad: Pad) => void
-  deleteSynthPatch: (patchId: string) => Promise<void>
-  applySynthPatchToPad: (patch: SynthPatch, padId: string) => void
-
-  // Chop Modal
-  openChopModal: (sampleId: string) => void
-  closeChopModal: () => void
-  updateChopPoints: (sampleId: string, points: number[]) => Promise<void>
-  assignChopsToPads: (sampleId: string, startBank: number, startSlot: number) => Promise<void>
-
-  // Chromatic Spread
-  openChromaticSpread: (sampleId: string) => void
-  closeChromaticSpread: () => void
-  spreadSampleChromatically: (sampleId: string, startBank: number, startSlot: number, count: number, chokeGroup: number) => Promise<void>
-
-  // Pad Drag
-  showPadDragPrompt: (sourcePadId: string, targetPadId: string) => void
-  executePadMove: (sourcePadId: string, targetPadId: string) => Promise<void>
-  executePadCopy: (sourcePadId: string, targetPadId: string) => Promise<void>
-  executePadSwap: (sourcePadId: string, targetPadId: string) => Promise<void>
-  cancelPadDragPrompt: () => void
-
-  // Sequencer Recording
-  recordPadHit: (padId: string, velocity: number, note?: number) => void
-  recordPadRelease: (padId: string, note?: number) => void
-
-  // Sample Assign Prompt
-  confirmSampleReplace: () => Promise<void>
-  confirmSampleAddLayer: () => Promise<void>
-  cancelSampleAssignPrompt: () => void
-
-  // Recording
-  openRecordDialog: (targetPadId?: string) => void
-  closeRecordDialog: () => void
-  saveRecording: (blob: Blob, name: string) => Promise<void>
-  togglePadHoldRecord: () => void
-  startPadHoldRecord: (padId: string) => void
-  stopPadHoldRecord: () => void
-
-  // MIDI Out
-  updatePadMidiOut: (padId: string, patch: Partial<import('../types').MidiOutConfig>) => Promise<void>
-
-  // Auto-sample helpers
-  createSampleFromPcm: (channels: Float32Array[], sampleRate: number, name: string, meta?: { autosampleRunId?: string; autosampleRunLabel?: string; autosampleTrim?: TrimSettings; autosampleBus?: BusId; autosampleChokeGroup?: number; autosamplePadIndex?: number }) => Promise<string>
-  assignSampleIdToPad: (padId: string, sampleId: string, padName?: string) => Promise<void>
-  showAutosampleDialog: boolean
-  openAutosampleDialog: () => void
-  closeAutosampleDialog: () => void
-
-  // Audio input monitor
-  setAudioMonitorEnabled: (enabled: boolean) => void
-  setAudioMonitorDeviceId: (id: string | null) => void
-  setAudioMonitorBusId: (busId: BusId) => void
-
-  // Sample group management
-  groupSamples: (sampleIds: string[], label?: string) => void
-  ungroupSample: (sampleId: string) => void
-  assignGroupToPads: (runId: string, startBank?: number) => Promise<void>
-  importPatternsForGroup: (patternsJson: string, padIndexToId?: Map<number, string>, groupLabel?: string) => Promise<void>
-  importPatternsForGroupByRunId: (runId: string) => Promise<void>
-  renameAutosampleGroup: (runId: string, newLabel: string) => void
-  updateAutosampleGroupSettings: (runId: string, patch: { bus?: BusId; chokeGroup?: number }) => void
-  deleteAutosampleGroup: (runId: string) => Promise<void>
-  exportAutosampleGroupZip: (runId: string) => Promise<void>
-
-  // BPM / Name
-  commitBpmDraft: () => Promise<void>
-  commitSwingDraft: () => Promise<void>
-  tapTempo: () => void
-  commitProjectNameDraft: () => Promise<void>
-
-  // Toasts
-  addToast: (message: string, type?: ToastType) => void
-  removeToast: (id: string) => void
-
-  // Export / Import (kept thin — actions call external modules)
-  exportAllMidi: () => void
-  exportPack: () => Promise<void>
-  exportStandalonePage: () => Promise<void>
-  exportAudio: (mode: 'pattern' | 'song') => Promise<void>
-  previewImport: () => Promise<void>
-  runImport: () => Promise<void>
-
-  // Mixer
-  setBusName: (busId: BusId, name: string) => void
-  setBankName: (bankIndex: number, name: string) => void
-  setBusGain: (busId: BusId, gain: number) => void
-  setBusPan: (busId: BusId, pan: number) => void
-  setBusMute: (busId: BusId, mute: boolean) => void
-  setBusSolo: (busId: BusId, solo: boolean) => void
-  setBusEffectType: (busId: BusId, slotIndex: number, effectType: EffectType) => void
-  setBusEffectEnabled: (busId: BusId, slotIndex: number, enabled: boolean) => void
-  setBusEffectParam: (busId: BusId, slotIndex: number, paramName: string, value: number) => void
-  setBusEffectSidechainSource: (busId: BusId, slotIndex: number, source: BusId) => void
-  setPadEffectType: (padId: string, slotIndex: number, effectType: EffectType) => void
-  setPadEffectEnabled: (padId: string, slotIndex: number, enabled: boolean) => void
-  setPadEffectParam: (padId: string, slotIndex: number, paramName: string, value: number) => void
-  setMasterGain: (gain: number) => void
-  setMasterEffectType: (slotIndex: number, effectType: EffectType) => void
-  setMasterEffectEnabled: (slotIndex: number, enabled: boolean) => void
-  setMasterEffectParam: (slotIndex: number, paramName: string, value: number) => void
-}
-
-// ---------------------------------------------------------------------------
-// Selectors (derived data – computed outside the store for memoisation)
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// Memoization helper: caches result when deps haven't changed (by reference)
-// ---------------------------------------------------------------------------
-function memoize<S, R>(deps: (s: S) => unknown[], fn: (s: S) => R): (s: S) => R {
-  let cachedDeps: unknown[] | null = null
-  let cachedResult: R
-  return (s: S) => {
-    const nextDeps = deps(s)
-    if (cachedDeps && cachedDeps.length === nextDeps.length && cachedDeps.every((d, i) => d === nextDeps[i])) {
-      return cachedResult
-    }
-    cachedDeps = nextDeps
-    cachedResult = fn(s)
-    return cachedResult
-  }
-}
-
-export const selectSelectedPad = (s: AppState): Pad | null => {
-  if (!s.project || !s.selectedPadId) return null
-  return s.project.pads.find((p) => p.id === s.selectedPadId) ?? null
-}
-
-export const selectSelectedSample = (s: AppState): SampleAsset | null => {
-  const pad = selectSelectedPad(s)
-  if (!pad?.settings.sampleId) return null
-  return s.samples.find((sample) => sample.id === pad.settings.sampleId) ?? null
-}
-
-export const selectSelectedLayer = (s: AppState): SampleLayer | null => {
-  if (!s.selectedLayerId) return null
-  const pad = selectSelectedPad(s)
-  if (!pad) return null
-  return pad.settings.layers.find((l) => l.id === s.selectedLayerId) ?? null
-}
-
-export const selectDisplayedSample = (s: AppState): SampleAsset | null => {
-  const layer = selectSelectedLayer(s)
-  if (layer) {
-    return s.samples.find((sample) => sample.id === layer.sampleId) ?? null
-  }
-  return selectSelectedSample(s)
-}
-
-export const selectActiveSequence = (s: AppState): SequencePattern | null => {
-  if (!s.project || !s.activeSequenceId) return null
-  return s.project.sequences.find((seq) => seq.id === s.activeSequenceId) ?? null
-}
-
-export const selectVisibleSequence = (s: AppState): SequencePattern | null => {
-  const active = selectActiveSequence(s)
-  if (!s.project || !active) return null
-  if (s.playbackScope === 'song' && s.isPlaying && s.playingPatternId && s.seqFollowPlayback) {
-    return s.project.sequences.find((seq) => seq.id === s.playingPatternId) ?? active
-  }
-  return active
-}
-
-export const selectCurrentBankPads = memoize<AppState, Pad[]>(
-  (s) => [s.project?.pads, s.activeBank],
-  (s) => {
-    if (!s.project) return []
-    return s.project.pads.filter((p) => p.bank === s.activeBank).sort((a, b) => a.slot - b.slot)
-  },
-)
-
-export const selectDisplayedPads = memoize<AppState, Pad[]>(
-  (s) => [s.project?.pads, s.activeBank],
-  (s) => {
-    const ordered = selectCurrentBankPads(s)
-    const rows = [0, 1, 2, 3].map((r) => ordered.slice(r * 4, r * 4 + 4))
-    return rows.reverse().flat()
-  },
-)
-
-export const selectFilteredSamples = memoize<AppState, SampleAsset[]>(
-  (s) => [s.samples, s.sampleQuery, s.showFavoritesOnly, s.favoriteSampleIds, s.sampleSort],
-  (s) => {
-    const query = s.sampleQuery.trim().toLowerCase()
-    let next = s.samples.filter((sample) => {
-      if (s.showFavoritesOnly && !s.favoriteSampleIds.has(sample.id)) return false
-      if (!query) return true
-      return sample.name.toLowerCase().includes(query)
-    })
-
-    if (s.sampleSort === 'name') {
-      next = [...next].sort((a, b) => a.name.localeCompare(b.name))
-    } else if (s.sampleSort === 'size') {
-      next = [...next].sort((a, b) => b.size - a.size)
-    } else {
-      next = [...next].sort((a, b) => b.createdAt - a.createdAt)
-    }
-
-    return next
-  },
-)
-
-export const selectAssignedSampleIdsKey = (s: AppState): string => {
-  if (!s.project) return ''
-  const ids = new Set<string>()
-  for (const p of s.project.pads) {
-    if (p.settings.sampleId) ids.add(p.settings.sampleId)
-    if (p.settings.layers) {
-      for (const l of p.settings.layers) {
-        if (l.sampleId) ids.add(l.sampleId)
-      }
-    }
-  }
-  return Array.from(ids).sort().join('|')
-}
-
-// Pre-computed event lookup for sequencer rendering perf
-export const selectEventsByPadAndStep = memoize<AppState, Map<string, Map<number, SequenceEvent>>>(
-  (s) => {
-    const seq = selectVisibleSequence(s)
-    return [seq?.events]
-  },
-  (s) => {
-    const seq = selectVisibleSequence(s)
-    if (!seq) return new Map()
-    const map = new Map<string, Map<number, SequenceEvent>>()
-    for (const event of seq.events) {
-      let padMap = map.get(event.padId)
-      if (!padMap) {
-        padMap = new Map()
-        map.set(event.padId, padMap)
-      }
-      padMap.set(event.step, event)
-    }
-    return map
-  },
-)
-
-// Events grouped by padId for lane iteration
-export const selectEventsByPad = memoize<AppState, Map<string, SequenceEvent[]>>(
-  (s) => {
-    const seq = selectVisibleSequence(s)
-    return [seq?.events]
-  },
-  (s) => {
-    const seq = selectVisibleSequence(s)
-    if (!seq) return new Map()
-    const map = new Map<string, SequenceEvent[]>()
-    for (const event of seq.events) {
-      let arr = map.get(event.padId)
-      if (!arr) {
-        arr = []
-        map.set(event.padId, arr)
-      }
-      arr.push(event)
-    }
-    return map
-  },
-)
-
-// Pre-computed spanning event lookup: for each (padId, step), which event spans that step?
-// This turns the O(events) per-step find into O(1).
-export const selectSpanningByPadAndStep = memoize<AppState, Map<string, Map<number, SequenceEvent>>>(
-  (s) => {
-    const seq = selectVisibleSequence(s)
-    return [seq?.events]
-  },
-  (s) => {
-    const seq = selectVisibleSequence(s)
-    if (!seq) return new Map()
-    const map = new Map<string, Map<number, SequenceEvent>>()
-    for (const event of seq.events) {
-      let padMap = map.get(event.padId)
-      if (!padMap) {
-        padMap = new Map()
-        map.set(event.padId, padMap)
-      }
-      const end = event.step + Math.max(1, event.gate) - 1
-      for (let step = event.step; step <= end; step++) {
-        padMap.set(step, event)
-      }
-    }
-    return map
-  },
-)
-
-export const selectSequenceLanes = memoize<AppState, Pad[]>(
-  (s) => [s.project?.pads, s.activeBank, s.hideEmptyLanes, selectVisibleSequence(s)?.id, selectVisibleSequence(s)?.events],
-  (s) => {
-    const bankPads = selectCurrentBankPads(s)
-    if (!s.hideEmptyLanes) return bankPads.sort((a, b) => b.midiNote - a.midiNote)
-    const visibleSeq = selectVisibleSequence(s)
-    const activePadIds = visibleSeq ? new Set(visibleSeq.events.map((e) => e.padId)) : new Set<string>()
-    return bankPads
-      .filter((pad) => activePadIds.has(pad.id))
-      .sort((a, b) => b.midiNote - a.midiNote)
-  },
-)
-
-export interface SequencerBankGroup {
-  bank: number
-  name: string
-  pads: Pad[]
-  hasEvents: boolean
-  collapsed: boolean
-}
-
-export const selectSequencerBankGroups = memoize<AppState, SequencerBankGroup[]>(
-  (s) => [s.project?.pads, s.project?.bankNames, s.hideEmptyLanes, s.seqExpandedBanks, s.seqCollapsedBanks, selectVisibleSequence(s)?.id, selectVisibleSequence(s)?.events],
-  (s) => {
-    if (!s.project) return []
-    const visibleSeq = selectVisibleSequence(s)
-    const activePadIds = visibleSeq ? new Set(visibleSeq.events.map((e) => e.padId)) : new Set<string>()
-    const bankNames = s.project.bankNames ?? Array.from({ length: BANK_COUNT }, (_, i) => `Bank ${i + 1}`)
-
-    const groups: SequencerBankGroup[] = []
-    for (let bank = 0; bank < BANK_COUNT; bank++) {
-      const bankPads = s.project.pads.filter((p) => p.bank === bank).sort((a, b) => a.slot - b.slot)
-      // Skip banks where no pad has content (no sample, no synth, no MIDI out)
-      const hasPadContent = bankPads.some((p) => p.settings.sampleId || p.settings.source === 'synth' || p.settings.midiOut?.enabled)
-      if (!hasPadContent) continue
-      const hasEvents = bankPads.some((p) => activePadIds.has(p.id))
-
-      // Determine collapsed state
-      let collapsed: boolean
-      if (s.seqCollapsedBanks.has(bank)) {
-        collapsed = true
-      } else if (s.seqExpandedBanks.has(bank)) {
-        collapsed = false
-      } else {
-        // Default: collapsed if no events in current pattern
-        collapsed = !hasEvents
-      }
-
-      // Filter pads if hideEmptyLanes is on
-      let visiblePads: Pad[]
-      if (s.hideEmptyLanes) {
-        visiblePads = bankPads.filter((pad) => activePadIds.has(pad.id))
-      } else {
-        visiblePads = bankPads
-      }
-
-      groups.push({
-        bank,
-        name: bankNames[bank] ?? `Bank ${bank + 1}`,
-        pads: visiblePads.sort((a, b) => b.midiNote - a.midiNote),
-        hasEvents,
-        collapsed,
-      })
-    }
-    return groups
-  },
-)
-
-// ---------------------------------------------------------------------------
-// Utility functions used by actions
-// ---------------------------------------------------------------------------
-
-function getLaneBoundsForEvent(
-  pattern: SequencePattern,
-  padId: string,
-  eventId: string,
-): { minStart: number; maxEnd: number } {
-  const target = pattern.events.find((e) => e.id === eventId)
-  if (!target) return { minStart: 0, maxEnd: pattern.lengthSteps - 1 }
-
-  const laneEvents = pattern.events
-    .filter((e) => e.padId === padId && e.id !== eventId)
-    .map((e) => ({ start: e.step, end: e.step + Math.max(1, e.gate) - 1 }))
-    .sort((a, b) => a.start - b.start)
-
-  const targetStart = target.step
-  const targetEnd = target.step + Math.max(1, target.gate) - 1
-  let minStart = 0
-  let maxEnd = pattern.lengthSteps - 1
-  laneEvents.forEach((e) => {
-    if (e.end < targetStart) minStart = Math.max(minStart, e.end + 1)
-    if (e.start > targetEnd) maxEnd = Math.min(maxEnd, e.start - 1)
-  })
-  return { minStart, maxEnd }
-}
-
-function updateGateEventRange(
-  projectState: Project,
-  patternId: string,
-  padId: string,
-  eventId: string,
-  start: number,
-  end: number,
-): Project {
-  return {
-    ...projectState,
-    sequences: projectState.sequences.map((seq) => {
-      if (seq.id !== patternId) return seq
-      return {
-        ...seq,
-        events: seq.events.map((e) =>
-          e.id === eventId && e.padId === padId
-            ? { ...e, step: start, gate: Math.max(1, end - start + 1) }
-            : e,
-        ),
-      }
-    }),
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Module-level mutable refs (NOT in immer store — immer freezes objects)
-// ---------------------------------------------------------------------------
-let _playbackSnapshot: PlaybackSnapshot = buildPlaybackSnapshot(createDefaultProject(), 0)
-let _playbackVersion = 1
-let _hydratePromise: Promise<void> | null = null
-const _transportScheduler = new TransportScheduler()
-let _transportWorker: Worker | null = null
-let _projectSaveDebounce: number | null = null
-let _pendingPersist = false
-const _sequencedPadHitTimers = new Map<string, number>()
-let _dragHistoryCaptured = false
-let _trimDirty = false
-let _gateResizeDirty = false
-const _perfDriftWindow: number[] = []
-const _tapTimestamps: number[] = []
-let _draggedPatternId: string | null = null
-let _draggedChainEntryId: string | null = null
-const _seqRecordCleared = new Set<string>() // tracks patterns cleared during replace-mode recording
-// Tracks active recording notes: key = "padId:note" (or "padId:" for non-piano-roll), value = { eventId, startStep }
-const _activeRecordingNotes = new Map<string, { eventId: string; startStep: number; patternId: string; startTimeMs: number }>()
-let _frozenZoomRange: { start: number; end: number } | null = null
-
-// --- Confirm dialog promise resolver ---
-let _confirmResolver: ((ok: boolean) => void) | null = null
-
-export function showConfirm(message: string, opts?: { confirmLabel?: string; cancelLabel?: string }): Promise<boolean> {
-  return new Promise((resolve) => {
-    _confirmResolver = resolve
-    useStore.setState({ confirmDialog: { message, confirmLabel: opts?.confirmLabel, cancelLabel: opts?.cancelLabel } } as any)
-  })
-}
-
-export function resolveConfirmDialog(ok: boolean) {
-  const resolver = _confirmResolver
-  _confirmResolver = null
-  useStore.setState({ confirmDialog: null } as any)
-  if (resolver) resolver(ok)
-}
-
-// --- MIDI out: track outstanding note-on for gate/adsr note-off on release ---
-// Now managed inside lib/midiOut.ts via registerActiveNote / releaseMidiNote
-
-// --- Pad Hold Record infrastructure (module-level, outside immer) ---
-const HOLD_REC_WORKLET_SRC = `
-class RecorderWorkletProcessor extends AudioWorkletProcessor {
-  constructor() { super(); this.buffer = new Float32Array(2048); this.writeIndex = 0; }
-  process(inputs) {
-    const input = inputs[0];
-    if (!input || input.length === 0) return true;
-    const channel = input[0];
-    for (let i = 0; i < channel.length; i++) {
-      this.buffer[this.writeIndex++] = channel[i];
-      if (this.writeIndex >= this.buffer.length) {
-        this.port.postMessage({ samples: this.buffer.slice() });
-        this.writeIndex = 0;
-      }
-    }
-    return true;
-  }
-}
-registerProcessor('hold-recorder-worklet', RecorderWorkletProcessor);
-`
-let _holdRecStream: MediaStream | null = null
-let _holdRecWorklet: AudioWorkletNode | null = null
-let _holdRecSource: MediaStreamAudioSourceNode | null = null
-let _holdRecChunks: Float32Array[] = []
-let _holdRecWorkletRegistered = false
-let _holdRecStartTime = 0
-const HOLD_REC_SAMPLE_RATE = 44_100
-const HOLD_REC_MIN_MS = 150 // discard taps shorter than this
-
-// Expose for App.tsx drag handlers
-export const storeRefs = {
-  get trimDirty() { return _trimDirty },
-  set trimDirty(v: boolean) { _trimDirty = v },
-  get gateResizeDirty() { return _gateResizeDirty },
-  set gateResizeDirty(v: boolean) { _gateResizeDirty = v },
-  get dragHistoryCaptured() { return _dragHistoryCaptured },
-  set dragHistoryCaptured(v: boolean) { _dragHistoryCaptured = v },
-  get draggedPatternId() { return _draggedPatternId },
-  set draggedPatternId(v: string | null) { _draggedPatternId = v },
-  get draggedChainEntryId() { return _draggedChainEntryId },
-  set draggedChainEntryId(v: string | null) { _draggedChainEntryId = v },
-  get frozenZoomRange() { return _frozenZoomRange },
-  set frozenZoomRange(v: { start: number; end: number } | null) { _frozenZoomRange = v },
-}
-
-// ---------------------------------------------------------------------------
-// Shared helper: import a File as a SampleAsset (dedup by hash)
-// Returns the SampleAsset. Callers are responsible for updating store state.
-// ---------------------------------------------------------------------------
-async function importFileAsSample(
-  file: File,
-  _getState: () => AppState,
-  setState: (fn: (s: AppState) => void) => void,
-): Promise<SampleAsset> {
-  const raw = await file.arrayBuffer()
-  const hash = await arrayBufferToHex(raw)
-  const existing = await db.findSampleByHash(hash)
-
-  const sample: SampleAsset =
-    existing ?? {
-      id: uid(),
-      name: file.name,
-      mimeType: file.type || 'audio/wav',
-      size: file.size,
-      createdAt: Date.now(),
-      hash,
-      blob: file,
-    }
-
-  if (!existing) {
-    await db.putSample(sample)
-    await audioEngine.registerSample(sample)
-    setState((s) => {
-      s.samples = [...s.samples, sample]
-      s.sampleMap.set(sample.id, sample)
-    })
-  } else if (!audioEngine.hasSample(sample.id)) {
-    await audioEngine.registerSample(sample)
-  }
-
-  return sample
-}
-
-const PRESET_KITS = ['TR7x7ISH_Kit.zip', 'TR8x8ISH_Kit.zip', 'TR9x9ISH_Kit.zip']
-
-/** Load factory preset drumkit ZIPs from /public on first launch.
- *  Returns array of { runId, bankIndex } for pad assignment. */
-async function loadPresetKits(
-  _getState: () => AppState,
-  setState: (fn: (s: AppState) => void) => void,
-): Promise<{ runId: string; bank: number }[]> {
-  const loaded: { runId: string; bank: number }[] = []
-  for (let ki = 0; ki < PRESET_KITS.length; ki++) {
-    const filename = PRESET_KITS[ki]
-    try {
-      const resp = await fetch(`/${filename}`)
-      if (!resp.ok) continue
-      const buf = await resp.arrayBuffer()
-      const zip = await JSZip.loadAsync(buf)
-      const metaFile = zip.file('metadata.json')
-      const meta = metaFile ? JSON.parse(await metaFile.async('text')) as {
-        label?: string;
-        samples?: { name: string; autosampleTrim?: { start: number; end: number } | null;
-          autosampleBus?: BusId | null; autosampleChokeGroup?: number | null;
-          autosamplePadIndex?: number | null; autosampleMpc?: boolean }[]
-      } : null
-      const runId = `preset-${filename.replace(/\.zip$/i, '')}`
-      const runLabel = meta?.label || filename.replace(/\.zip$/i, '')
-      const metaMap = new Map((meta?.samples || []).map((m) => [m.name, m]))
-      for (const [path, entry] of Object.entries(zip.files)) {
-        if (entry.dir || path === 'metadata.json') continue
-        if (!path.match(/\.(wav|mp3|ogg|flac|aiff?|m4a|webm)$/i)) continue
-        const blob = await entry.async('blob')
-        const file = new File([blob], entry.name, { type: 'audio/wav' })
-        const raw = await file.arrayBuffer()
-        const hash = await arrayBufferToHex(raw)
-        const m = metaMap.get(entry.name)
-        // Build the complete sample with all preset metadata upfront
-        const sample: SampleAsset = {
-          id: uid(),
-          name: file.name,
-          mimeType: file.type || 'audio/wav',
-          size: file.size,
-          createdAt: Date.now(),
-          hash,
-          blob: file,
-          autosampleRunId: runId,
-          autosampleRunLabel: runLabel,
-          autosampleTrim: m?.autosampleTrim ?? undefined,
-          autosampleBus: m?.autosampleBus ?? undefined,
-          autosampleChokeGroup: m?.autosampleChokeGroup ?? undefined,
-          autosamplePadIndex: m?.autosamplePadIndex ?? undefined,
-          autosamplePreset: true,
-        }
-        await db.putSample(sample)
-        await audioEngine.registerSample(sample)
-        setState((s) => {
-          s.samples.push(sample)
-          s.sampleMap.set(sample.id, sample)
-        })
-      }
-      loaded.push({ runId, bank: ki })
-    } catch (e) {
-      console.warn('Failed to load preset kit', filename, e)
-    }
-  }
-  return loaded
-}
-
-// ---------------------------------------------------------------------------
-// Store
-// ---------------------------------------------------------------------------
+enableMapSet()
+
+import { registerConfirmDialog, showConfirm } from './confirmDialog'
+import { transportVisualStore } from './visualStore'
+import {
+  getDefaultEffectParams,
+  createLayer,
+  normalizeProject,
+  loadSynthPatches,
+  saveSynthPatches,
+} from './helpers'
+import { PATTERN_COLORS_CYCLE } from './constants'
+import {
+  mutableRefs,
+  HOLD_REC_WORKLET_SRC,
+  HOLD_REC_SAMPLE_RATE,
+  HOLD_REC_MIN_MS,
+} from './refs'
+import {
+  selectSelectedPad,
+  selectSelectedLayer,
+  selectActiveSequence,
+  selectVisibleSequence,
+  selectCurrentBankPads,
+} from './selectors'
+import { importFileAsSample, loadPresetKits } from './importHelpers'
+import type { AppState, ToastType } from './types'
 
 export const useStore = create<AppState>()(
   immer((set, get) => {
-    // Internal helpers
+    registerConfirmDialog((dialog) => set((s) => { s.confirmDialog = dialog as any }))
+
     // Track snapshot-relevant fields to avoid unnecessary rebuilds
     let _lastSnapshotPads: unknown = null
     let _lastSnapshotSequences: unknown = null
@@ -1159,7 +76,6 @@ export const useStore = create<AppState>()(
     let _lastSnapshotSongLoopEnd: unknown = null
 
     const rebuildPlaybackSnapshot = (proj: Project) => {
-      // Only rebuild if snapshot-relevant fields actually changed
       if (
         proj.pads === _lastSnapshotPads &&
         proj.sequences === _lastSnapshotSequences &&
@@ -1169,7 +85,7 @@ export const useStore = create<AppState>()(
         proj.songLoopStart === _lastSnapshotSongLoopStart &&
         proj.songLoopEnd === _lastSnapshotSongLoopEnd
       ) {
-        return // no snapshot-relevant changes
+        return
       }
       _lastSnapshotPads = proj.pads
       _lastSnapshotSequences = proj.sequences
@@ -1178,8 +94,8 @@ export const useStore = create<AppState>()(
       _lastSnapshotSongChain = proj.songChain
       _lastSnapshotSongLoopStart = proj.songLoopStart
       _lastSnapshotSongLoopEnd = proj.songLoopEnd
-      _playbackVersion += 1
-      _playbackSnapshot = buildPlaybackSnapshot(proj, _playbackVersion)
+      mutableRefs.playbackVersion += 1
+      mutableRefs.playbackSnapshot = buildPlaybackSnapshot(proj, mutableRefs.playbackVersion)
     }
 
     const touchAndNormalize = (proj: Project): Project => touchProject(normalizeProject(proj))
@@ -1194,7 +110,7 @@ export const useStore = create<AppState>()(
       return touched
     }
 
-    // Debounced cleanup of unused AudioBuffers and stale effect chains (runs 2s after last pad assignment)
+    // Debounced cleanup of unused AudioBuffers and stale effect chains
     let _pruneTimer: ReturnType<typeof setTimeout> | null = null
     const schedulePruneBuffers = () => {
       if (_pruneTimer) clearTimeout(_pruneTimer)
@@ -1210,7 +126,6 @@ export const useStore = create<AppState>()(
               if (l.sampleId) usedIds.add(l.sampleId)
             }
           }
-          // Dispose pad effect chains for pads that are no longer synth
           if (pad.settings.source !== 'synth') {
             audioEngine.disposePadEffectChain(pad.id)
           }
@@ -1219,14 +134,13 @@ export const useStore = create<AppState>()(
       }, 2000)
     }
 
-    const historySnapshotFrom = (state: Project, sequenceId: string | null): SequencerHistorySnapshot => ({
+    const historySnapshotFrom = (state: Project, sequenceId: string | null): import('./types').SequencerHistorySnapshot => ({
       sequences: state.sequences,
       songChain: state.songChain,
       songLoopStart: state.songLoopStart,
       songLoopEnd: state.songLoopEnd,
       activeSequenceId: sequenceId,
     })
-
     return {
       // --- Initial state ---
       project: null,
@@ -1359,8 +273,8 @@ export const useStore = create<AppState>()(
 
       hydrate: async () => {
         // Guard against double-invoke (React Strict Mode)
-        if (_hydratePromise) return _hydratePromise
-        _hydratePromise = (async () => {
+        if (mutableRefs.hydratePromise) return mutableRefs.hydratePromise
+        mutableRefs.hydratePromise = (async () => {
         const existing = await db.getLatestProject()
         const loadedProject = normalizeProject(existing ?? createDefaultProject('Sketch 01'))
         if (!existing) {
@@ -1391,7 +305,7 @@ export const useStore = create<AppState>()(
         }
         await get().refreshProjectList()
         })()
-        return _hydratePromise
+        return mutableRefs.hydratePromise
       },
 
       saveProject: async (next: Project) => {
@@ -1409,37 +323,37 @@ export const useStore = create<AppState>()(
 
         const state = get()
         if (state.isPlaying && !flushImmediately) {
-          _pendingPersist = true
+          mutableRefs.pendingPersist = true
           return
         }
 
-        if (_projectSaveDebounce !== null) {
-          window.clearTimeout(_projectSaveDebounce)
+        if (mutableRefs.projectSaveDebounce !== null) {
+          window.clearTimeout(mutableRefs.projectSaveDebounce)
         }
 
         if (flushImmediately) {
           void db.putProject(touched)
-          _projectSaveDebounce = null
+          mutableRefs.projectSaveDebounce = null
           return
         }
 
         const timerId = window.setTimeout(() => {
           const current = get().project
           if (current) void db.putProject(current)
-          _projectSaveDebounce = null
+          mutableRefs.projectSaveDebounce = null
         }, 180)
-        _projectSaveDebounce = timerId
+        mutableRefs.projectSaveDebounce = timerId
       },
 
       flushPendingProjectSave: () => {
-        if (_projectSaveDebounce !== null) {
-          window.clearTimeout(_projectSaveDebounce)
-          _projectSaveDebounce = null
+        if (mutableRefs.projectSaveDebounce !== null) {
+          window.clearTimeout(mutableRefs.projectSaveDebounce)
+          mutableRefs.projectSaveDebounce = null
         }
         const s = get()
         if (s.project) {
           void db.putProject(s.project)
-          _pendingPersist = false
+          mutableRefs.pendingPersist = false
         }
       },
 
@@ -2050,13 +964,13 @@ export const useStore = create<AppState>()(
       // --- Transport ---
 
       stopTransport: () => {
-        if (_transportWorker) {
-          _transportWorker.postMessage({ type: 'stop' })
-          _transportWorker.terminate()
+        if (mutableRefs.transportWorker) {
+          mutableRefs.transportWorker.postMessage({ type: 'stop' })
+          mutableRefs.transportWorker.terminate()
         }
-        _sequencedPadHitTimers.forEach((timerId) => window.clearTimeout(timerId))
-        _sequencedPadHitTimers.clear()
-        _transportWorker = null
+        mutableRefs.sequencedPadHitTimers.forEach((timerId) => window.clearTimeout(timerId))
+        mutableRefs.sequencedPadHitTimers.clear()
+        mutableRefs.transportWorker = null
 
         transportVisualStore.reset()
 
@@ -2068,10 +982,10 @@ export const useStore = create<AppState>()(
           d.seqRecordArmed = false
         })
 
-        _seqRecordCleared.clear()
-        _activeRecordingNotes.clear()
+        mutableRefs.seqRecordCleared.clear()
+        mutableRefs.activeRecordingNotes.clear()
 
-        if (_pendingPersist) {
+        if (mutableRefs.pendingPersist) {
           get().flushPendingProjectSave()
         }
       },
@@ -2079,14 +993,14 @@ export const useStore = create<AppState>()(
       flashSequencedPadHit: (padId: string) => {
         transportVisualStore.flashPadHit(padId)
 
-        const existing = _sequencedPadHitTimers.get(padId)
+        const existing = mutableRefs.sequencedPadHitTimers.get(padId)
         if (existing) window.clearTimeout(existing)
 
         const timerId = window.setTimeout(() => {
           transportVisualStore.clearPadHit(padId)
-          _sequencedPadHitTimers.delete(padId)
+          mutableRefs.sequencedPadHitTimers.delete(padId)
         }, 120)
-        _sequencedPadHitTimers.set(padId, timerId)
+        mutableRefs.sequencedPadHitTimers.set(padId, timerId)
       },
 
       startTransport: async () => {
@@ -2097,10 +1011,10 @@ export const useStore = create<AppState>()(
         const activeSeq = selectActiveSequence(s)
         if (!activeSeq) return
 
-        if (_transportWorker) {
-          _transportWorker.postMessage({ type: 'stop' })
-          _transportWorker.terminate()
-          _transportWorker = null
+        if (mutableRefs.transportWorker) {
+          mutableRefs.transportWorker.postMessage({ type: 'stop' })
+          mutableRefs.transportWorker.terminate()
+          mutableRefs.transportWorker = null
         }
 
         // Prepare buffers
@@ -2153,7 +1067,7 @@ export const useStore = create<AppState>()(
           }
         })
 
-        const snapshot = _playbackSnapshot
+        const snapshot = mutableRefs.playbackSnapshot
         const lookaheadMs = 128
         const schedulerMs = 20
         const startLatencyMs = 30
@@ -2181,7 +1095,7 @@ export const useStore = create<AppState>()(
           transportStartMs += countdownDurationMs
         }
 
-        _transportScheduler.start(transportStartMs, snapshot, {
+        mutableRefs.transportScheduler.start(transportStartMs, snapshot, {
           mode: get().playbackScope,
           loopEnabled: get().loopEnabled,
           activePatternId: activeSeq.id,
@@ -2193,7 +1107,7 @@ export const useStore = create<AppState>()(
           const currentState = get()
           if (!currentState.isPlaying) return
 
-          const currentSnapshot = _playbackSnapshot
+          const currentSnapshot = mutableRefs.playbackSnapshot
           const activeSequence = selectActiveSequence(currentState)
           if (!activeSequence) {
             get().stopTransport()
@@ -2202,7 +1116,7 @@ export const useStore = create<AppState>()(
 
           const tickPerfNow = performance.now()
           const tickAudioNow = audioEngine.nowSeconds()
-          const result = _transportScheduler.tick(
+          const result = mutableRefs.transportScheduler.tick(
             tickPerfNow,
             tickAudioNow,
             currentSnapshot,
@@ -2227,8 +1141,8 @@ export const useStore = create<AppState>()(
             tickCount += 1
             const driftMs = Math.max(0, (audioEngine.nowSeconds() - event.atTimeSec) * 1000)
             maxDriftMs = Math.max(maxDriftMs, driftMs)
-            _perfDriftWindow.push(driftMs)
-            if (_perfDriftWindow.length > 200) _perfDriftWindow.splice(0, _perfDriftWindow.length - 200)
+            mutableRefs.perfDriftWindow.push(driftMs)
+            if (mutableRefs.perfDriftWindow.length > 200) mutableRefs.perfDriftWindow.splice(0, mutableRefs.perfDriftWindow.length - 200)
             if (driftMs > 5) lateNotes += 1
 
             // For piano roll events with absolute note, compute semitone offset from pad base
@@ -2295,7 +1209,7 @@ export const useStore = create<AppState>()(
           }
 
           if (tickCount > 0 && tickCount % 24 === 0) {
-            const sorted = [..._perfDriftWindow].sort((a, b) => a - b)
+            const sorted = [...mutableRefs.perfDriftWindow].sort((a, b) => a - b)
             const p95 = sorted.length > 0 ? sorted[Math.floor(sorted.length * 0.95)] : 0
             set((d) => {
               d.perfStats = { tickCount, lateNotes, maxDriftMs, p95DriftMs: p95 }
@@ -2305,7 +1219,7 @@ export const useStore = create<AppState>()(
 
         tick()
         const worker = new TransportClockWorker()
-        _transportWorker = worker
+        mutableRefs.transportWorker = worker
         worker.onmessage = (message: MessageEvent<{ type: 'tick'; nowMs: number }>) => {
           if (message.data.type === 'tick') tick()
         }
@@ -2339,13 +1253,13 @@ export const useStore = create<AppState>()(
 
       beginDragHistoryCapture: () => {
         const s = get()
-        if (_dragHistoryCaptured || !s.project) return
-        _dragHistoryCaptured = true
+        if (mutableRefs.dragHistoryCaptured || !s.project) return
+        mutableRefs.dragHistoryCaptured = true
         s.pushSequencerHistory(s.project, s.activeSequenceId)
       },
 
       finishDragHistoryCapture: () => {
-        _dragHistoryCaptured = false
+        mutableRefs.dragHistoryCaptured = false
       },
 
       toggleStep: async (step: number, padId: string) => {
@@ -2471,7 +1385,7 @@ export const useStore = create<AppState>()(
           d.activeSequenceId = previous.activeSequenceId
           d.historySilenced = false
         })
-        _dragHistoryCaptured = false
+        mutableRefs.dragHistoryCaptured = false
       },
 
       redoSequencer: async () => {
@@ -2497,7 +1411,7 @@ export const useStore = create<AppState>()(
           d.activeSequenceId = next.activeSequenceId
           d.historySilenced = false
         })
-        _dragHistoryCaptured = false
+        mutableRefs.dragHistoryCaptured = false
       },
 
       clearLane: async (padId: string) => {
@@ -3859,8 +2773,8 @@ export const useStore = create<AppState>()(
         // Replace mode: clear all events for this pad in this pattern on first hit
         if (!s.seqRecordOverdub) {
           const key = `${targetPatternId}:${padId}`
-          if (!_seqRecordCleared.has(key)) {
-            _seqRecordCleared.add(key)
+          if (!mutableRefs.seqRecordCleared.has(key)) {
+            mutableRefs.seqRecordCleared.add(key)
             // Clear existing events for this pad
             const filtered = seq.events.filter((e) => e.padId !== padId)
             const sequences = s.project.sequences.map((p) =>
@@ -3898,7 +2812,7 @@ export const useStore = create<AppState>()(
         const stepDurationMs = (60_000 / s.project.bpm) / 4
         const quantizeOffsetMs = (step - (rawStep % seq.lengthSteps)) * stepDurationMs
         const noteKey = `${padId}:${note ?? ''}`
-        _activeRecordingNotes.set(noteKey, { eventId: newEvent.id, startStep: step, patternId: targetPatternId, startTimeMs: performance.now() + quantizeOffsetMs })
+        mutableRefs.activeRecordingNotes.set(noteKey, { eventId: newEvent.id, startStep: step, patternId: targetPatternId, startTimeMs: performance.now() + quantizeOffsetMs })
 
         const events = [...freshSeq.events, newEvent]
         const sequences = freshState.project.sequences.map((p) =>
@@ -3910,9 +2824,9 @@ export const useStore = create<AppState>()(
 
       recordPadRelease: (padId: string, note?: number) => {
         const noteKey = `${padId}:${note ?? ''}`
-        const active = _activeRecordingNotes.get(noteKey)
+        const active = mutableRefs.activeRecordingNotes.get(noteKey)
         if (!active) return
-        _activeRecordingNotes.delete(noteKey)
+        mutableRefs.activeRecordingNotes.delete(noteKey)
 
         const s = get()
         if (!s.project || !s.isPlaying) return
@@ -4037,30 +2951,30 @@ export const useStore = create<AppState>()(
         set((d) => { d.padHoldRecordEnabled = next })
         // Release mic stream when disabling
         if (!next) {
-          if (_holdRecWorklet) { try { _holdRecWorklet.disconnect() } catch { /* */ }; _holdRecWorklet = null }
-          if (_holdRecSource) { try { _holdRecSource.disconnect() } catch { /* */ }; _holdRecSource = null }
-          if (_holdRecStream) { _holdRecStream.getTracks().forEach((t) => t.stop()); _holdRecStream = null }
+          if (mutableRefs.holdRecWorklet) { try { mutableRefs.holdRecWorklet.disconnect() } catch { /* */ }; mutableRefs.holdRecWorklet = null }
+          if (mutableRefs.holdRecSource) { try { mutableRefs.holdRecSource.disconnect() } catch { /* */ }; mutableRefs.holdRecSource = null }
+          if (mutableRefs.holdRecStream) { mutableRefs.holdRecStream.getTracks().forEach((t) => t.stop()); mutableRefs.holdRecStream = null }
         }
       },
 
       startPadHoldRecord: (padId: string) => {
         if (get().padHoldRecordingPadId) return // already recording
         set((d) => { d.padHoldRecordingPadId = padId })
-        _holdRecChunks = []
-        _holdRecStartTime = Date.now()
+        mutableRefs.holdRecChunks = []
+        mutableRefs.holdRecStartTime = Date.now()
 
         const setup = async () => {
           try {
             // Get mic stream (reuse if already acquired)
-            if (!_holdRecStream) {
-              _holdRecStream = await navigator.mediaDevices.getUserMedia({
+            if (!mutableRefs.holdRecStream) {
+              mutableRefs.holdRecStream = await navigator.mediaDevices.getUserMedia({
                 audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
               })
             }
             // Guard: recording may have been stopped while awaiting getUserMedia
             if (!get().padHoldRecordingPadId) {
-              _holdRecStream?.getTracks().forEach(t => t.stop())
-              _holdRecStream = null
+              mutableRefs.holdRecStream?.getTracks().forEach(t => t.stop())
+              mutableRefs.holdRecStream = null
               return
             }
             // Use the main AudioContext (avoid creating a second one — Chrome audio thread degrades)
@@ -4068,24 +2982,24 @@ export const useStore = create<AppState>()(
             if (!ctx) { set((d) => { d.padHoldRecordingPadId = null }); return }
 
             // Register worklet on main context once
-            if (!_holdRecWorkletRegistered) {
+            if (!mutableRefs.holdRecWorkletRegistered) {
               const url = 'data:application/javascript,' + encodeURIComponent(HOLD_REC_WORKLET_SRC)
               await ctx.audioWorklet.addModule(url)
-              _holdRecWorkletRegistered = true
+              mutableRefs.holdRecWorkletRegistered = true
             }
             // Guard: recording may have been stopped while awaiting addModule
             if (!get().padHoldRecordingPadId) {
               return
             }
 
-            _holdRecSource = ctx.createMediaStreamSource(_holdRecStream)
-            _holdRecWorklet = new AudioWorkletNode(ctx, 'hold-recorder-worklet')
-            _holdRecWorklet.port.onmessage = (e: MessageEvent<{ samples: Float32Array }>) => {
-              _holdRecChunks.push(e.data.samples)
+            mutableRefs.holdRecSource = ctx.createMediaStreamSource(mutableRefs.holdRecStream)
+            mutableRefs.holdRecWorklet = new AudioWorkletNode(ctx, 'hold-recorder-worklet')
+            mutableRefs.holdRecWorklet.port.onmessage = (e: MessageEvent<{ samples: Float32Array }>) => {
+              mutableRefs.holdRecChunks.push(e.data.samples)
             }
-            _holdRecSource.connect(_holdRecWorklet)
+            mutableRefs.holdRecSource.connect(mutableRefs.holdRecWorklet)
             // Connect to destination so process() runs (output is silent)
-            _holdRecWorklet.connect(ctx.destination)
+            mutableRefs.holdRecWorklet.connect(ctx.destination)
           } catch {
             set((d) => { d.padHoldRecordingPadId = null })
             get().addToast('Mic access denied', 'error')
@@ -4100,30 +3014,30 @@ export const useStore = create<AppState>()(
         set((d) => { d.padHoldRecordingPadId = null })
 
         // Stop worklet + source
-        if (_holdRecWorklet) {
-          try { _holdRecWorklet.disconnect() } catch { /* */ }
-          _holdRecWorklet = null
+        if (mutableRefs.holdRecWorklet) {
+          try { mutableRefs.holdRecWorklet.disconnect() } catch { /* */ }
+          mutableRefs.holdRecWorklet = null
         }
-        if (_holdRecSource) {
-          try { _holdRecSource.disconnect() } catch { /* */ }
-          _holdRecSource = null
+        if (mutableRefs.holdRecSource) {
+          try { mutableRefs.holdRecSource.disconnect() } catch { /* */ }
+          mutableRefs.holdRecSource = null
         }
 
-        const elapsed = Date.now() - _holdRecStartTime
-        if (elapsed < HOLD_REC_MIN_MS || _holdRecChunks.length === 0) {
+        const elapsed = Date.now() - mutableRefs.holdRecStartTime
+        if (elapsed < HOLD_REC_MIN_MS || mutableRefs.holdRecChunks.length === 0) {
           get().addToast('Hold longer to record', 'info')
           return
         }
 
         // Concatenate PCM chunks
-        const totalSamples = _holdRecChunks.reduce((n, c) => n + c.length, 0)
+        const totalSamples = mutableRefs.holdRecChunks.reduce((n, c) => n + c.length, 0)
         const pcm = new Float32Array(totalSamples)
         let offset = 0
-        for (const chunk of _holdRecChunks) {
+        for (const chunk of mutableRefs.holdRecChunks) {
           pcm.set(chunk, offset)
           offset += chunk.length
         }
-        _holdRecChunks = []
+        mutableRefs.holdRecChunks = []
 
         // Normalize to -0.3 dBFS (peak)
         normalizePcm(pcm)
@@ -4774,18 +3688,18 @@ export const useStore = create<AppState>()(
         const now = performance.now()
         const s = get()
         // Reset if last tap was more than 2 seconds ago
-        if (_tapTimestamps.length > 0 && now - _tapTimestamps[_tapTimestamps.length - 1] > 2000) {
-          _tapTimestamps.length = 0
+        if (mutableRefs.tapTimestamps.length > 0 && now - mutableRefs.tapTimestamps[mutableRefs.tapTimestamps.length - 1] > 2000) {
+          mutableRefs.tapTimestamps.length = 0
         }
-        _tapTimestamps.push(now)
+        mutableRefs.tapTimestamps.push(now)
         // Keep last 8 taps
-        if (_tapTimestamps.length > 8) _tapTimestamps.splice(0, _tapTimestamps.length - 8)
-        if (_tapTimestamps.length < 2) return
+        if (mutableRefs.tapTimestamps.length > 8) mutableRefs.tapTimestamps.splice(0, mutableRefs.tapTimestamps.length - 8)
+        if (mutableRefs.tapTimestamps.length < 2) return
 
         // Average interval from tap history
         const intervals: number[] = []
-        for (let i = 1; i < _tapTimestamps.length; i++) {
-          intervals.push(_tapTimestamps[i] - _tapTimestamps[i - 1])
+        for (let i = 1; i < mutableRefs.tapTimestamps.length; i++) {
+          intervals.push(mutableRefs.tapTimestamps[i] - mutableRefs.tapTimestamps[i - 1])
         }
         const avgMs = intervals.reduce((a, b) => a + b, 0) / intervals.length
         const bpm = Math.max(50, Math.min(200, Math.round(60000 / avgMs)))
@@ -5075,7 +3989,12 @@ export const useStore = create<AppState>()(
   })
 }
 
-// Re-export constants for components
-export { PATTERN_COLORS, MIN_STEP_SEMITONES, MAX_STEP_SEMITONES }
-// Re-export getLaneBoundsForEvent and updateGateEventRange for drag handlers
-export { getLaneBoundsForEvent, updateGateEventRange }
+// Re-export public APIs so component imports remain unchanged
+export { transportVisualStore } from './visualStore'
+export { showConfirm, resolveConfirmDialog } from './confirmDialog'
+export { storeRefs } from './refs'
+export * from './types'
+export * from './constants'
+export * from './helpers'
+export * from './selectors'
+export { importFileAsSample, loadPresetKits } from './importHelpers'
