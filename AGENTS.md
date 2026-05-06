@@ -17,11 +17,12 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 ## Architecture
 
 ### State Management
-- Single Zustand store with immer middleware: `src/store/index.ts` (~574 lines)
+- Zustand store with immer middleware assembled from slice factories: `src/store/index.ts` (~574 lines) imports 16 domain slices from `src/store/slices/`
+- Store infrastructure modules: `types.ts`, `constants.ts`, `helpers.ts`, `selectors.ts`, `visualStore.ts`, `confirmDialog.ts`, `refs.ts`, `importHelpers.ts`, `context.ts`
 - All state, actions, and selectors live in the store
 - App.tsx (~1683 lines) is a thin shell: effects, drag handlers, export callbacks, layout, computer keyboard chromatic input handler, per-synth MIDI channel routing
-- Sequencer render is optimized with pre-computed `Map<padId, Map<step, event>>` selectors
-- Module-level `storeRefs` object exposes mutable refs (not reactive) for drag state, frozen zoom range, etc.
+- Sequencer render is optimized with pre-computed `Map<padId, Map<step, event>>` selectors and a lightweight custom lane virtualizer (`VirtualizedSequencerLanes.tsx`)
+- Module-level `mutableRefs` object (in `refs.ts`) exposes mutable refs (not reactive) for drag state, frozen zoom range, etc.
 - **Transport visual state** (`playheadStep`, `sequencedPadHits`) lives in a lightweight `transportVisualStore` (not immer) — subscribed via `useSyncExternalStore` for performance
 - **Confirm dialogs** use a promise-based `showConfirm()` helper with module-level resolver — no native `window.confirm()` calls
 
@@ -44,6 +45,7 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - **Additive synth engine**: `synthEngine.ts` generates sine-wave voices from 16 harmonics, with filter envelope (ADSR+depth), LFO (sine/ramp-up/ramp-down/square with per-target depth for pitch/filter/gain, free Hz or tempo-synced)
 - **Per-pad filter envelope**: sample pads can have `filterEnvelope` (ADSR+depth) modulating filter cutoff — same model as synth filter envelope. Applied in both live and offline paths.
 - **Audio buffer size**: configurable (128/256/512/768/1024) via settings popover; `setBufferSize()` tears down and rebuilds AudioContext; persisted in localStorage
+- **Shared voice utilities** (`voiceUtils.ts`): `mergeLayerSettings`, `resolveFilterType`, `resolveLayer`, `createFilterChain`, `scheduleAmplitudeEnvelope`, `scheduleFilterEnvelope`, `createPanNode`, `scheduleSynthChokeRelease` — consumed by both `audioEngine.ts` (live) and `audioExport.ts` (offline) to prevent drift
 
 ### Transport
 - `TransportScheduler` with worker-based clock (`transportClock.worker.ts`)
@@ -59,8 +61,18 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 ## Important Files
 
 ### Core
-- `src/store/index.ts` — Zustand store: all state, actions, selectors, `transportVisualStore`, `showConfirm`/`resolveConfirmDialog` (~574 lines)
-- `src/App.tsx` — App shell: effects, drag handlers, export callbacks, layout (~1535 lines)
+- `src/store/index.ts` — Zustand store: state + slice assembly (~574 lines)
+- `src/store/types.ts` — `AppState`, `SequencerHistorySnapshot`, `Toast`, `PerfStatsState`, `SequencerBankGroup`
+- `src/store/constants.ts` — `PATTERN_COLORS`, `PATTERN_COLORS_CYCLE`, `PRESET_KITS`
+- `src/store/helpers.ts` — `normalizeProject`, `createLayer`, `memoize`, `getLaneBoundsForEvent`, `updateGateEventRange`, `getDefaultEffectParams`
+- `src/store/selectors.ts` — All memoized selectors (`selectSelectedPad`, `selectEventsByPadAndStep`, `selectSequencerBankGroups`, etc.)
+- `src/store/visualStore.ts` — `transportVisualStore` pub/sub (no immer)
+- `src/store/confirmDialog.ts` — `showConfirm()` / `resolveConfirmDialog()` promise-based dialog
+- `src/store/refs.ts` — Module-level `mutableRefs` object + `storeRefs` export
+- `src/store/importHelpers.ts` — `importFileAsSample`, `loadPresetKits`
+- `src/store/context.ts` — `StoreContext` interface for slice factories
+- `src/store/slices/` — 16 domain slice factories: `project.ts`, `pad.ts`, `transport.ts`, `sequencer.ts`, `pianoRoll.ts`, `patterns.ts`, `songChain.ts`, `library.ts`, `sampleGroups.ts`, `chopSpreadDrag.ts`, `recording.ts`, `synthPatches.ts`, `midiOut.ts`, `mixer.ts`, `ui.ts`, `audioMonitor.ts`
+- `src/App.tsx` — App shell: effects, drag handlers, export callbacks, layout (~1683 lines)
 - `src/App.css` — All styling (single file, ~2393 lines)
 - `src/types.ts` — Core types: Pad, PadSettings, SampleLayer, SampleAsset, Project, BusId, EffectSlot, MixBus, MasterBus, TrimSettings, MidiOutConfig, PadSource, SynthParams, LfoSettings, FilterEnvelopeSettings, SynthPatch, etc.
 
@@ -77,6 +89,7 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - `PadGrid.tsx` — Pad grid with bank nav (double-click to rename banks), pad drag (move/copy/swap), record button overlay on empty pads, MIDI debug display, autosample group drop with metadata (trim/bus/choke), group drop on bank tabs (assigns starting from pad 1 of target bank), MPC .pgm import on file drop, synth pad display ("~ Synth"), synth patch drop from library, touch event handling (preventDefault to avoid double-trigger on mobile)
 - `TopBar.tsx` — Header with transport, BPM, swing, tap tempo, VU meter, metronome toggle, sequencer record arm/quantize/overdub/count-in buttons, MIDI input cluster, Audio Out device selector, drag-to-adjust BPM/Swing inputs, settings popover (buffer size, metronome volume, wide layout toggle)
 - `Sequencer.tsx` — Compact toolbar, draggable pattern strip (drag to reorder), song chain, sequencer matrix with collapsible bank groups (all 8 banks visible, auto-collapsed if no events in current pattern), inline ColorPicker (8×8 grid popover), performance stats overlay (FPS + tick drift)
+- `VirtualizedSequencerLanes.tsx` — Lightweight custom lane virtualizer: only renders visible bank groups + expanded piano roll lanes, uses cumulative height offsets with paddingTop/paddingBottom
 - `PianoRollLane.tsx` — Memoized inline piano roll for synth pad lanes: 24-row (2 octave) grid, click-to-toggle notes, velocity drag (Shift+drag), octave scroll buttons, note length drag (left/right edges adjust gate), aligned with sequencer step columns via shared CSS grid template
 - `Mixer.tsx` — Mix bus panel: custom drag faders, per-bus/master level meters (canvas), pan knobs, mute/solo, 3 effect slots per channel, sidechain source selector for SC Comp, input monitor strip, double-click bus name to rename
 - `Toasts.tsx` — Toast notification container
@@ -87,8 +100,9 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - `SynthEditor.tsx` — Additive synth editor: canvas-based harmonic bar editor (16 partials), waveform preview (one-cycle additive waveform), LFO section (waveform/rate with per-target depth knobs for pitch/filter/gain, free Hz or tempo-sync), base note selector, "Export Synth WAV" button
 
 ### Library (`src/lib/`)
-- `audioEngine.ts` — Web Audio voice pool, multisample resolution, per-pad filter (LP12/LP24/HP/BP/LPHP with live param updates), choke groups, ADSR/AHR envelope shaping, AnalyserNode, `mergeLayerSettings`, `resolveFilterType`, `updateActiveFilters`, bus routing, effect chains (with sidechain compressor worklet), `buildEffectChain`, `buildEffectNode`, `updateEffectNodeParams`, `updateBusEffectParams`, `updateMasterEffectParams`, `getOutputLatency`, input monitor, `setOutputDevice`, `playSynthPad`, `setBufferSize`, `playPreview`/`stopPreview` (sample preview via AudioContext)
-- `audioExport.ts` — Offline WAV render with swing, layer resolution, per-pad filter, choke groups, ADSR envelope shaping, bus routing + effects, `mergeLayerSettings`
+- `audioEngine.ts` — Web Audio voice pool, multisample resolution, per-pad filter (LP12/LP24/HP/BP/LPHP with live param updates), choke groups, ADSR/AHR envelope shaping, AnalyserNode, bus routing, effect chains (with sidechain compressor worklet), `buildEffectChain`, `buildEffectNode`, `updateEffectNodeParams`, `updateBusEffectParams`, `updateMasterEffectParams`, `getOutputLatency`, input monitor, `setOutputDevice`, `playSynthPad`, `setBufferSize`, `playPreview`/`stopPreview` (sample preview via AudioContext) (~1520 lines)
+- `audioExport.ts` — Offline WAV render with swing, layer resolution, per-pad filter, choke groups, ADSR envelope shaping, bus routing + effects (~513 lines)
+- `voiceUtils.ts` — Shared voice utilities: `mergeLayerSettings`, `resolveFilterType`, `resolveLayer`, `createFilterChain`, `scheduleAmplitudeEnvelope`, `scheduleFilterEnvelope`, `createPanNode`, `scheduleSynthChokeRelease` — consumed by both live and offline paths
 - `wavEncode.ts` — Shared WAV encoding: `encodeWav` (AudioBuffer), `encodeWavFromChannels` (raw Float32)
 - `transportScheduler.ts` — Step scheduler with swing offset
 - `playbackSnapshot.ts` — Snapshot builder (carries swing, pads, sequences — NOT mixer data)
@@ -146,9 +160,10 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - Filter frequency knobs: exponential mapping (`freqScale`) — equal knob travel per octave, auto-formats as Hz/kHz.
 - Synth filter envelope release: for ADSR mode without `forceDuration`, release is deferred to `stopSynthVoice` (not pre-scheduled). `stopSynthVoice` cancels+reschedules filter frequency automation alongside gain release.
 
-**When changing playback logic, update both:**
-1. `src/lib/audioEngine.ts` (live playback)
-2. `src/lib/audioExport.ts` (offline export)
+**When changing playback logic, update:**
+1. `src/lib/voiceUtils.ts` (shared envelope/filter/pan scheduling)
+2. `src/lib/audioEngine.ts` (live playback)
+3. `src/lib/audioExport.ts` (offline export)
 
 **When changing effect chain logic, update all three:**
 1. `buildEffectNode()` in `src/lib/audioEngine.ts` (construction)
