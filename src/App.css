@@ -2639,8 +2639,8 @@ select.tb-led-value {
   font-size: 0.72rem;
 }
 
-/* Portrait: stack vertically, tabs horizontal between content and pads */
-@media (pointer: coarse) and (orientation: portrait) {
+/* Portrait phones only: stack vertically, tabs horizontal between content and pads */
+@media (pointer: coarse) and (max-width: 767px) and (orientation: portrait) {
   .perf-mobile-layout {
     flex-direction: column;
   }

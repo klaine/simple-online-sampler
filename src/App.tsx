@@ -178,10 +178,14 @@ function App() {
   const performanceTab = useStore((s) => s.performanceTab)
   const altLayout = layoutMode === 'wide'
 
-  // --- Mobile detection (pointer: coarse) ---
-  const [isMobile, setIsMobile] = useState(() => matchMedia('(pointer: coarse)').matches)
+  // --- Phone detection (pointer: coarse + phone-sized viewport) ---
+  // iPads also have pointer: coarse, so we exclude them by requiring
+  // at least one dimension to be < 768px (phones are < 768 in one axis
+  // in both orientations; iPads are >= 768 in both axes).
+  const PHONE_MQ = '(pointer: coarse) and (max-width: 767px), (pointer: coarse) and (max-height: 767px)'
+  const [isMobile, setIsMobile] = useState(() => matchMedia(PHONE_MQ).matches)
   useEffect(() => {
-    const mql = matchMedia('(pointer: coarse)')
+    const mql = matchMedia(PHONE_MQ)
     const onChange = () => setIsMobile(mql.matches)
     if ('addEventListener' in mql) mql.addEventListener('change', onChange)
     else (mql as unknown as { addListener: (cb: () => void) => void }).addListener(onChange)
