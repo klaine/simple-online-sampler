@@ -3248,6 +3248,10 @@ select.tb-led-value {
   min-height: 0;
 }
 
+.perf-left .library-list {
+  max-height: none;
+}
+
 .sample-toolbar {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
