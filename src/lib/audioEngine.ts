@@ -1,6 +1,15 @@
-import type { BusId, EffectSlot, FilterType, MixBus, Pad, PadSettings, SampleAsset, SampleLayer } from '../types'
+import type { BusId, EffectSlot, FilterType, MixBus, Pad, PadSettings, SampleAsset } from '../types'
 import { BUS_IDS } from '../types'
 import { createSynthVoice, stopSynthVoice, disposeSynthVoice, type SynthVoiceNodes } from './synthEngine'
+import {
+  mergeLayerSettings,
+  resolveFilterType,
+  resolveLayer,
+  createFilterChain,
+  scheduleAmplitudeEnvelope,
+  scheduleFilterEnvelope,
+  createPanNode,
+} from './voiceUtils'
 
 // Module-level round-robin counters (not in store — non-reactive)
 const rrCounters = new Map<string, number>()
@@ -27,33 +36,6 @@ interface ActiveSynthVoice {
   chokeGroup: number
   disposed: boolean
   release: number
-}
-
-/** Merge a layer's non-null overrides onto pad settings */
-function mergeLayerSettings(settings: PadSettings, layer: SampleLayer | null): PadSettings {
-  if (!layer) return settings
-  return {
-    ...settings,
-    gain: layer.gain ?? settings.gain,
-    semitones: layer.semitones ?? settings.semitones,
-    fineCents: layer.fineCents ?? settings.fineCents,
-    trim: layer.trim ?? settings.trim,
-    envelope: layer.envelope ?? settings.envelope,
-    filterType: layer.filterType ?? settings.filterType,
-    filterFreq: layer.filterFreq ?? settings.filterFreq,
-    filterQ: layer.filterQ ?? settings.filterQ,
-  }
-}
-
-/** Map FilterType to Web Audio BiquadFilterType and whether to chain two nodes (24dB) */
-function resolveFilterType(ft: FilterType): { biquadType: BiquadFilterType; twoStage: boolean } | null {
-  switch (ft) {
-    case 'lp12': return { biquadType: 'lowpass', twoStage: false }
-    case 'lp24': return { biquadType: 'lowpass', twoStage: true }
-    case 'highpass': return { biquadType: 'highpass', twoStage: false }
-    case 'bandpass': return { biquadType: 'bandpass', twoStage: false }
-    default: return null
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -664,12 +646,6 @@ export class AudioEngine {
     if (this.gainPool.length < 16) this.gainPool.push(node)
   }
 
-  private acquireFilter(): BiquadFilterNode {
-    const node = this.filterPool.pop()
-    if (node) return node
-    return this.getContext().createBiquadFilter()
-  }
-
   private releaseFilter(node: BiquadFilterNode): void {
     try { node.disconnect() } catch { /* */ }
     if (this.filterPool.length < 16) this.filterPool.push(node)
@@ -918,7 +894,10 @@ export class AudioEngine {
       return
     }
 
-    const resolved = this.resolveLayer(pad, velocity)
+    const resolved = resolveLayer(pad, Math.max(1, Math.min(127, Math.round(velocity * 127))), {
+      get: (id) => rrCounters.get(id) ?? 0,
+      set: (id, v) => rrCounters.set(id, v),
+    })
     if (!resolved) return
 
     const { sampleId, layer } = resolved
@@ -955,53 +934,20 @@ export class AudioEngine {
     const gainNode = this.acquireGain()
     const linearGain = Math.max(0.001, settings.gain * velocity)
     const startTimeSec = options?.atTimeSec ?? ctx.currentTime
-    const attack = settings.envelope.attack
-    const decay = settings.envelope.decay
-    const sustain = settings.envelope.sustain ?? 0
-    const release = settings.envelope.release
+    const hold = options?.hold ?? false
 
     source.connect(gainNode)
 
     // Per-pad pan
-    const panNode = ctx.createStereoPanner()
-    const panValue = settings.pan ?? 0
-    panNode.pan.value = settings.randomPan ? (Math.random() * 2 - 1) * panValue : panValue
+    const panNode = createPanNode(ctx, settings)
     panNode.connect(busDestination)
 
     // Per-pad filter
-    const filterNodes: BiquadFilterNode[] = []
-    const filterSpec = resolveFilterType(settings.filterType)
-    if (settings.filterType === 'lphp') {
-      // Dual HP+LP in series
-      const hp = this.acquireFilter()
-      hp.type = 'highpass'
-      hp.frequency.value = settings.filterFreq ?? 20
-      hp.Q.value = settings.filterQ ?? 0.7
-      filterNodes.push(hp)
-      const lp = this.acquireFilter()
-      lp.type = 'lowpass'
-      lp.frequency.value = settings.filterFreq2 ?? 20000
-      lp.Q.value = settings.filterQ ?? 0.7
-      filterNodes.push(lp)
-      gainNode.connect(hp)
-      hp.connect(lp)
-      lp.connect(panNode)
-    } else if (filterSpec) {
-      const f1 = this.acquireFilter()
-      f1.type = filterSpec.biquadType
-      f1.frequency.value = settings.filterFreq ?? 1000
-      f1.Q.value = settings.filterQ ?? 1
-      filterNodes.push(f1)
-      if (filterSpec.twoStage) {
-        const f2 = this.acquireFilter()
-        f2.type = filterSpec.biquadType
-        f2.frequency.value = settings.filterFreq ?? 1000
-        f2.Q.value = settings.filterQ ?? 1
-        filterNodes.push(f2)
-      }
-      gainNode.connect(filterNodes[0])
-      for (let i = 1; i < filterNodes.length; i++) filterNodes[i - 1].connect(filterNodes[i])
-      filterNodes[filterNodes.length - 1].connect(panNode)
+    const filterChain = createFilterChain(ctx, settings)
+    const filterNodes = filterChain ? filterChain.nodes : []
+    if (filterChain) {
+      gainNode.connect(filterChain.input)
+      filterChain.output.connect(panNode)
     } else {
       gainNode.connect(panNode)
     }
@@ -1010,16 +956,10 @@ export class AudioEngine {
     const fEnv = settings.filterEnvelope
     const hasFilterEnv = filterNodes.length > 0 && fEnv && fEnv.depth > 0
     let filterBaseFreqHz = 0
-    let filterSustainFreqHz = 0
+    let filterReleaseSec = 0
     if (hasFilterEnv) {
       filterBaseFreqHz = settings.filterFreq ?? 1000
-      const filterPeakFreqHz = Math.min(20000, filterBaseFreqHz * Math.pow(2, fEnv.depth / 12))
-      filterSustainFreqHz = filterBaseFreqHz + (filterPeakFreqHz - filterBaseFreqHz) * fEnv.sustain
-      for (const f of filterNodes) {
-        f.frequency.setValueAtTime(filterBaseFreqHz, startTimeSec)
-        f.frequency.linearRampToValueAtTime(filterPeakFreqHz, startTimeSec + fEnv.attack)
-        f.frequency.linearRampToValueAtTime(filterSustainFreqHz, startTimeSec + fEnv.attack + fEnv.decay)
-      }
+      filterReleaseSec = fEnv.release
     }
 
     const duration = sourceBuffer.duration
@@ -1029,201 +969,49 @@ export class AudioEngine {
 
     const delayMs = Math.max(0, (startTimeSec - ctx.currentTime) * 1000)
 
-    // --- Envelope shaping ---
-    // ADSR mode: attack→peak, decay→sustain level, release→zero (self-terminating)
-    // forceDuration: attack ramp + hold at peak, release fade-out on stop
-    // One-shot: attack ramp only, plays full sample
+    // --- Amplitude envelope ---
+    const envResult = scheduleAmplitudeEnvelope(
+      gainNode.gain,
+      startTimeSec,
+      linearGain,
+      settings,
+      playbackDuration,
+      options?.forceDuration,
+      hold,
+    )
 
-    const hold = options?.hold ?? false
+    // --- Filter envelope ---
+    scheduleFilterEnvelope(
+      filterNodes,
+      startTimeSec,
+      settings,
+      playbackDuration,
+      options?.forceDuration,
+      hold,
+    )
 
-    if (settings.mode === 'adsr') {
-      // ADSR envelope: attack→peak, decay→sustain level
-      const sustainGain = linearGain * sustain
+    source.start(startTimeSec, startOffset, envResult.sourceStopSec)
 
-      if (hold && !options?.forceDuration) {
-        // Live hold: schedule attack+decay, hold at sustain until releasePad
-        gainNode.gain.setValueAtTime(0, startTimeSec)
-        const actualAttack = Math.min(attack, playbackDuration)
-        if (actualAttack > 0) {
-          gainNode.gain.linearRampToValueAtTime(linearGain, startTimeSec + actualAttack)
-        } else {
-          gainNode.gain.linearRampToValueAtTime(linearGain, startTimeSec + 0.0015)
-        }
-        const actualDecay = Math.min(decay, playbackDuration - actualAttack)
-        if (actualDecay > 0) {
-          gainNode.gain.linearRampToValueAtTime(sustainGain, startTimeSec + actualAttack + actualDecay)
-        }
-        // Hold at sustain — releasePad will schedule the release ramp
-
-        // Filter envelope: schedule attack+decay, hold at sustain freq — release deferred to releasePad
-        if (hasFilterEnv) {
-          // Filter A+D already scheduled above; sustain freq will hold until releasePad
-        }
-
-        source.start(startTimeSec, startOffset, playbackDuration)
-        const voice: ActiveVoice = {
-          source, gain: gainNode, filters: filterNodes, startedAt: Date.now(),
-          hold: true, padId: pad.id, chokeGroup, disposed: false,
-          release, filterBaseFreq: hasFilterEnv ? filterBaseFreqHz : undefined,
-          filterRelease: hasFilterEnv ? fEnv!.release : undefined,
-        }
-        this.activeVoices.push(voice)
-        return
-      }
-
-      // Non-hold ADSR (sequencer without forceDuration): self-terminating envelope
-      const adsrDuration = Math.max(0.05, attack + decay + release)
-      const noteDuration = Math.min(playbackDuration, adsrDuration)
-
-      gainNode.gain.setValueAtTime(0, startTimeSec)
-      const actualAttack = Math.min(attack, noteDuration)
-      if (actualAttack > 0) {
-        gainNode.gain.linearRampToValueAtTime(linearGain, startTimeSec + actualAttack)
-      } else {
-        gainNode.gain.linearRampToValueAtTime(linearGain, startTimeSec + 0.0015)
-      }
-      const remainAfterAttack = noteDuration - actualAttack
-      const actualDecay = Math.min(decay, remainAfterAttack)
-      if (actualDecay > 0) {
-        gainNode.gain.linearRampToValueAtTime(sustainGain, startTimeSec + actualAttack + actualDecay)
-      }
-      const remainAfterDecay = remainAfterAttack - actualDecay
-      const actualRelease = Math.min(release, remainAfterDecay)
-      if (actualRelease > 0) {
-        gainNode.gain.setValueAtTime(sustainGain, startTimeSec + actualAttack + actualDecay)
-        gainNode.gain.linearRampToValueAtTime(0, startTimeSec + actualAttack + actualDecay + actualRelease)
-      }
-
-      // Filter envelope release for ADSR mode
-      if (hasFilterEnv) {
-        const noteEnd = startTimeSec + attack + decay + release
-        for (const f of filterNodes) {
-          f.frequency.setValueAtTime(filterSustainFreqHz, noteEnd)
-          f.frequency.linearRampToValueAtTime(filterBaseFreqHz, noteEnd + fEnv!.release)
-        }
-      }
-
-      source.start(startTimeSec, startOffset, noteDuration)
-      const voice: ActiveVoice = { source, gain: gainNode, filters: filterNodes, startedAt: Date.now(), hold: false, padId: pad.id, chokeGroup, disposed: false }
-      this.activeVoices.push(voice)
-      window.setTimeout(() => {
-        this.disposeVoice(voice)
-      }, Math.ceil(delayMs + noteDuration * 1000) + 120)
-      return
+    const voice: ActiveVoice = {
+      source,
+      gain: gainNode,
+      filters: filterNodes,
+      startedAt: Date.now(),
+      hold: (settings.mode === 'adsr' || settings.mode === 'ahr') ? hold : false,
+      padId: pad.id,
+      chokeGroup,
+      disposed: false,
+      release: settings.envelope.release,
+      filterBaseFreq: hasFilterEnv ? filterBaseFreqHz : undefined,
+      filterRelease: hasFilterEnv ? filterReleaseSec : undefined,
     }
-
-    if (settings.mode === 'ahr') {
-      // AHR envelope: attack→peak, hold at peak, release→zero (self-terminating, ignores gate)
-      const holdTime = settings.envelope.hold ?? 0
-      const ahrDuration = Math.max(0.05, attack + holdTime + release)
-      const noteDuration = Math.min(playbackDuration, ahrDuration)
-
-      if (hold && !options?.forceDuration) {
-        // Live hold: schedule attack, hold at peak until releasePad
-        gainNode.gain.setValueAtTime(0, startTimeSec)
-        const actualAttack = Math.min(attack, playbackDuration)
-        if (actualAttack > 0) {
-          gainNode.gain.linearRampToValueAtTime(linearGain, startTimeSec + actualAttack)
-        } else {
-          gainNode.gain.linearRampToValueAtTime(linearGain, startTimeSec + 0.0015)
-        }
-        // Hold at peak — releasePad will schedule the release ramp
-
-        source.start(startTimeSec, startOffset, playbackDuration)
-        const voice: ActiveVoice = {
-          source, gain: gainNode, filters: filterNodes, startedAt: Date.now(),
-          hold: true, padId: pad.id, chokeGroup, disposed: false,
-          release, filterBaseFreq: hasFilterEnv ? filterBaseFreqHz : undefined,
-          filterRelease: hasFilterEnv ? fEnv!.release : undefined,
-        }
-        this.activeVoices.push(voice)
-        return
-      }
-
-      // Self-terminating AHR (sequencer or non-hold trigger)
-      gainNode.gain.setValueAtTime(0, startTimeSec)
-      const actualAttack = Math.min(attack, noteDuration)
-      if (actualAttack > 0) {
-        gainNode.gain.linearRampToValueAtTime(linearGain, startTimeSec + actualAttack)
-      } else {
-        gainNode.gain.linearRampToValueAtTime(linearGain, startTimeSec + 0.0015)
-      }
-      const holdEnd = startTimeSec + actualAttack + holdTime
-      if (holdTime > 0) {
-        gainNode.gain.setValueAtTime(linearGain, holdEnd)
-      }
-      const actualRelease = Math.min(release, noteDuration - actualAttack - holdTime)
-      if (actualRelease > 0) {
-        gainNode.gain.linearRampToValueAtTime(0, holdEnd + actualRelease)
-      }
-
-      // Filter envelope release for AHR
-      if (hasFilterEnv) {
-        const noteEnd = holdEnd
-        for (const f of filterNodes) {
-          f.frequency.setValueAtTime(filterSustainFreqHz, noteEnd)
-          f.frequency.linearRampToValueAtTime(filterBaseFreqHz, noteEnd + fEnv!.release)
-        }
-      }
-
-      source.start(startTimeSec, startOffset, noteDuration)
-      const voice: ActiveVoice = { source, gain: gainNode, filters: filterNodes, startedAt: Date.now(), hold: false, padId: pad.id, chokeGroup, disposed: false }
-      this.activeVoices.push(voice)
-      window.setTimeout(() => {
-        this.disposeVoice(voice)
-      }, Math.ceil(delayMs + noteDuration * 1000) + 120)
-      return
-    }
-
-    if (options?.forceDuration) {
-      // Sequencer gate: attack ramp, hold, release fade-out
-      const noteDuration = Math.min(playbackDuration, options.forceDuration)
-      const actualAttack = Math.min(attack, noteDuration)
-      const releaseTime = Math.min(release, playbackDuration - noteDuration + 0.5)
-      const totalDuration = noteDuration + releaseTime
-
-      gainNode.gain.setValueAtTime(0, startTimeSec)
-      gainNode.gain.linearRampToValueAtTime(linearGain, startTimeSec + Math.max(actualAttack, 0.0015))
-      // Hold at peak until note-off, then release
-      if (releaseTime > 0) {
-        gainNode.gain.setValueAtTime(linearGain, startTimeSec + noteDuration)
-        gainNode.gain.linearRampToValueAtTime(0, startTimeSec + totalDuration)
-      }
-
-      // Filter envelope release for forceDuration
-      if (hasFilterEnv) {
-        for (const f of filterNodes) {
-          f.frequency.setValueAtTime(filterSustainFreqHz, startTimeSec + noteDuration)
-          f.frequency.linearRampToValueAtTime(filterBaseFreqHz, startTimeSec + noteDuration + fEnv!.release)
-        }
-      }
-
-      source.start(startTimeSec, startOffset, totalDuration)
-      const voice: ActiveVoice = { source, gain: gainNode, filters: filterNodes, startedAt: Date.now(), hold: false, padId: pad.id, chokeGroup, disposed: false }
-      this.activeVoices.push(voice)
-      window.setTimeout(() => {
-        this.disposeVoice(voice)
-      }, Math.ceil(delayMs + totalDuration * 1000) + 120)
-      return
-    }
-
-    // One-shot mode: attack ramp, play full sample
-    gainNode.gain.setValueAtTime(0, startTimeSec)
-    gainNode.gain.linearRampToValueAtTime(linearGain, startTimeSec + Math.max(attack, 0.0015))
-    // Filter envelope release for trigger: at end of attack+decay
-    if (hasFilterEnv) {
-      const noteEnd = startTimeSec + fEnv!.attack + fEnv!.decay
-      for (const f of filterNodes) {
-        f.frequency.setValueAtTime(filterSustainFreqHz, noteEnd)
-        f.frequency.linearRampToValueAtTime(filterBaseFreqHz, noteEnd + fEnv!.release)
-      }
-    }
-    source.start(startTimeSec, startOffset, playbackDuration)
-    const voice: ActiveVoice = { source, gain: gainNode, filters: filterNodes, startedAt: Date.now(), hold: false, padId: pad.id, chokeGroup, disposed: false }
     this.activeVoices.push(voice)
-    window.setTimeout(() => {
-      this.disposeVoice(voice)
-    }, Math.ceil(delayMs + playbackDuration * 1000) + 120)
+
+    if (!voice.hold) {
+      window.setTimeout(() => {
+        this.disposeVoice(voice)
+      }, Math.ceil(delayMs + envResult.sourceStopSec * 1000) + 120)
+    }
   }
 
   /** Play a synth pad using additive synthesis */
@@ -1346,51 +1134,20 @@ export class AudioEngine {
     const linearGain = Math.max(0.001, settings.gain * velocity)
     const baseStartTime = options?.atTimeSec ?? ctx.currentTime
     const startTimeSec = baseStartTime + stackDelaySec
-    const attack = settings.envelope.attack
-    const decay = settings.envelope.decay
-    const sustain = settings.envelope.sustain ?? 0
-    const release = settings.envelope.release
+    const holdS = options?.hold ?? false
 
     source.connect(gainNode)
 
     // Per-pad pan (stacked voice)
-    const panNodeS = ctx.createStereoPanner()
-    const panValueS = settings.pan ?? 0
-    panNodeS.pan.value = settings.randomPan ? (Math.random() * 2 - 1) * panValueS : panValueS
+    const panNodeS = createPanNode(ctx, settings)
     panNodeS.connect(busDestination)
 
-    const filterNodes: BiquadFilterNode[] = []
-    const resolved2 = resolveFilterType(settings.filterType)
-    if (settings.filterType === 'lphp') {
-      const hp = this.acquireFilter()
-      hp.type = 'highpass'
-      hp.frequency.value = settings.filterFreq ?? 20
-      hp.Q.value = settings.filterQ ?? 0.7
-      filterNodes.push(hp)
-      const lp = this.acquireFilter()
-      lp.type = 'lowpass'
-      lp.frequency.value = settings.filterFreq2 ?? 20000
-      lp.Q.value = settings.filterQ ?? 0.7
-      filterNodes.push(lp)
-      gainNode.connect(hp)
-      hp.connect(lp)
-      lp.connect(panNodeS)
-    } else if (resolved2) {
-      const f1 = this.acquireFilter()
-      f1.type = resolved2.biquadType
-      f1.frequency.value = settings.filterFreq ?? 1000
-      f1.Q.value = settings.filterQ ?? 1
-      filterNodes.push(f1)
-      if (resolved2.twoStage) {
-        const f2 = this.acquireFilter()
-        f2.type = resolved2.biquadType
-        f2.frequency.value = settings.filterFreq ?? 1000
-        f2.Q.value = settings.filterQ ?? 1
-        filterNodes.push(f2)
-      }
-      gainNode.connect(filterNodes[0])
-      for (let i = 1; i < filterNodes.length; i++) filterNodes[i - 1].connect(filterNodes[i])
-      filterNodes[filterNodes.length - 1].connect(panNodeS)
+    // Per-pad filter
+    const filterChainS = createFilterChain(ctx, settings)
+    const filterNodes = filterChainS ? filterChainS.nodes : []
+    if (filterChainS) {
+      gainNode.connect(filterChainS.input)
+      filterChainS.output.connect(panNodeS)
     } else {
       gainNode.connect(panNodeS)
     }
@@ -1399,16 +1156,10 @@ export class AudioEngine {
     const fEnvS = settings.filterEnvelope
     const hasFilterEnvS = filterNodes.length > 0 && fEnvS && fEnvS.depth > 0
     let filterBaseS = 0
-    let filterSustainS = 0
+    let filterReleaseS = 0
     if (hasFilterEnvS) {
       filterBaseS = settings.filterFreq ?? 1000
-      const peakS = Math.min(20000, filterBaseS * Math.pow(2, fEnvS.depth / 12))
-      filterSustainS = filterBaseS + (peakS - filterBaseS) * fEnvS.sustain
-      for (const f of filterNodes) {
-        f.frequency.setValueAtTime(filterBaseS, startTimeSec)
-        f.frequency.linearRampToValueAtTime(peakS, startTimeSec + fEnvS.attack)
-        f.frequency.linearRampToValueAtTime(filterSustainS, startTimeSec + fEnvS.attack + fEnvS.decay)
-      }
+      filterReleaseS = fEnvS.release
     }
 
     const duration = sourceBuffer.duration
@@ -1417,188 +1168,46 @@ export class AudioEngine {
     const playbackDuration = Math.max(0.01, endOffset - startOffset)
     const delayMs = Math.max(0, (startTimeSec - ctx.currentTime) * 1000)
 
-    const holdS = options?.hold ?? false
+    // --- Amplitude envelope ---
+    const envResultS = scheduleAmplitudeEnvelope(
+      gainNode.gain,
+      startTimeSec,
+      linearGain,
+      settings,
+      playbackDuration,
+      options?.forceDuration,
+      holdS,
+    )
 
-    if (settings.mode === 'adsr') {
-      const sustainGain = linearGain * sustain
+    // --- Filter envelope ---
+    scheduleFilterEnvelope(
+      filterNodes,
+      startTimeSec,
+      settings,
+      playbackDuration,
+      options?.forceDuration,
+      holdS,
+    )
 
-      if (holdS && !options?.forceDuration) {
-        // Live hold: schedule attack+decay, hold at sustain until releasePad
-        gainNode.gain.setValueAtTime(0, startTimeSec)
-        const actualAttack = Math.min(attack, playbackDuration)
-        if (actualAttack > 0) {
-          gainNode.gain.linearRampToValueAtTime(linearGain, startTimeSec + actualAttack)
-        } else {
-          gainNode.gain.linearRampToValueAtTime(linearGain, startTimeSec + 0.0015)
-        }
-        const actualDecay = Math.min(decay, playbackDuration - actualAttack)
-        if (actualDecay > 0) {
-          gainNode.gain.linearRampToValueAtTime(sustainGain, startTimeSec + actualAttack + actualDecay)
-        }
+    source.start(startTimeSec, startOffset, envResultS.sourceStopSec)
 
-        source.start(startTimeSec, startOffset, playbackDuration)
-        const voice: ActiveVoice = {
-          source, gain: gainNode, filters: filterNodes, startedAt: Date.now(),
-          hold: true, padId: pad.id, chokeGroup, disposed: false,
-          release, filterBaseFreq: hasFilterEnvS ? filterBaseS : undefined,
-          filterRelease: hasFilterEnvS ? fEnvS!.release : undefined,
-        }
-        this.activeVoices.push(voice)
-        return
-      }
-
-      // Non-hold ADSR: self-terminating
-      const adsrDuration = Math.max(0.05, attack + decay + release)
-      const noteDuration = Math.min(playbackDuration, adsrDuration)
-
-      gainNode.gain.setValueAtTime(0, startTimeSec)
-      const actualAttack = Math.min(attack, noteDuration)
-      if (actualAttack > 0) {
-        gainNode.gain.linearRampToValueAtTime(linearGain, startTimeSec + actualAttack)
-      } else {
-        gainNode.gain.linearRampToValueAtTime(linearGain, startTimeSec + 0.0015)
-      }
-      const remainAfterAttack = noteDuration - actualAttack
-      const actualDecay = Math.min(decay, remainAfterAttack)
-      if (actualDecay > 0) {
-        gainNode.gain.linearRampToValueAtTime(sustainGain, startTimeSec + actualAttack + actualDecay)
-      }
-      const remainAfterDecay = remainAfterAttack - actualDecay
-      const actualRelease = Math.min(release, remainAfterDecay)
-      if (actualRelease > 0) {
-        gainNode.gain.setValueAtTime(sustainGain, startTimeSec + actualAttack + actualDecay)
-        gainNode.gain.linearRampToValueAtTime(0, startTimeSec + actualAttack + actualDecay + actualRelease)
-      }
-
-      source.start(startTimeSec, startOffset, noteDuration)
-      // Filter envelope release for ADSR (stacked)
-      if (hasFilterEnvS) {
-        const noteEnd = startTimeSec + attack + decay + release
-        for (const f of filterNodes) { f.frequency.setValueAtTime(filterSustainS, noteEnd); f.frequency.linearRampToValueAtTime(filterBaseS, noteEnd + fEnvS!.release) }
-      }
-      const voice: ActiveVoice = { source, gain: gainNode, filters: filterNodes, startedAt: Date.now(), hold: false, padId: pad.id, chokeGroup, disposed: false }
-      this.activeVoices.push(voice)
-      window.setTimeout(() => { this.disposeVoice(voice) }, Math.ceil(delayMs + noteDuration * 1000) + 120)
-      return
+    const voice: ActiveVoice = {
+      source,
+      gain: gainNode,
+      filters: filterNodes,
+      startedAt: Date.now(),
+      hold: (settings.mode === 'adsr' || settings.mode === 'ahr') ? holdS : false,
+      padId: pad.id,
+      chokeGroup,
+      disposed: false,
+      release: settings.envelope.release,
+      filterBaseFreq: hasFilterEnvS ? filterBaseS : undefined,
+      filterRelease: hasFilterEnvS ? filterReleaseS : undefined,
     }
-
-    if (settings.mode === 'ahr') {
-      // AHR envelope for stacked voice
-      const holdTime = settings.envelope.hold ?? 0
-      const ahrDuration = Math.max(0.05, attack + holdTime + release)
-      const noteDuration = Math.min(playbackDuration, ahrDuration)
-
-      if (holdS && !options?.forceDuration) {
-        // Live hold: attack, hold at peak until releasePad
-        gainNode.gain.setValueAtTime(0, startTimeSec)
-        const actualAttack = Math.min(attack, playbackDuration)
-        if (actualAttack > 0) {
-          gainNode.gain.linearRampToValueAtTime(linearGain, startTimeSec + actualAttack)
-        } else {
-          gainNode.gain.linearRampToValueAtTime(linearGain, startTimeSec + 0.0015)
-        }
-        source.start(startTimeSec, startOffset, playbackDuration)
-        const voice: ActiveVoice = {
-          source, gain: gainNode, filters: filterNodes, startedAt: Date.now(),
-          hold: true, padId: pad.id, chokeGroup, disposed: false,
-          release, filterBaseFreq: hasFilterEnvS ? filterBaseS : undefined,
-          filterRelease: hasFilterEnvS ? fEnvS!.release : undefined,
-        }
-        this.activeVoices.push(voice)
-        return
-      }
-
-      // Self-terminating AHR (stacked)
-      gainNode.gain.setValueAtTime(0, startTimeSec)
-      const actualAttack = Math.min(attack, noteDuration)
-      if (actualAttack > 0) {
-        gainNode.gain.linearRampToValueAtTime(linearGain, startTimeSec + actualAttack)
-      } else {
-        gainNode.gain.linearRampToValueAtTime(linearGain, startTimeSec + 0.0015)
-      }
-      const holdEnd = startTimeSec + actualAttack + holdTime
-      if (holdTime > 0) {
-        gainNode.gain.setValueAtTime(linearGain, holdEnd)
-      }
-      const actualRelease = Math.min(release, noteDuration - actualAttack - holdTime)
-      if (actualRelease > 0) {
-        gainNode.gain.linearRampToValueAtTime(0, holdEnd + actualRelease)
-      }
-      if (hasFilterEnvS) {
-        for (const f of filterNodes) { f.frequency.setValueAtTime(filterSustainS, holdEnd); f.frequency.linearRampToValueAtTime(filterBaseS, holdEnd + fEnvS!.release) }
-      }
-      source.start(startTimeSec, startOffset, noteDuration)
-      const voice: ActiveVoice = { source, gain: gainNode, filters: filterNodes, startedAt: Date.now(), hold: false, padId: pad.id, chokeGroup, disposed: false }
-      this.activeVoices.push(voice)
-      window.setTimeout(() => { this.disposeVoice(voice) }, Math.ceil(delayMs + noteDuration * 1000) + 120)
-      return
-    }
-
-    if (options?.forceDuration) {
-      const noteDuration = Math.min(playbackDuration, options.forceDuration)
-      const actualAttack = Math.min(attack, noteDuration)
-      const releaseTime = Math.min(release, playbackDuration - noteDuration + 0.5)
-      const totalDuration = noteDuration + releaseTime
-      gainNode.gain.setValueAtTime(0, startTimeSec)
-      gainNode.gain.linearRampToValueAtTime(linearGain, startTimeSec + Math.max(actualAttack, 0.0015))
-      if (releaseTime > 0) {
-        gainNode.gain.setValueAtTime(linearGain, startTimeSec + noteDuration)
-        gainNode.gain.linearRampToValueAtTime(0, startTimeSec + totalDuration)
-      }
-      // Filter envelope release for forceDuration (stacked)
-      if (hasFilterEnvS) {
-        for (const f of filterNodes) { f.frequency.setValueAtTime(filterSustainS, startTimeSec + noteDuration); f.frequency.linearRampToValueAtTime(filterBaseS, startTimeSec + noteDuration + fEnvS!.release) }
-      }
-      source.start(startTimeSec, startOffset, totalDuration)
-      const voice: ActiveVoice = { source, gain: gainNode, filters: filterNodes, startedAt: Date.now(), hold: false, padId: pad.id, chokeGroup, disposed: false }
-      this.activeVoices.push(voice)
-      window.setTimeout(() => { this.disposeVoice(voice) }, Math.ceil(delayMs + totalDuration * 1000) + 120)
-      return
-    }
-
-    // One-shot mode
-    gainNode.gain.setValueAtTime(0, startTimeSec)
-    gainNode.gain.linearRampToValueAtTime(linearGain, startTimeSec + Math.max(attack, 0.0015))
-    // Filter envelope release for trigger (stacked)
-    if (hasFilterEnvS) {
-      const fEnd = startTimeSec + fEnvS!.attack + fEnvS!.decay
-      for (const f of filterNodes) { f.frequency.setValueAtTime(filterSustainS, fEnd); f.frequency.linearRampToValueAtTime(filterBaseS, fEnd + fEnvS!.release) }
-    }
-    source.start(startTimeSec, startOffset, playbackDuration)
-    const voice: ActiveVoice = { source, gain: gainNode, filters: filterNodes, startedAt: Date.now(), hold: false, padId: pad.id, chokeGroup, disposed: false }
     this.activeVoices.push(voice)
-    window.setTimeout(() => { this.disposeVoice(voice) }, Math.ceil(delayMs + playbackDuration * 1000) + 120)
-  }
 
-  private resolveLayer(pad: Pad, velocity: number): { sampleId: string; layer: SampleLayer | null } | null {
-    const { layers, multiMode, sampleId } = pad.settings
-
-    // No layers configured — fall back to single sampleId
-    if (!layers || layers.length === 0 || multiMode === 'single') {
-      return sampleId ? { sampleId, layer: null } : null
-    }
-
-    const vel127 = Math.max(1, Math.min(127, Math.round(velocity * 127)))
-
-    switch (multiMode) {
-      case 'round-robin': {
-        const idx = rrCounters.get(pad.id) ?? 0
-        rrCounters.set(pad.id, (idx + 1) % layers.length)
-        const layer = layers[idx % layers.length]
-        return { sampleId: layer.sampleId, layer }
-      }
-      case 'random': {
-        const idx = Math.floor(Math.random() * layers.length)
-        const layer = layers[idx]
-        return { sampleId: layer.sampleId, layer }
-      }
-      case 'velocity': {
-        const layer = layers.find((l) => vel127 >= l.velocityLow && vel127 <= l.velocityHigh)
-          ?? layers[layers.length - 1]
-        return { sampleId: layer.sampleId, layer }
-      }
-      default:
-        return sampleId ? { sampleId, layer: null } : null
+    if (!voice.hold) {
+      window.setTimeout(() => { this.disposeVoice(voice) }, Math.ceil(delayMs + envResultS.sourceStopSec * 1000) + 120)
     }
   }
 

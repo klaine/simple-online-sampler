@@ -7,7 +7,8 @@
  * Used by audioEngine.playPad when pad.settings.source === 'synth'.
  */
 
-import type { SynthParams, PadSettings, FilterType } from '../types'
+import type { SynthParams, PadSettings } from '../types'
+import { resolveFilterType } from './voiceUtils'
 
 export interface SynthVoiceNodes {
   oscillators: OscillatorNode[]
@@ -20,17 +21,6 @@ export interface SynthVoiceNodes {
   filterBaseFreq?: number
   /** Filter envelope release time in seconds. Set when filter envelope is active. */
   filterRelease?: number
-}
-
-/** Map FilterType to Web Audio BiquadFilterType and whether to chain two nodes (24dB) */
-function resolveFilterType(ft: FilterType): { biquadType: BiquadFilterType; twoStage: boolean } | null {
-  switch (ft) {
-    case 'lp12': return { biquadType: 'lowpass', twoStage: false }
-    case 'lp24': return { biquadType: 'lowpass', twoStage: true }
-    case 'highpass': return { biquadType: 'highpass', twoStage: false }
-    case 'bandpass': return { biquadType: 'bandpass', twoStage: false }
-    default: return null
-  }
 }
 
 /**
