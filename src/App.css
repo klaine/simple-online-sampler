@@ -2522,6 +2522,154 @@ select.tb-led-value {
   gap: 0.2rem;
 }
 
+/* --- Mobile performance layout --- */
+.perf-mobile-layout {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  flex-direction: row;
+}
+
+.perf-mobile-content {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.perf-mobile-content > .sidebar,
+.perf-mobile-content > .pad-editor-panel,
+.perf-mobile-content > .sequencer,
+.perf-mobile-content > .mixer-panel,
+.perf-mobile-content > .perf-settings-panel {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.perf-mobile-content > .sequencer {
+  display: flex;
+  flex-direction: column;
+  overflow-y: hidden;
+}
+
+.perf-mobile-content > .sequencer > .sequencer-matrix-wrap {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  width: 100%;
+}
+
+.perf-mobile-tabs {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: 0;
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.perf-mobile-tab {
+  flex: 1;
+  padding: 0.35rem 0.15rem;
+  font-size: 0.6rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border: none;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+  white-space: nowrap;
+  min-width: 0;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+}
+
+.perf-mobile-tab:last-child {
+  border-bottom: none;
+}
+
+.perf-mobile-tab:hover {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.perf-mobile-tab.active {
+  background: var(--surface-raised);
+  color: var(--accent);
+  box-shadow: inset -2px 0 0 var(--accent);
+}
+
+.perf-mobile-pads {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.perf-mobile-pads > .pad-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.perf-mobile-pads > .pad-panel > .grid {
+  flex: 1;
+  min-height: 0;
+  grid-template-rows: repeat(4, 1fr);
+  overflow: hidden;
+  gap: 0.2rem;
+}
+
+.perf-mobile-pads > .pad-panel > .grid > .pad {
+  min-height: 0;
+  padding: 0.3rem;
+  font-size: 0.72rem;
+}
+
+/* Portrait: stack vertically, tabs horizontal between content and pads */
+@media (pointer: coarse) and (orientation: portrait) {
+  .perf-mobile-layout {
+    flex-direction: column;
+  }
+
+  .perf-mobile-tabs {
+    flex-direction: row;
+    border-left: none;
+    border-right: none;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .perf-mobile-tab {
+    writing-mode: horizontal-tb;
+    text-orientation: mixed;
+    border-bottom: none;
+    border-right: 1px solid var(--border-subtle);
+    padding: 0.45rem 0.1rem;
+  }
+
+  .perf-mobile-tab:last-child {
+    border-right: none;
+  }
+
+  .perf-mobile-tab.active {
+    box-shadow: inset 0 -2px 0 var(--accent);
+  }
+}
+
 .perf-settings-panel {
   padding: 0.75rem;
   background: var(--surface);

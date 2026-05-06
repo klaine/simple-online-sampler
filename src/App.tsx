@@ -178,6 +178,19 @@ function App() {
   const performanceTab = useStore((s) => s.performanceTab)
   const altLayout = layoutMode === 'wide'
 
+  // --- Mobile detection (pointer: coarse) ---
+  const [isMobile, setIsMobile] = useState(() => matchMedia('(pointer: coarse)').matches)
+  useEffect(() => {
+    const mql = matchMedia('(pointer: coarse)')
+    const onChange = () => setIsMobile(mql.matches)
+    if ('addEventListener' in mql) mql.addEventListener('change', onChange)
+    else (mql as unknown as { addListener: (cb: () => void) => void }).addListener(onChange)
+    return () => {
+      if ('removeEventListener' in mql) mql.removeEventListener('change', onChange)
+      else (mql as unknown as { removeListener: (cb: () => void) => void }).removeListener(onChange)
+    }
+  }, [])
+
   const {
     leftWidth, rightWidth, leftCollapsed, rightCollapsed,
     toggleLeft, toggleRight, leftDividerProps, rightDividerProps,
@@ -1440,6 +1453,131 @@ function App() {
     void useStore.getState().saveProject(normalized)
   }, [project, importFile, importMode])
 
+  // --- Shared performance tab UI ---
+  const desktopTabs = (
+    <div className="perf-tabs">
+      {([
+        ['library', 'Samples'],
+        ['padEditor', 'Pad Edit'],
+        ['sequencer', 'Sequencer'],
+        ['mixer', 'Mixer'],
+        ['projects', 'Projects'],
+        ['settings', 'Settings'],
+      ] as const).map(([id, label]) => (
+        <button
+          key={id}
+          type="button"
+          className={`perf-tab${performanceTab === id ? ' active' : ''}`}
+          onClick={() => {
+            useStore.setState({ performanceTab: id })
+            localStorage.setItem('performanceTab', id)
+          }}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  )
+
+  const mobileTabs = (
+    <div className="perf-mobile-tabs">
+      {([
+        ['library', 'Lib'],
+        ['padEditor', 'Pad'],
+        ['sequencer', 'Seq'],
+        ['mixer', 'Mix'],
+        ['projects', 'Prj'],
+        ['settings', 'Set'],
+      ] as const).map(([id, label]) => (
+        <button
+          key={id}
+          type="button"
+          className={`perf-mobile-tab${performanceTab === id ? ' active' : ''}`}
+          onClick={() => {
+            useStore.setState({ performanceTab: id })
+            localStorage.setItem('performanceTab', id)
+          }}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  )
+
+  const activeTabPanel = (
+    <>
+      {performanceTab === 'library' && <SampleLibrary />}
+      {performanceTab === 'padEditor' && (
+        <PadEditor
+          waveformRef={waveformRef}
+          waveformCanvasRef={waveformCanvasRef}
+          dragTargetRef={dragTargetRef}
+        />
+      )}
+      {performanceTab === 'sequencer' && <Sequencer />}
+      {performanceTab === 'mixer' && <Mixer />}
+      {performanceTab === 'projects' && <ProjectsPanel />}
+      {performanceTab === 'settings' && <PerfSettingsPanel />}
+    </>
+  )
+
+  const perfDropHandlers = {
+    onDragOver: (e: React.DragEvent) => {
+      if (e.dataTransfer.types.includes('Files')) {
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'copy'
+      }
+    },
+    onDrop: (e: React.DragEvent) => {
+      // Only intercept when NOT on library tab (library has its own handler)
+      if (performanceTab === 'library') return
+      const items = Array.from(e.dataTransfer.items)
+      const hasFiles = items.some((it) => it.kind === 'file')
+      if (!hasFiles) return
+      e.preventDefault()
+      e.stopPropagation()
+      // Switch to library tab
+      useStore.setState({ performanceTab: 'library' })
+      localStorage.setItem('performanceTab', 'library')
+      // Read entries (supports folders via webkitGetAsEntry)
+      const allFiles: File[] = []
+      const readEntry = (entry: FileSystemEntry): Promise<void> => {
+        if (entry.isFile) {
+          return new Promise((resolve) => {
+            (entry as FileSystemFileEntry).file((f) => { allFiles.push(f); resolve() }, () => resolve())
+          })
+        } else if (entry.isDirectory) {
+          return new Promise((resolve) => {
+            const reader = (entry as FileSystemDirectoryEntry).createReader()
+            const readBatch = () => {
+              reader.readEntries(async (entries) => {
+                if (entries.length === 0) { resolve(); return }
+                for (const ent of entries) await readEntry(ent)
+                readBatch()
+              }, () => resolve())
+            }
+            readBatch()
+          })
+        }
+        return Promise.resolve()
+      }
+      void (async () => {
+        for (const item of items) {
+          const entry = (item as unknown as { webkitGetAsEntry?: () => FileSystemEntry | null }).webkitGetAsEntry?.()
+          if (entry) {
+            await readEntry(entry)
+          } else if (item.kind === 'file') {
+            const f = item.getAsFile()
+            if (f) allFiles.push(f)
+          }
+        }
+        if (allFiles.length > 0) {
+          void useStore.getState().addSamplesToLibrary(allFiles)
+        }
+      })()
+    },
+  }
+
   // --- Render ---
 
   if (!project || !activeSequence) {
@@ -1494,107 +1632,30 @@ function App() {
       )}
 
       {layoutMode === 'performance' ? (
-        <section className="perf-layout" ref={perfDivContainerRef}>
-          <div
-            className="perf-left"
-            style={{ flex: perfSplitRatio }}
-            onDragOver={(e) => {
-              if (e.dataTransfer.types.includes('Files')) {
-                e.preventDefault()
-                e.dataTransfer.dropEffect = 'copy'
-              }
-            }}
-            onDrop={(e) => {
-              // Only intercept when NOT on library tab (library has its own handler)
-              if (performanceTab === 'library') return
-              const items = Array.from(e.dataTransfer.items)
-              const hasFiles = items.some((it) => it.kind === 'file')
-              if (!hasFiles) return
-              e.preventDefault()
-              e.stopPropagation()
-              // Switch to library tab
-              useStore.setState({ performanceTab: 'library' })
-              localStorage.setItem('performanceTab', 'library')
-              // Read entries (supports folders via webkitGetAsEntry)
-              const allFiles: File[] = []
-              const readEntry = (entry: FileSystemEntry): Promise<void> => {
-                if (entry.isFile) {
-                  return new Promise((resolve) => {
-                    (entry as FileSystemFileEntry).file((f) => { allFiles.push(f); resolve() }, () => resolve())
-                  })
-                } else if (entry.isDirectory) {
-                  return new Promise((resolve) => {
-                    const reader = (entry as FileSystemDirectoryEntry).createReader()
-                    const readBatch = () => {
-                      reader.readEntries(async (entries) => {
-                        if (entries.length === 0) { resolve(); return }
-                        for (const ent of entries) await readEntry(ent)
-                        readBatch()
-                      }, () => resolve())
-                    }
-                    readBatch()
-                  })
-                }
-                return Promise.resolve()
-              }
-              void (async () => {
-                for (const item of items) {
-                  const entry = (item as unknown as { webkitGetAsEntry?: () => FileSystemEntry | null }).webkitGetAsEntry?.()
-                  if (entry) {
-                    await readEntry(entry)
-                  } else if (item.kind === 'file') {
-                    const f = item.getAsFile()
-                    if (f) allFiles.push(f)
-                  }
-                }
-                if (allFiles.length > 0) {
-                  void useStore.getState().addSamplesToLibrary(allFiles)
-                }
-              })()
-            }}
-          >
-            <div className="perf-tabs">
-              {([
-                ['library', 'Samples'],
-                ['padEditor', 'Pad Edit'],
-                ['sequencer', 'Sequencer'],
-                ['mixer', 'Mixer'],
-                ['projects', 'Projects'],
-                ['settings', 'Settings'],
-              ] as const).map(([id, label]) => (
-                <button
-                  key={id}
-                  type="button"
-                  className={`perf-tab${performanceTab === id ? ' active' : ''}`}
-                  onClick={() => {
-                    useStore.setState({ performanceTab: id })
-                    localStorage.setItem('performanceTab', id)
-                  }}
-                >
-                  {label}
-                </button>
-              ))}
+        isMobile ? (
+          <section className="perf-mobile-layout">
+            <div className="perf-mobile-content" {...perfDropHandlers}>
+              {activeTabPanel}
             </div>
-            {performanceTab === 'library' && <SampleLibrary />}
-            {performanceTab === 'padEditor' && (
-              <PadEditor
-                waveformRef={waveformRef}
-                waveformCanvasRef={waveformCanvasRef}
-                dragTargetRef={dragTargetRef}
-              />
-            )}
-            {performanceTab === 'sequencer' && <Sequencer />}
-            {performanceTab === 'mixer' && <Mixer />}
-            {performanceTab === 'projects' && <ProjectsPanel />}
-            {performanceTab === 'settings' && <PerfSettingsPanel />}
-          </div>
-          <div className="perf-divider" onPointerDown={onPerfDivPointerDown}>
-            <div className="divider-grip" />
-          </div>
-          <div className="perf-right" style={{ flex: 1 - perfSplitRatio }}>
-            <PadGrid />
-          </div>
-        </section>
+            {mobileTabs}
+            <div className="perf-mobile-pads">
+              <PadGrid />
+            </div>
+          </section>
+        ) : (
+          <section className="perf-layout" ref={perfDivContainerRef}>
+            <div className="perf-left" style={{ flex: perfSplitRatio }} {...perfDropHandlers}>
+              {desktopTabs}
+              {activeTabPanel}
+            </div>
+            <div className="perf-divider" onPointerDown={onPerfDivPointerDown}>
+              <div className="divider-grip" />
+            </div>
+            <div className="perf-right" style={{ flex: 1 - perfSplitRatio }}>
+              <PadGrid />
+            </div>
+          </section>
+        )
       ) : (
       <section className={`studio-layout${altLayout ? ' studio-layout-alt' : ''}`}>
         <div className="studio-col studio-col-left" style={{ width: leftWidth, flexShrink: 0 }}>

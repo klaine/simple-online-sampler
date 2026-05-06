@@ -20,7 +20,7 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - Zustand store with immer middleware assembled from slice factories: `src/store/index.ts` (~574 lines) imports 16 domain slices from `src/store/slices/`
 - Store infrastructure modules: `types.ts`, `constants.ts`, `helpers.ts`, `selectors.ts`, `visualStore.ts`, `confirmDialog.ts`, `refs.ts`, `importHelpers.ts`, `context.ts`
 - All state, actions, and selectors live in the store
-- App.tsx (~1683 lines) is a thin shell: effects, drag handlers, export callbacks, layout, computer keyboard chromatic input handler, per-synth MIDI channel routing
+- App.tsx (~1744 lines) is a thin shell: effects, drag handlers, export callbacks, layout, computer keyboard chromatic input handler, per-synth MIDI channel routing
 - Sequencer render is optimized with pre-computed `Map<padId, Map<step, event>>` selectors and a lightweight custom lane virtualizer (`VirtualizedSequencerLanes.tsx`)
 - Module-level `mutableRefs` object (in `refs.ts`) exposes mutable refs (not reactive) for drag state, frozen zoom range, etc.
 - **Transport visual state** (`playheadStep`, `sequencedPadHits`) lives in a lightweight `transportVisualStore` (not immer) — subscribed via `useSyncExternalStore` for performance
@@ -384,7 +384,10 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - **Layout modes**: 3 modes selectable via settings popover (or Settings tab in performance mode), persisted in localStorage (`layoutMode`):
   - **Classic**: 3-column layout (library | pad editor + pad grid | sequencer + mixer). Uses `studio-col-left`, `studio-col-center`, `studio-col-right`.
   - **Wide** (default): sequencer on top, mixer + pad editor + pad grid on bottom row. Uses `studio-col-main` and `alt-bottom-row` CSS classes.
-  - **Performance**: optimized for landscape mobile / compact screens. Left panel with switchable content via bottom tab bar (Samples, Pad Edit, Sequencer, Mixer, Projects, Settings), right panel always shows PadGrid. Drag-resizable vertical divider between left/right (ratio 0.25–0.75, persisted as `layout-perf-split`). No footer. Sub-headers hidden (CSS). All topbar buttons enlarged to 36px+ min-height for touch. `overscroll-behavior: none` + `touch-action: manipulation` prevents horizontal scroll on drag. Uses `perf-layout`, `perf-left`, `perf-right`, `perf-tabs`, `perf-divider` CSS classes.
+  - **Performance**: optimized for mobile / compact screens.
+    - **Desktop**: left panel with switchable content via top tab bar (Samples, Pad Edit, Sequencer, Mixer, Projects, Settings), right panel always shows PadGrid. Drag-resizable vertical divider between left/right (ratio 0.25–0.75, persisted as `layout-perf-split`). Uses `perf-layout`, `perf-left`, `perf-right`, `perf-tabs`, `perf-divider` CSS classes.
+    - **Mobile (`pointer: coarse`)**: fixed 50/50 split, no draggable divider. Pads always occupy one half, tabbed content the other half. Tab strip sits **between** content and pads. Landscape: content left, pads right, tabs vertical between. Portrait: content top, pads bottom, tabs horizontal between. Abbreviated tab labels: Lib, Pad, Seq, Mix, Prj, Set. Uses `perf-mobile-layout`, `perf-mobile-content`, `perf-mobile-tabs`, `perf-mobile-pads` CSS classes.
+    - No footer. Sub-headers hidden (CSS). All topbar buttons enlarged to 36px+ min-height for touch. `overscroll-behavior: none` + `touch-action: manipulation` prevents horizontal scroll on drag.
   - Auto-detection: on mount, if `pointer: coarse` + landscape orientation + width ≤ 1099px and no explicit `layoutMode` in localStorage, defaults to performance mode.
   - State: `layoutMode: 'classic' | 'wide' | 'performance'` and `performanceTab: 'library' | 'padEditor' | 'sequencer' | 'mixer' | 'projects' | 'settings'` in Zustand store.
 
