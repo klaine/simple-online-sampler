@@ -359,10 +359,12 @@ export function Sequencer() {
               }}
               onDragEnd={() => setDragOverPatternId(null)}
               onClick={() => useStore.setState({ activeSequenceId: sequence.id })}
-              {...makeTouchDragHandlers({ 'x-pattern-id': sequence.id }, sequence.name)}
               title="Drag to song chain"
             >
-              <span className="pattern-drag-handle">
+              <span
+                className="pattern-drag-handle"
+                {...makeTouchDragHandlers({ 'x-pattern-id': sequence.id }, sequence.name)}
+              >
                 ⋮⋮
               </span>
 

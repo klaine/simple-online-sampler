@@ -885,13 +885,14 @@ select.tb-led-value {
 }
 
 .pattern-chip {
-  touch-action: none;
+  touch-action: manipulation;
 }
 
 .pattern-drag-handle {
   font-size: 0.65rem;
   color: var(--muted);
   cursor: grab;
+  touch-action: none;
   padding: 0 1px;
   opacity: 0.25;
   line-height: 1;
