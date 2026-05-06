@@ -1,4 +1,4 @@
-import { useRef, useCallback, useState } from 'react'
+import { useRef, useCallback, useState, useLayoutEffect } from 'react'
 import { audioEngine } from '../lib/audioEngine'
 import { useStore } from '../store'
 import { VuMeter } from './VuMeter'
@@ -8,7 +8,7 @@ function useDragNumber(opts: { min: number; max: number; step: number; getValue:
   const rafRef = useRef<number | null>(null)
   const pendingRef = useRef<number | null>(null)
   const optsRef = useRef(opts)
-  optsRef.current = opts
+  useLayoutEffect(() => { optsRef.current = opts })
 
   const onPointerDown = useCallback((e: React.PointerEvent<HTMLInputElement>) => {
     if (e.button !== 0) return

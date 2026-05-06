@@ -32,7 +32,7 @@ const velocityFromTouchEvent = (event: React.TouchEvent<HTMLElement>): number =>
 }
 
 export function PadGrid() {
-  const samples = useStore((s) => s.samples)
+  const sampleMap = useStore((s) => s.sampleMap)
   const selectedPadId = useStore((s) => s.selectedPadId)
   const sequencedPadHits = useSyncExternalStore(transportVisualStore.subscribe, transportVisualStore.getSequencedPadHits)
   const playheadStep = useSyncExternalStore(transportVisualStore.subscribe, transportVisualStore.getPlayheadStep)
@@ -244,7 +244,7 @@ export function PadGrid() {
       )}
       <div className="grid">
         {displayedPads.map((pad) => {
-          const sample = samples.find((s) => s.id === pad.settings.sampleId)
+          const sample = pad.settings.sampleId ? sampleMap.get(pad.settings.sampleId) : undefined
           const selected = pad.id === selectedPadId
           const isSequencedHit = sequencedPadHits.has(pad.id)
           return (
@@ -322,7 +322,7 @@ export function PadGrid() {
                   e.dataTransfer.getData('application/x-online-sampler-sample-id') ||
                   e.dataTransfer.getData('text/plain')
                 if (sampleId) {
-                  const draggedSample = samples.find((s) => s.id === sampleId)
+                  const draggedSample = sampleMap.get(sampleId)
                   if (draggedSample) {
                     useStore.setState({ selectedPadId: pad.id })
                     void assignSampleToPad(draggedSample, pad.id)
@@ -336,7 +336,7 @@ export function PadGrid() {
                   try {
                     const veloSampleIds = JSON.parse(veloSubgroupData) as string[]
                     const veloSamples = veloSampleIds
-                      .map((id) => samples.find((s) => s.id === id))
+                      .map((id) => sampleMap.get(id))
                       .filter((s): s is SampleAsset => s != null)
                     if (veloSamples.length === 0) return
 
@@ -400,7 +400,7 @@ export function PadGrid() {
                 // Check for autosample group drag
                 const groupId = e.dataTransfer.getData('application/x-online-sampler-group-id')
                 if (groupId) {
-                  const groupSamples = samples.filter((s) => s.autosampleRunId === groupId)
+                  const groupSamples = Array.from(sampleMap.values()).filter((s) => s.autosampleRunId === groupId)
                   if (groupSamples.length > 0) {
                     // Sort by autosamplePadIndex when present, otherwise by name
                     const hasKitMap = groupSamples.some((s) => s.autosamplePadIndex != null)

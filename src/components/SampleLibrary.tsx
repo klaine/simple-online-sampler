@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useRef, useEffect } from 'react'
+import { useState, useCallback, useMemo, useRef, useEffect, memo, type ComponentProps } from 'react'
 import {
   useStore,
   selectSelectedPad,
@@ -15,6 +15,217 @@ import { makeTouchDragHandlers } from '../lib/touchDrag'
 let _expandedChops = new Set<string>()
 let _expandedGroups = new Set<string>()
 let _expandedVeloGroups = new Set<string>()
+
+interface SampleRowProps {
+  sample: SampleAsset
+  inGroup?: boolean
+  isPreviewing: boolean
+  isChopExpanded: boolean
+  isSelected: boolean
+  isSpreadTarget: boolean
+  hasSelectedPad: boolean
+  onToggleChop: (sampleId: string) => void
+  onToggleSelect: (sampleId: string) => void
+  spreadBank?: number
+  spreadSlot?: number
+  spreadCount?: number
+  spreadChokeGroup?: number
+  setSpreadBank?: (v: number) => void
+  setSpreadSlot?: (v: number) => void
+  setSpreadCount?: (v: number) => void
+  setSpreadChokeGroup?: (v: number) => void
+}
+
+const SampleRow = memo(function SampleRow({
+  sample,
+  inGroup = false,
+  isPreviewing,
+  isChopExpanded,
+  isSelected,
+  isSpreadTarget,
+  hasSelectedPad,
+  onToggleChop,
+  onToggleSelect,
+  spreadBank,
+  spreadSlot,
+  spreadCount,
+  spreadChokeGroup,
+  setSpreadBank,
+  setSpreadSlot,
+  setSpreadCount,
+  setSpreadChokeGroup,
+}: SampleRowProps) {
+  const hasChops = (sample.chopPoints?.length ?? 0) > 0
+  const chopBoundaries = hasChops ? [0, ...(sample.chopPoints ?? []), 1] : []
+
+  const {
+    previewSample,
+    assignSampleToSelectedPad,
+    openChopModal,
+    openChromaticSpread,
+    closeChromaticSpread,
+    deleteSampleFromLibrary,
+    ungroupSample,
+    spreadSampleChromatically,
+  } = useStore.getState()
+
+  return (
+    <div>
+      <div
+        className="sample-row"
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.effectAllowed = 'copy'
+          e.dataTransfer.setData('application/x-online-sampler-sample-id', sample.id)
+          e.dataTransfer.setData('text/plain', sample.id)
+        }}
+        {...makeTouchDragHandlers(
+          { 'application/x-online-sampler-sample-id': sample.id },
+          sample.name,
+        )}
+      >
+        {!inGroup && (
+          <input
+            type="checkbox"
+            className="sample-select-cb"
+            checked={isSelected}
+            onChange={(e) => {
+              e.stopPropagation()
+              onToggleSelect(sample.id)
+            }}
+            title="Select for grouping"
+          />
+        )}
+        <button
+          type="button"
+          className={isPreviewing ? 'sample-preview active' : 'sample-preview'}
+          onClick={() => void previewSample(sample)}
+        >
+          <span className="sample-name">{sample.name}</span>
+          <small>{`${Math.max(1, Math.round(sample.size / 1024))} KB`}</small>
+        </button>
+        <div className="sample-actions">
+          <button
+            type="button"
+            className="sample-chop"
+            onClick={() => openChopModal(sample.id)}
+            title="Chop sample"
+          >
+            ✂
+          </button>
+          <button
+            type="button"
+            className="sample-spread"
+            onClick={() => openChromaticSpread(sample.id)}
+            title="Chromatic spread to pads"
+          >
+            🎹
+          </button>
+          {hasChops && (
+            <button
+              type="button"
+              className="sample-chop-expand"
+              onClick={() => onToggleChop(sample.id)}
+              title={isChopExpanded ? 'Collapse chops' : 'Show chops'}
+            >
+              {isChopExpanded ? '▾' : '▸'} {chopBoundaries.length - 1}
+            </button>
+          )}
+          <button
+            type="button"
+            className="sample-assign"
+            onClick={() => void assignSampleToSelectedPad(sample)}
+            disabled={!hasSelectedPad}
+            title="Assign to selected pad"
+          >
+            +
+          </button>
+          {inGroup && (
+            <button
+              type="button"
+              className="sample-ungroup"
+              onClick={() => ungroupSample(sample.id)}
+              title="Remove from group"
+            >
+              ⊟
+            </button>
+          )}
+          <button
+            type="button"
+            className="sample-delete"
+            onClick={() => void deleteSampleFromLibrary(sample)}
+            title="Delete sample"
+          >
+            ×
+          </button>
+        </div>
+      </div>
+      {hasChops && isChopExpanded && (
+        <div className="chop-sub-list">
+          {chopBoundaries.slice(0, -1).map((start, i) => {
+            const end = chopBoundaries[i + 1]
+            return (
+              <div key={i} className="chop-sub-item">
+                <span>Chop {i + 1}</span>
+                <small>{(start * 100).toFixed(0)}%–{(end * 100).toFixed(0)}%</small>
+              </div>
+            )
+          })}
+        </div>
+      )}
+      {isSpreadTarget && spreadBank != null && spreadSlot != null && spreadCount != null && spreadChokeGroup != null && setSpreadBank && setSpreadSlot && setSpreadCount && setSpreadChokeGroup && (
+        <div className="spread-popover">
+          <div className="spread-popover-head">
+            <strong>Chromatic Spread</strong>
+            <button type="button" onClick={closeChromaticSpread}>×</button>
+          </div>
+          <div className="spread-popover-controls">
+            <label>
+              Bank
+              <select value={spreadBank} onChange={(e) => setSpreadBank(Number(e.target.value))}>
+                {Array.from({ length: BANK_COUNT }, (_, i) => (
+                  <option key={i} value={i}>Bank {i + 1}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Start
+              <select value={spreadSlot} onChange={(e) => setSpreadSlot(Number(e.target.value))}>
+                {Array.from({ length: PADS_PER_BANK }, (_, i) => (
+                  <option key={i} value={i}>Pad {i + 1}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Count
+              <input
+                type="number"
+                min={1}
+                max={128}
+                value={spreadCount}
+                onChange={(e) => setSpreadCount(Math.max(1, Math.min(128, Number(e.target.value))))}
+              />
+            </label>
+            <label>
+              Choke
+              <select value={spreadChokeGroup} onChange={(e) => setSpreadChokeGroup(Number(e.target.value))}>
+                <option value={0}>Off</option>
+                {[1, 2, 3, 4, 5, 6, 7, 8].map((g) => <option key={g} value={g}>{g}</option>)}
+              </select>
+            </label>
+          </div>
+          <button
+            type="button"
+            className="spread-assign-btn"
+            onClick={() => void spreadSampleChromatically(sample.id, spreadBank, spreadSlot, spreadCount, spreadChokeGroup)}
+          >
+            Spread {spreadCount} Pad{spreadCount > 1 ? 's' : ''}
+          </button>
+        </div>
+      )}
+    </div>
+  )
+})
 
 export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
   const sampleQuery = useStore((s) => s.sampleQuery)
@@ -41,20 +252,12 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
   const [selectedSampleIds, setSelectedSampleIds] = useState<Set<string>>(new Set())
 
   const {
-    previewSample,
-    deleteSampleFromLibrary,
-    assignSampleToSelectedPad,
     openRecordDialog,
     addSamplesToLibrary,
-    openChopModal,
-    openChromaticSpread,
-    closeChromaticSpread,
-    spreadSampleChromatically,
     removeUnassignedSamples,
     compactProject,
     openAutosampleDialog,
     groupSamples,
-    ungroupSample,
     assignGroupToPads,
     importPatternsForGroupByRunId,
     renameAutosampleGroup,
@@ -97,6 +300,15 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
     a.download = `${patch.name.replace(/[^a-zA-Z0-9_-]/g, '_')}.ospatch`
     a.click()
     URL.revokeObjectURL(url)
+  }, [])
+
+  const handleToggleSelect = useCallback((sampleId: string) => {
+    setSelectedSampleIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(sampleId)) next.delete(sampleId)
+      else next.add(sampleId)
+      return next
+    })
   }, [])
 
   const handleImportPatch = useCallback((files: FileList | null) => {
@@ -363,173 +575,29 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
     return positioned.map((p) => p.item)
   }, [filteredSamples])
 
-  const renderSampleRow = (sample: SampleAsset, inGroup = false) => {
-    const hasChops = (sample.chopPoints?.length ?? 0) > 0
-    const isExpanded = expandedChops.has(sample.id)
-    const chopBoundaries = hasChops ? [0, ...(sample.chopPoints ?? []), 1] : []
-
-    return (
-      <div key={sample.id}>
-        <div
-          className="sample-row"
-          draggable
-          onDragStart={(e) => {
-            e.dataTransfer.effectAllowed = 'copy'
-            e.dataTransfer.setData('application/x-online-sampler-sample-id', sample.id)
-            e.dataTransfer.setData('text/plain', sample.id)
-          }}
-          {...makeTouchDragHandlers(
-            { 'application/x-online-sampler-sample-id': sample.id },
-            sample.name,
-          )}
-        >
-          {!inGroup && (
-            <input
-              type="checkbox"
-              className="sample-select-cb"
-              checked={selectedSampleIds.has(sample.id)}
-              onChange={(e) => {
-                e.stopPropagation()
-                setSelectedSampleIds((prev) => {
-                  const next = new Set(prev)
-                  if (next.has(sample.id)) next.delete(sample.id)
-                  else next.add(sample.id)
-                  return next
-                })
-              }}
-              title="Select for grouping"
-            />
-          )}
-          <button
-            type="button"
-            className={previewSampleId === sample.id ? 'sample-preview active' : 'sample-preview'}
-            onClick={() => void previewSample(sample)}
-          >
-            <span className="sample-name">{sample.name}</span>
-            <small>{`${Math.max(1, Math.round(sample.size / 1024))} KB`}</small>
-          </button>
-          <div className="sample-actions">
-            <button
-              type="button"
-              className="sample-chop"
-              onClick={() => openChopModal(sample.id)}
-              title="Chop sample"
-            >
-              ✂
-            </button>
-            <button
-              type="button"
-              className="sample-spread"
-              onClick={() => openChromaticSpread(sample.id)}
-              title="Chromatic spread to pads"
-            >
-              🎹
-            </button>
-            {hasChops && (
-              <button
-                type="button"
-                className="sample-chop-expand"
-                onClick={() => toggleChopExpand(sample.id)}
-                title={isExpanded ? 'Collapse chops' : 'Show chops'}
-              >
-                {isExpanded ? '▾' : '▸'} {chopBoundaries.length - 1}
-              </button>
-            )}
-            <button
-              type="button"
-              className="sample-assign"
-              onClick={() => void assignSampleToSelectedPad(sample)}
-              disabled={!selectedPad}
-              title="Assign to selected pad"
-            >
-              +
-            </button>
-            {inGroup && (
-              <button
-                type="button"
-                className="sample-ungroup"
-                onClick={() => ungroupSample(sample.id)}
-                title="Remove from group"
-              >
-                ⊟
-              </button>
-            )}
-            <button
-              type="button"
-              className="sample-delete"
-              onClick={() => void deleteSampleFromLibrary(sample)}
-              title="Delete sample"
-            >
-              ×
-            </button>
-          </div>
-        </div>
-        {hasChops && isExpanded && (
-          <div className="chop-sub-list">
-            {chopBoundaries.slice(0, -1).map((start, i) => {
-              const end = chopBoundaries[i + 1]
-              return (
-                <div key={i} className="chop-sub-item">
-                  <span>Chop {i + 1}</span>
-                  <small>{(start * 100).toFixed(0)}%–{(end * 100).toFixed(0)}%</small>
-                </div>
-              )
-            })}
-          </div>
-        )}
-        {chromaticSpreadSampleId === sample.id && (
-          <div className="spread-popover">
-            <div className="spread-popover-head">
-              <strong>Chromatic Spread</strong>
-              <button type="button" onClick={closeChromaticSpread}>×</button>
-            </div>
-            <div className="spread-popover-controls">
-              <label>
-                Bank
-                <select value={spreadBank} onChange={(e) => setSpreadBank(Number(e.target.value))}>
-                  {Array.from({ length: BANK_COUNT }, (_, i) => (
-                    <option key={i} value={i}>Bank {i + 1}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Start
-                <select value={spreadSlot} onChange={(e) => setSpreadSlot(Number(e.target.value))}>
-                  {Array.from({ length: PADS_PER_BANK }, (_, i) => (
-                    <option key={i} value={i}>Pad {i + 1}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Count
-                <input
-                  type="number"
-                  min={1}
-                  max={128}
-                  value={spreadCount}
-                  onChange={(e) => setSpreadCount(Math.max(1, Math.min(128, Number(e.target.value))))}
-                />
-              </label>
-              <label>
-                Choke
-                <select value={spreadChokeGroup} onChange={(e) => setSpreadChokeGroup(Number(e.target.value))}>
-                  <option value={0}>Off</option>
-                  {[1, 2, 3, 4, 5, 6, 7, 8].map((g) => <option key={g} value={g}>{g}</option>)}
-                </select>
-              </label>
-            </div>
-            <button
-              type="button"
-              className="spread-assign-btn"
-              onClick={() => void spreadSampleChromatically(sample.id, spreadBank, spreadSlot, spreadCount, spreadChokeGroup)}
-            >
-              Spread {spreadCount} Pad{spreadCount > 1 ? 's' : ''}
-            </button>
-          </div>
-        )}
-      </div>
-    )
-  }
+  const makeSampleRowProps = (sample: SampleAsset, inGroup = false): ComponentProps<typeof SampleRow> => ({
+    sample,
+    inGroup,
+    isPreviewing: previewSampleId === sample.id,
+    isChopExpanded: expandedChops.has(sample.id),
+    isSelected: selectedSampleIds.has(sample.id),
+    isSpreadTarget: chromaticSpreadSampleId === sample.id,
+    hasSelectedPad: !!selectedPad,
+    onToggleChop: toggleChopExpand,
+    onToggleSelect: handleToggleSelect,
+    ...(chromaticSpreadSampleId === sample.id
+      ? {
+          spreadBank,
+          spreadSlot,
+          spreadCount,
+          spreadChokeGroup,
+          setSpreadBank,
+          setSpreadSlot,
+          setSpreadCount,
+          setSpreadChokeGroup,
+        }
+      : {}),
+  })
 
   return (
     <>
@@ -652,56 +720,67 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
                         </button>
                       </div>
                     </div>
-                    {isGroupExpanded && (() => {
-                      if (item.veloSubgroups.length === 0) {
-                        // No velocity subgroups — render flat
-                        return item.samples.map((sample) => renderSampleRow(sample, true))
-                      }
-                      // Build set of sample IDs that belong to a velocity subgroup
-                      const veloSampleIds = new Set(item.veloSubgroups.flatMap((sg) => sg.samples.map((s) => s.id)))
-                      const flatSamples = item.samples.filter((s) => !veloSampleIds.has(s.id))
-                      return (
-                        <>
-                          {item.veloSubgroups.map((sg) => {
-                            const veloKey = `${item.key}:${sg.baseName}`
-                            const isVeloExpanded = expandedVeloGroups.has(veloKey)
+                    {isGroupExpanded && (
+                      <>
+                        {item.veloSubgroups.length === 0 ? (
+                          // No velocity subgroups — render flat
+                          item.samples.map((sample) => (
+                            <SampleRow key={sample.id} {...makeSampleRowProps(sample, true)} />
+                          ))
+                        ) : (
+                          // Build set of sample IDs that belong to a velocity subgroup
+                          (() => {
+                            const veloSampleIds = new Set(item.veloSubgroups.flatMap((sg) => sg.samples.map((s) => s.id)))
+                            const flatSamples = item.samples.filter((s) => !veloSampleIds.has(s.id))
                             return (
-                              <div key={veloKey} className="velo-subgroup">
-                                <div
-                                  className="velo-subgroup-head"
-                                  draggable
-                                  onDragStart={(e) => {
-                                    e.dataTransfer.effectAllowed = 'copy'
-                                    e.dataTransfer.setData('application/x-online-sampler-velo-subgroup', JSON.stringify(sg.samples.map((s) => s.id)))
-                                  }}
-                                >
-                                  <button
-                                    type="button"
-                                    className="sample-group-toggle"
-                                    onClick={() => toggleVeloGroupExpand(veloKey)}
-                                  >
-                                    <span className="sample-group-chevron">{isVeloExpanded ? '▾' : '▸'}</span>
-                                  </button>
-                                  <span
-                                    className="velo-subgroup-label"
-                                    onClick={() => toggleVeloGroupExpand(veloKey)}
-                                  >
-                                    {sg.baseName.replace(/\.[^.]+$/, '')}
-                                    <span className="velo-subgroup-count">{sg.samples.length} layers</span>
-                                  </span>
-                                </div>
-                                {isVeloExpanded && sg.samples.map((sample) => renderSampleRow(sample, true))}
-                              </div>
+                              <>
+                                {item.veloSubgroups.map((sg) => {
+                                  const veloKey = `${item.key}:${sg.baseName}`
+                                  const isVeloExpanded = expandedVeloGroups.has(veloKey)
+                                  return (
+                                    <div key={veloKey} className="velo-subgroup">
+                                      <div
+                                        className="velo-subgroup-head"
+                                        draggable
+                                        onDragStart={(e) => {
+                                          e.dataTransfer.effectAllowed = 'copy'
+                                          e.dataTransfer.setData('application/x-online-sampler-velo-subgroup', JSON.stringify(sg.samples.map((s) => s.id)))
+                                        }}
+                                      >
+                                        <button
+                                          type="button"
+                                          className="sample-group-toggle"
+                                          onClick={() => toggleVeloGroupExpand(veloKey)}
+                                        >
+                                          <span className="sample-group-chevron">{isVeloExpanded ? '▾' : '▸'}</span>
+                                        </button>
+                                        <span
+                                          className="velo-subgroup-label"
+                                          onClick={() => toggleVeloGroupExpand(veloKey)}
+                                        >
+                                          {sg.baseName.replace(/\.[^.]+$/, '')}
+                                          <span className="velo-subgroup-count">{sg.samples.length} layers</span>
+                                        </span>
+                                      </div>
+                                      {isVeloExpanded && sg.samples.map((sample) => (
+                                        <SampleRow key={sample.id} {...makeSampleRowProps(sample, true)} />
+                                      ))}
+                                    </div>
+                                  )
+                                })}
+                                {flatSamples.map((sample) => (
+                                  <SampleRow key={sample.id} {...makeSampleRowProps(sample, true)} />
+                                ))}
+                              </>
                             )
-                          })}
-                          {flatSamples.map((sample) => renderSampleRow(sample, true))}
-                        </>
-                      )
-                    })()}
+                          })()
+                        )}
+                      </>
+                    )}
                   </div>
                 )
               }
-              return renderSampleRow(item.sample)
+              return <SampleRow key={item.sample.id} {...makeSampleRowProps(item.sample)} />
             })}
           </div>
           {/* Synth Patches */}

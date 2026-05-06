@@ -3,45 +3,66 @@ import { BANK_COUNT } from '../lib/constants'
 import type { AppState, SequencerBankGroup } from './types'
 import { memoize } from './helpers'
 
-export const selectSelectedPad = (s: AppState): Pad | null => {
-  if (!s.project || !s.selectedPadId) return null
-  return s.project.pads.find((p) => p.id === s.selectedPadId) ?? null
-}
+export const selectSelectedPad = memoize<AppState, Pad | null>(
+  (s) => [s.project?.pads, s.selectedPadId],
+  (s) => {
+    if (!s.project || !s.selectedPadId) return null
+    return s.project.pads.find((p) => p.id === s.selectedPadId) ?? null
+  },
+)
 
-export const selectSelectedSample = (s: AppState): SampleAsset | null => {
-  const pad = selectSelectedPad(s)
-  if (!pad?.settings.sampleId) return null
-  return s.samples.find((sample) => sample.id === pad.settings.sampleId) ?? null
-}
+export const selectSelectedSample = memoize<AppState, SampleAsset | null>(
+  (s) => [selectSelectedPad(s), s.samples],
+  (s) => {
+    const pad = selectSelectedPad(s)
+    if (!pad?.settings.sampleId) return null
+    return s.samples.find((sample) => sample.id === pad.settings.sampleId) ?? null
+  },
+)
 
-export const selectSelectedLayer = (s: AppState): import('../types').SampleLayer | null => {
-  if (!s.selectedLayerId) return null
-  const pad = selectSelectedPad(s)
-  if (!pad) return null
-  return pad.settings.layers.find((l) => l.id === s.selectedLayerId) ?? null
-}
+export const selectSelectedLayer = memoize<AppState, import('../types').SampleLayer | null>(
+  (s) => [s.selectedLayerId, selectSelectedPad(s)],
+  (s) => {
+    if (!s.selectedLayerId) return null
+    const pad = selectSelectedPad(s)
+    if (!pad) return null
+    return pad.settings.layers.find((l) => l.id === s.selectedLayerId) ?? null
+  },
+)
 
-export const selectDisplayedSample = (s: AppState): SampleAsset | null => {
-  const layer = selectSelectedLayer(s)
-  if (layer) {
-    return s.samples.find((sample) => sample.id === layer.sampleId) ?? null
-  }
-  return selectSelectedSample(s)
-}
+export const selectDisplayedSample = memoize<AppState, SampleAsset | null>(
+  (s) => [selectSelectedLayer(s), s.samples, selectSelectedSample(s)],
+  (s) => {
+    const layer = selectSelectedLayer(s)
+    if (layer) {
+      return s.samples.find((sample) => sample.id === layer.sampleId) ?? null
+    }
+    return selectSelectedSample(s)
+  },
+)
 
-export const selectActiveSequence = (s: AppState): import('../types').SequencePattern | null => {
-  if (!s.project || !s.activeSequenceId) return null
-  return s.project.sequences.find((seq) => seq.id === s.activeSequenceId) ?? null
-}
+export const selectActiveSequence = memoize<AppState, import('../types').SequencePattern | null>(
+  (s) => [s.project?.sequences, s.activeSequenceId],
+  (s) => {
+    if (!s.project || !s.activeSequenceId) return null
+    return s.project.sequences.find((seq) => seq.id === s.activeSequenceId) ?? null
+  },
+)
 
-export const selectVisibleSequence = (s: AppState): import('../types').SequencePattern | null => {
-  const active = selectActiveSequence(s)
-  if (!s.project || !active) return null
-  if (s.playbackScope === 'song' && s.isPlaying && s.playingPatternId && s.seqFollowPlayback) {
-    return s.project.sequences.find((seq) => seq.id === s.playingPatternId) ?? active
-  }
-  return active
-}
+export const selectVisibleSequence = memoize<AppState, import('../types').SequencePattern | null>(
+  (s) => {
+    const active = selectActiveSequence(s)
+    return [active, s.playbackScope, s.isPlaying, s.playingPatternId, s.seqFollowPlayback]
+  },
+  (s) => {
+    const active = selectActiveSequence(s)
+    if (!s.project || !active) return null
+    if (s.playbackScope === 'song' && s.isPlaying && s.playingPatternId && s.seqFollowPlayback) {
+      return s.project.sequences.find((seq) => seq.id === s.playingPatternId) ?? active
+    }
+    return active
+  },
+)
 
 export const selectCurrentBankPads = memoize<AppState, Pad[]>(
   (s) => [s.project?.pads, s.activeBank],
@@ -100,7 +121,7 @@ export const selectAssignedSampleIdsKey = (s: AppState): string => {
 export const selectEventsByPadAndStep = memoize<AppState, Map<string, Map<number, SequenceEvent>>>(
   (s) => {
     const seq = selectVisibleSequence(s)
-    return [seq?.events]
+    return [seq?.events, seq?.id]
   },
   (s) => {
     const seq = selectVisibleSequence(s)
@@ -122,7 +143,7 @@ export const selectEventsByPadAndStep = memoize<AppState, Map<string, Map<number
 export const selectEventsByPad = memoize<AppState, Map<string, SequenceEvent[]>>(
   (s) => {
     const seq = selectVisibleSequence(s)
-    return [seq?.events]
+    return [seq?.events, seq?.id]
   },
   (s) => {
     const seq = selectVisibleSequence(s)
@@ -144,7 +165,7 @@ export const selectEventsByPad = memoize<AppState, Map<string, SequenceEvent[]>>
 export const selectSpanningByPadAndStep = memoize<AppState, Map<string, Map<number, SequenceEvent>>>(
   (s) => {
     const seq = selectVisibleSequence(s)
-    return [seq?.events]
+    return [seq?.events, seq?.id]
   },
   (s) => {
     const seq = selectVisibleSequence(s)
@@ -166,7 +187,10 @@ export const selectSpanningByPadAndStep = memoize<AppState, Map<string, Map<numb
 )
 
 export const selectSequenceLanes = memoize<AppState, Pad[]>(
-  (s) => [s.project?.pads, s.activeBank, s.hideEmptyLanes, selectVisibleSequence(s)?.id, selectVisibleSequence(s)?.events],
+  (s) => {
+    const seq = selectVisibleSequence(s)
+    return [s.project?.pads, s.activeBank, s.hideEmptyLanes, seq?.id, seq?.events]
+  },
   (s) => {
     const bankPads = selectCurrentBankPads(s)
     if (!s.hideEmptyLanes) return bankPads.sort((a, b) => b.midiNote - a.midiNote)
@@ -179,7 +203,10 @@ export const selectSequenceLanes = memoize<AppState, Pad[]>(
 )
 
 export const selectSequencerBankGroups = memoize<AppState, SequencerBankGroup[]>(
-  (s) => [s.project?.pads, s.project?.bankNames, s.hideEmptyLanes, s.seqExpandedBanks, s.seqCollapsedBanks, selectVisibleSequence(s)?.id, selectVisibleSequence(s)?.events],
+  (s) => {
+    const seq = selectVisibleSequence(s)
+    return [s.project?.pads, s.project?.bankNames, s.hideEmptyLanes, s.seqExpandedBanks, s.seqCollapsedBanks, seq?.id, seq?.events]
+  },
   (s) => {
     if (!s.project) return []
     const visibleSeq = selectVisibleSequence(s)

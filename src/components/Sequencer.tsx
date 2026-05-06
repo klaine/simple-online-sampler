@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, useCallback, useSyncExternalStore } from 'react'
+import { useRef, useState, useEffect, useCallback, useSyncExternalStore, useMemo } from 'react'
 import {
   MAX_SEQUENCE_STEPS,
   MIN_SEQUENCE_STEPS,
@@ -16,8 +16,7 @@ import {
   selectEventsByPad,
   PATTERN_COLORS,
 } from '../store'
-import { SequencerStep } from './SequencerStep'
-import { PianoRollLane } from './PianoRollLane'
+import { VirtualizedSequencerLanes } from './VirtualizedSequencerLanes'
 import { makeTouchDragHandlers } from '../lib/touchDrag'
 
 function ColorPicker({ color, onChange }: { color: string; onChange: (c: string) => void }) {
@@ -136,6 +135,7 @@ export function Sequencer() {
   const draggedPatternIdRef = useRef<string | null>(null)
   const draggedChainEntryIdRef = useRef<string | null>(null)
   const chainGridRef = useRef<HTMLDivElement>(null)
+  const matrixWrapRef = useRef<HTMLDivElement>(null)
   const [dragOverPatternId, setDragOverPatternId] = useState<string | null>(null)
   const [pendingDeletePatternId, setPendingDeletePatternId] = useState<string | null>(null)
   const [fps, setFps] = useState(0)
@@ -215,11 +215,15 @@ export function Sequencer() {
   const laneLabelWidth = layoutMode === 'performance' ? 172 : 148
   const sequenceGridColumns = `${laneLabelWidth}px repeat(3, 26px) repeat(${visibleSequence.lengthSteps}, ${stepColSize})`
   const stepGridColumns = `repeat(${visibleSequence.lengthSteps}, ${stepColSize})`
-  const chainWithPatterns = project.songChain.flatMap((entry) => {
-    const pattern = project.sequences.find((seq) => seq.id === entry.patternId)
-    if (!pattern) return []
-    return [{ entry, pattern }]
-  })
+  const chainWithPatterns = useMemo(() => {
+    return project.songChain.flatMap((entry) => {
+      const pattern = project.sequences.find((seq) => seq.id === entry.patternId)
+      if (!pattern) return []
+      return [{ entry, pattern }]
+    })
+  }, [project.songChain, project.sequences])
+
+  const stepIndices = useMemo(() => Array.from({ length: visibleSequence.lengthSteps }, (_, i) => i), [visibleSequence?.lengthSteps])
 
   return (
     <section className="sequencer studio-sequencer">
@@ -518,7 +522,7 @@ export function Sequencer() {
         )}
       </div>
 
-      <div className={`sequencer-matrix-wrap ${fitSteps ? 'fit-sixteen' : ''}`}>
+      <div ref={matrixWrapRef} className={`sequencer-matrix-wrap ${fitSteps ? 'fit-sixteen' : ''}`}>
         <div
           className={`sequencer-matrix-head ${fitSteps ? 'fit-sixteen' : ''}`}
           style={{ gridTemplateColumns: sequenceGridColumns }}
@@ -527,7 +531,7 @@ export function Sequencer() {
           <span className="lane-head">M</span>
           <span className="lane-head">C</span>
           <span className="lane-head">D</span>
-          {Array.from({ length: visibleSequence.lengthSteps }, (_, step) => (
+          {stepIndices.map((step) => (
             <span
               key={step}
               className={`step-head ${playheadStep === step ? 'playhead' : ''} ${
@@ -539,94 +543,29 @@ export function Sequencer() {
           ))}
         </div>
 
-        {bankGroups.map((group) => (
-          <div key={group.bank} className="seq-bank-group">
-            <button
-              type="button"
-              className={`seq-bank-header ${group.collapsed ? 'collapsed' : ''} ${group.hasEvents ? 'has-events' : ''}`}
-              onClick={() => toggleSeqBankCollapsed(group.bank)}
-            >
-              <span className="seq-bank-chevron">{group.collapsed ? '\u25B8' : '\u25BE'}</span>
-              <span className="seq-bank-name">{group.name}</span>
-              {group.collapsed && group.pads.length > 0 && (
-                <span className="seq-bank-count">{group.pads.length}</span>
-              )}
-            </button>
-            {!group.collapsed && group.pads.map((pad) => {
-              const selectedLane = selectedPadId === pad.id
-              const padExactMap = eventsByPadAndStep.get(pad.id)
-              const padSpanMap = spanningByPadAndStep.get(pad.id)
-              const isSynth = pad.settings.source === 'synth'
-              const isPianoRollExpanded = isSynth && expandedPianoRollPads.has(pad.id)
-              return (
-                <div key={pad.id} className={isPianoRollExpanded ? 'sequencer-lane-group' : undefined}>
-                  <div
-                    className={`sequencer-row ${selectedLane ? 'selected-lane' : ''} ${fitSteps ? 'fit-sixteen' : ''}`}
-                    style={{ gridTemplateColumns: sequenceGridColumns }}
-                  >
-                    <button
-                      type="button"
-                      className="lane-label"
-                      onClick={() => {
-                        useStore.setState({ selectedPadId: pad.id })
-                        void triggerPad(pad, 0.9)
-                      }}
-                    >
-                      {isSynth && <span className="lane-synth-badge">~</span>}
-                      {pad.slot + 1} - {pad.name}
-                    </button>
-                    <button
-                      type="button"
-                      className={`lane-action ${mutedLanePadIds.has(pad.id) ? 'active' : ''}`}
-                      onClick={() => toggleLaneMute(pad.id)}
-                    >M</button>
-                    <button type="button" className="lane-action" onClick={() => void clearLane(pad.id)}>C</button>
-                    {isSynth ? (
-                      <button
-                        type="button"
-                        className={`lane-action ${isPianoRollExpanded ? 'active' : ''}`}
-                        onClick={() => togglePianoRollExpanded(pad.id)}
-                        title={isPianoRollExpanded ? 'Collapse piano roll' : 'Expand piano roll'}
-                      >&#x266B;</button>
-                    ) : (
-                      <button type="button" className="lane-action" onClick={() => void clearLane(pad.id)} title="Delete lane events">D</button>
-                    )}
-                    {Array.from({ length: visibleSequence.lengthSteps }, (_, step) => {
-                      const exactEvent = padExactMap?.get(step)
-                      const spanningEvent = padSpanMap?.get(step)
-                      return (
-                        <SequencerStep
-                          key={`${pad.id}-${step}`}
-                          padId={pad.id}
-                          step={step}
-                          exactEvent={exactEvent}
-                          spanningEvent={spanningEvent}
-                          isPlayhead={playheadStep === step}
-                          isGateMode={pad.settings.mode === 'adsr'}
-                          fitSixteen={fitSteps}
-                          showGateResizeTip={showGateResizeTip}
-                          patternId={visibleSequence.id}
-                        />
-                      )
-                    })}
-                  </div>
-                  {isPianoRollExpanded && (
-                    <PianoRollLane
-                      padId={pad.id}
-                      baseNote={pad.settings.synthParams?.baseNote ?? 60}
-                      octaveOffset={pianoRollOctaveOffset[pad.id] ?? 0}
-                      lengthSteps={visibleSequence.lengthSteps}
-                      events={eventsByPad.get(pad.id) ?? []}
-                      playheadStep={playheadStep}
-                      stepGridColumns={stepGridColumns}
-                      fitSixteen={fitSteps}
-                    />
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        ))}
+        <VirtualizedSequencerLanes
+          bankGroups={bankGroups}
+          scrollContainerRef={matrixWrapRef}
+          sequenceGridColumns={sequenceGridColumns}
+          stepGridColumns={stepGridColumns}
+          playheadStep={playheadStep}
+          fitSteps={fitSteps}
+          visibleSequence={visibleSequence}
+          stepIndices={stepIndices}
+          eventsByPadAndStep={eventsByPadAndStep}
+          spanningByPadAndStep={spanningByPadAndStep}
+          eventsByPad={eventsByPad}
+          selectedPadId={selectedPadId}
+          mutedLanePadIds={mutedLanePadIds}
+          expandedPianoRollPads={expandedPianoRollPads}
+          pianoRollOctaveOffset={pianoRollOctaveOffset}
+          showGateResizeTip={showGateResizeTip}
+          triggerPad={triggerPad}
+          toggleLaneMute={toggleLaneMute}
+          clearLane={clearLane}
+          togglePianoRollExpanded={togglePianoRollExpanded}
+          toggleSeqBankCollapsed={toggleSeqBankCollapsed}
+        />
         {bankGroups.every((g) => g.collapsed || g.pads.length === 0) && <p className="sequencer-status">No visible lanes. Expand a bank or disable "Hide Empty Lanes".</p>}
       </div>
       {showGateResizeTip && <p className="gate-tip">Tip: drag note edges to resize gate note length.</p>}
