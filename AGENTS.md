@@ -73,7 +73,7 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - `src/store/context.ts` — `StoreContext` interface for slice factories
 - `src/store/slices/` — 16 domain slice factories: `project.ts`, `pad.ts`, `transport.ts`, `sequencer.ts`, `pianoRoll.ts`, `patterns.ts`, `songChain.ts`, `library.ts`, `sampleGroups.ts`, `chopSpreadDrag.ts`, `recording.ts`, `synthPatches.ts`, `midiOut.ts`, `mixer.ts`, `ui.ts`, `audioMonitor.ts`
 - `src/App.tsx` — App shell: effects, drag handlers, export callbacks, layout (~1683 lines)
-- `src/App.css` — All styling (single file, ~2393 lines)
+- `src/App.css` — All styling (single file, ~3617 lines)
 - `src/types.ts` — Core types: Pad, PadSettings, SampleLayer, SampleAsset, Project, BusId, EffectSlot, MixBus, MasterBus, TrimSettings, MidiOutConfig, PadSource, SynthParams, LfoSettings, FilterEnvelopeSettings, SynthPatch, etc.
 
 ### Components (`src/components/`)
