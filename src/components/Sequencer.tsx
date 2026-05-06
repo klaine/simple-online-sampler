@@ -333,10 +333,13 @@ export function Sequencer() {
           const isActive = sequence.id === activeSequence.id
           const isPlayingPat = sequence.id === playingPatternId
           return (
-             <div
+            <div
               key={sequence.id}
               className={`pattern-chip ${isActive ? 'active' : ''} ${isPlayingPat ? 'playing' : ''} ${dragOverPatternId === sequence.id ? 'drag-over' : ''}`}
-              style={{ borderColor: sequence.color }}
+              style={{
+                borderColor: isActive ? sequence.color : undefined,
+                boxShadow: isActive ? `0 0 8px ${sequence.color}44` : undefined,
+              }}
               draggable
               onDragStart={() => {
                 draggedPatternIdRef.current = sequence.id
@@ -356,9 +359,19 @@ export function Sequencer() {
               }}
               onDragEnd={() => setDragOverPatternId(null)}
               onClick={() => useStore.setState({ activeSequenceId: sequence.id })}
-              {...makeTouchDragHandlers({ 'x-pattern-id': sequence.id }, sequence.name)}
             >
+              {/* Touch drag handle — only this area initiates touch-drag to chain */}
+              <span
+                className="pattern-drag-handle"
+                onClick={(e) => e.stopPropagation()}
+                {...makeTouchDragHandlers({ 'x-pattern-id': sequence.id }, sequence.name)}
+                title="Drag to song chain"
+              >
+                ⋮⋮
+              </span>
+
               <span className="pattern-color" style={{ background: sequence.color }}></span>
+
               {patternRenameId === sequence.id ? (
                 <input
                   autoFocus
@@ -383,17 +396,50 @@ export function Sequencer() {
                   {sequence.name}
                 </button>
               )}
-              <ColorPicker color={sequence.color} onChange={(c) => void setPatternColor(sequence.id, c)} />
-              <button type="button" className="pattern-dup" onClick={() => void duplicatePattern(sequence.id)}>Dup</button>
-              {project.sequences.length > 1 && (
-                pendingDeletePatternId === sequence.id ? (
-                  <span className="pattern-del-confirm">
-                    <button type="button" className="pattern-del-yes" onClick={() => { setPendingDeletePatternId(null); void deletePattern(sequence.id) }}>Del</button>
-                    <button type="button" className="pattern-del-no" onClick={() => setPendingDeletePatternId(null)}>✕</button>
-                  </span>
-                ) : (
-                  <button type="button" className="pattern-del" onClick={() => setPendingDeletePatternId(sequence.id)} title="Delete pattern">&times;</button>
-                )
+
+              <span className="pattern-actions">
+                <ColorPicker color={sequence.color} onChange={(c) => void setPatternColor(sequence.id, c)} />
+                <button
+                  type="button"
+                  className="pattern-dup"
+                  onClick={(e) => { e.stopPropagation(); void duplicatePattern(sequence.id) }}
+                  title="Duplicate pattern"
+                >
+                  ⧉
+                </button>
+                {project.sequences.length > 1 && (
+                  pendingDeletePatternId === sequence.id ? (
+                    <span className="pattern-del-confirm">
+                      <button
+                        type="button"
+                        className="pattern-del-yes"
+                        onClick={(e) => { e.stopPropagation(); setPendingDeletePatternId(null); void deletePattern(sequence.id) }}
+                      >
+                        Del
+                      </button>
+                      <button
+                        type="button"
+                        className="pattern-del-no"
+                        onClick={(e) => { e.stopPropagation(); setPendingDeletePatternId(null) }}
+                      >
+                        ✕
+                      </button>
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="pattern-del"
+                      onClick={(e) => { e.stopPropagation(); setPendingDeletePatternId(sequence.id) }}
+                      title="Delete pattern"
+                    >
+                      ✕
+                    </button>
+                  )
+                )}
+              </span>
+
+              {isPlayingPat && (
+                <span className="pattern-playing-bar" style={{ background: sequence.color }}></span>
               )}
             </div>
           )
