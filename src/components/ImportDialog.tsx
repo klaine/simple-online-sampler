@@ -32,7 +32,18 @@ export function ImportDialog({ onPreview, onImport }: ImportDialogProps) {
         </label>
         <label>
           Package File
-          <input type="file" accept=".ospack,.zip" onChange={(e) => useStore.setState({ importFile: e.target.files?.[0] ?? null })} />
+          <input
+            type="file"
+            accept="*/*"
+            onChange={(e) => {
+              const file = e.target.files?.[0] ?? null
+              if (file && !file.name.endsWith('.ospack') && !file.name.endsWith('.zip')) {
+                useStore.setState({ importFile: null, previewText: 'Please select a .ospack or .zip file' })
+                return
+              }
+              useStore.setState({ importFile: file, previewText: file ? '' : 'No file selected' })
+            }}
+          />
         </label>
         <div className="import-actions">
           <button type="button" onClick={onPreview} disabled={!importFile}>Preview Conflicts</button>

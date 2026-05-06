@@ -851,7 +851,7 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
             <input
               ref={patchImportRef}
               type="file"
-              accept=".ospatch"
+              accept="*/*"
               multiple
               style={{ display: 'none' }}
               onChange={(e) => { handleImportPatch(e.target.files); e.target.value = '' }}
