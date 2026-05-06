@@ -1590,7 +1590,7 @@ function App() {
 
   return (
     <main className={`app${altLayout ? ' app-alt-layout' : ''}${layoutMode === 'performance' ? ' app-perf-layout' : ''}`}>
-      <TopBar />
+      <TopBar isPhone={isMobile} />
 
       {showExportDialog && (
         <ExportDialog

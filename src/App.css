@@ -41,6 +41,72 @@
   overflow: hidden;
 }
 
+/* Phone: minimal single-row topbar */
+.topbar-phone {
+  flex-wrap: nowrap !important;
+  min-height: 38px !important;
+  padding: 0.2rem 0.4rem !important;
+  gap: 0 !important;
+}
+
+.topbar-phone .tb-cluster {
+  padding: 0 0.3rem;
+}
+
+.topbar-phone .tb-wordmark {
+  font-size: 0.55rem;
+}
+
+.topbar-phone .tb-project-name-readonly {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--text);
+  padding: 0.1rem 0.3rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 120px;
+  min-width: 0;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.topbar-phone .tb-project-name {
+  font-size: 0.72rem;
+  padding: 0.1rem 0.3rem;
+  width: 110px;
+}
+
+.topbar-phone .tb-play,
+.topbar-phone .tb-stop,
+.topbar-phone .tb-loop {
+  width: 34px;
+  height: 30px;
+  font-size: 0.8rem;
+  min-height: 30px;
+  padding: 0;
+}
+
+.topbar-phone .tb-play {
+  width: 38px;
+}
+
+.topbar-phone .tb-stop:disabled {
+  opacity: 0.3;
+}
+
+.topbar-phone .tb-led-value {
+  min-height: 28px;
+  font-size: 0.75rem;
+  padding: 0.15rem 0.25rem;
+}
+
+.topbar-phone .tb-secondary {
+  min-height: 30px;
+  padding: 0.2rem 0.4rem;
+  font-size: 0.65rem;
+}
+
 /* Larger touch targets in perf mode */
 .app-perf-layout .tb-play,
 .app-perf-layout .tb-stop,
@@ -2637,6 +2703,108 @@ select.tb-led-value {
   min-height: 0;
   padding: 0.3rem;
   font-size: 0.72rem;
+}
+
+/* Phone content/pads split — portrait weighted toward content, landscape equal */
+@media (pointer: coarse) and (max-width: 767px) and (orientation: portrait) {
+  .perf-mobile-content {
+    flex: 3;
+  }
+  .perf-mobile-pads {
+    flex: 2;
+  }
+}
+
+/* Phone sequencer compaction */
+@media (pointer: coarse) and (max-width: 767px) {
+  .perf-mobile-content > .sequencer {
+    gap: 0.1rem;
+    padding: 0.3rem;
+  }
+
+  .perf-mobile-content > .sequencer > .sequencer-top {
+    gap: 0.1rem;
+  }
+
+  .perf-mobile-content > .sequencer .sequencer-controls-row {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    gap: 0.15rem;
+    padding-bottom: 2px;
+  }
+
+  .perf-mobile-content > .sequencer .sequencer-controls-row::-webkit-scrollbar {
+    display: none;
+  }
+
+  .perf-mobile-content > .sequencer .sequencer-controls-row label,
+  .perf-mobile-content > .sequencer .sequencer-controls-row .seq-length-group,
+  .perf-mobile-content > .sequencer .sequencer-controls-row .sequencer-toggle {
+    font-size: 0.62rem;
+  }
+
+  .perf-mobile-content > .sequencer .seq-length-btn {
+    min-width: 24px;
+    padding: 0.12rem 0.25rem !important;
+    font-size: 0.68rem !important;
+  }
+
+  .perf-mobile-content > .sequencer .seq-action-btn {
+    padding: 0.12rem 0.25rem;
+    font-size: 0.62rem;
+  }
+
+  .perf-mobile-content > .sequencer .seq-status-inline {
+    font-size: 0.6rem;
+  }
+
+  .perf-mobile-content > .sequencer .seq-bank-header {
+    padding: 0.15rem 0.35rem;
+    font-size: 0.6rem;
+  }
+
+  .perf-mobile-content > .sequencer .step-wrap {
+    height: 20px;
+    min-width: 20px;
+  }
+
+  .perf-mobile-content > .sequencer .lane-label {
+    font-size: 0.6rem;
+    padding: 0.18rem 0.3rem;
+  }
+
+  .perf-mobile-content > .sequencer .lane-action {
+    min-height: 1.1rem;
+    min-width: 1.1rem;
+    font-size: 0.55rem;
+  }
+
+  .perf-mobile-content > .sequencer .lane-head,
+  .perf-mobile-content > .sequencer .step-head {
+    font-size: 0.55rem;
+  }
+
+  /* Phone pad grid compaction */
+  .perf-mobile-pads .bank-nav-row {
+    gap: 0.15rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .perf-mobile-pads .bank-nav button {
+    padding: 0.15rem 0.25rem;
+    font-size: 0.6rem;
+  }
+
+  .perf-mobile-pads .bank-reset-btn {
+    font-size: 8px;
+    padding: 2px 5px;
+  }
+
+  .perf-mobile-pads > .pad-panel > .grid > .pad {
+    padding: 0.25rem;
+    font-size: 0.68rem;
+  }
 }
 
 /* Portrait phones only: stack vertically, tabs horizontal between content and pads */

@@ -243,7 +243,7 @@ function SettingsPopover() {
   )
 }
 
-export function TopBar() {
+export function TopBar({ isPhone }: { isPhone?: boolean }) {
   const project = useStore((s) => s.project)
   const isPlaying = useStore((s) => s.isPlaying)
   const loopEnabled = useStore((s) => s.loopEnabled)
@@ -284,184 +284,257 @@ export function TopBar() {
     onCommit: () => void commitSwingDraft(),
   })
 
+  const [nameEditing, setNameEditing] = useState(false)
+
   if (!project) return null
 
   return (
-    <header className="topbar sticky">
-      {/* Project cluster */}
-      <div className="tb-cluster tb-project">
-        <span className="tb-wordmark">OS</span>
-        <input
-          className="tb-project-name"
-          type="text"
-          value={projectNameDraft}
-          onChange={(e) => useStore.setState({ projectNameDraft: e.target.value })}
-          onBlur={() => void commitProjectNameDraft()}
-          onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
-          title="Project name"
-        />
-      </div>
+    <header className={`topbar sticky${isPhone ? ' topbar-phone' : ''}`}>
+      {isPhone ? (
+        <>
+          {/* Phone: minimal project name (double-tap to edit) */}
+          <div className="tb-cluster tb-project">
+            <span className="tb-wordmark">OS</span>
+            {nameEditing ? (
+              <input
+                className="tb-project-name"
+                type="text"
+                autoFocus
+                value={projectNameDraft}
+                onChange={(e) => useStore.setState({ projectNameDraft: e.target.value })}
+                onBlur={() => { void commitProjectNameDraft(); setNameEditing(false) }}
+                onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+                title="Project name"
+              />
+            ) : (
+              <span
+                className="tb-project-name-readonly"
+                onDoubleClick={() => setNameEditing(true)}
+                title="Double-tap to edit"
+              >
+                {projectNameDraft}
+              </span>
+            )}
+          </div>
 
-      {/* Parameters cluster */}
-      <div className="tb-cluster tb-params">
-        <div className="tb-led-group">
-          <span className="tb-led-label">BPM</span>
-          <input
-            className="tb-led-value"
-            style={{ cursor: 'ns-resize' }}
-            type="number"
-            min={50}
-            max={200}
-            value={bpmDraft}
-            onChange={(e) => useStore.setState({ bpmDraft: e.target.value })}
-            onBlur={() => void commitBpmDraft()}
-            onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
-            onPointerDown={bpmDrag}
-          />
-        </div>
-        <div className="tb-led-group">
-          <span className="tb-led-label">SWG</span>
-          <input
-            className="tb-led-value"
-            style={{ cursor: 'ns-resize' }}
-            type="number"
-            min={0}
-            max={100}
-            value={swingDraft}
-            onChange={(e) => useStore.setState({ swingDraft: e.target.value })}
-            onBlur={() => void commitSwingDraft()}
-            onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
-            onPointerDown={swingDrag}
-          />
-        </div>
-        <button type="button" className="tb-tap" onClick={tapTempo}>TAP</button>
-        <div className="tb-led-group">
-          <span className="tb-led-label">POLY</span>
-          <select
-            className="tb-led-value"
-            value={project.polyphony}
-            onChange={(e) => {
-              const polyphony = Number(e.target.value) as 4 | 8 | 16 | 32
-              audioEngine.setPolyphony(polyphony)
-              void saveProject({ ...project, polyphony })
-            }}
-          >
-            <option value={4}>4</option>
-            <option value={8}>8</option>
-            <option value={16}>16</option>
-            <option value={32}>32</option>
-          </select>
-        </div>
-      </div>
+          {/* Phone: BPM only */}
+          <div className="tb-cluster tb-params">
+            <div className="tb-led-group">
+              <span className="tb-led-label">BPM</span>
+              <input
+                className="tb-led-value"
+                style={{ cursor: 'ns-resize', width: 40 }}
+                type="number"
+                min={50}
+                max={200}
+                value={bpmDraft}
+                onChange={(e) => useStore.setState({ bpmDraft: e.target.value })}
+                onBlur={() => void commitBpmDraft()}
+                onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+                onPointerDown={bpmDrag}
+              />
+            </div>
+          </div>
 
-      {/* Transport cluster */}
-      <div className="tb-cluster tb-transport">
-        <button type="button" className={`tb-play ${isPlaying ? 'playing' : ''}`} onClick={togglePlayPause}>
-          {isPlaying ? '⏸' : '▶'}
-        </button>
-        <button type="button" className="tb-stop" onClick={stopTransport} disabled={!isPlaying}>■</button>
-        <button
-          type="button"
-          className={`tb-loop ${loopEnabled ? 'on' : ''}`}
-          onClick={() => useStore.setState((s) => ({ loopEnabled: !s.loopEnabled }))}
-          title={loopEnabled ? 'Loop On' : 'Loop Off'}
-        >
-          ⟳
-        </button>
-        <button
-          type="button"
-          className={`tb-metronome ${metronomeEnabled ? 'on' : ''}`}
-          onClick={() => {
-            const next = !metronomeEnabled
-            useStore.setState({ metronomeEnabled: next })
-            localStorage.setItem('metronomeEnabled', String(next))
-          }}
-          title={metronomeEnabled ? 'Metronome On' : 'Metronome Off'}
-        >
-          MET
-        </button>
-      </div>
+          {/* Phone: Play/Stop/Loop only */}
+          <div className="tb-cluster tb-transport">
+            <button type="button" className={`tb-play ${isPlaying ? 'playing' : ''}`} onClick={togglePlayPause}>
+              {isPlaying ? '⏸' : '▶'}
+            </button>
+            <button type="button" className="tb-stop" onClick={stopTransport} disabled={!isPlaying}>■</button>
+            <button
+              type="button"
+              className={`tb-loop ${loopEnabled ? 'on' : ''}`}
+              onClick={() => useStore.setState((s) => ({ loopEnabled: !s.loopEnabled }))}
+              title={loopEnabled ? 'Loop On' : 'Loop Off'}
+            >
+              ⟳
+            </button>
+          </div>
 
-      {/* Seq record cluster */}
-      <div className="tb-cluster tb-rec">
-        <button
-          type="button"
-          className={`seq-rec-btn ${seqRecordArmed ? 'armed' : ''}`}
-          onClick={() => useStore.setState((s) => ({ seqRecordArmed: !s.seqRecordArmed }))}
-          title="Arm sequencer recording"
-        >
-          ● REC
-        </button>
-        <button
-          type="button"
-          className={`seq-rec-option ${seqRecordQuantize ? 'active-toggle' : ''}`}
-          onClick={() => useStore.setState((s) => ({ seqRecordQuantize: !s.seqRecordQuantize }))}
-          title="Quantize recorded hits to grid"
-        >
-          Q
-        </button>
-        <button
-          type="button"
-          className={`seq-rec-option ${seqRecordOverdub ? 'active-toggle' : ''}`}
-          onClick={() => useStore.setState((s) => ({ seqRecordOverdub: !s.seqRecordOverdub }))}
-          title={seqRecordOverdub ? 'Overdub mode: adds to existing events' : 'Replace mode: clears pad events on first hit'}
-        >
-          {seqRecordOverdub ? 'OVR' : 'REP'}
-        </button>
-        <select
-          className="seq-rec-countdown"
-          value={countdownBars}
-          onChange={(e) => {
-            const v = Number(e.target.value)
-            useStore.setState({ countdownBars: v })
-            localStorage.setItem('countdownBars', String(v))
-          }}
-          title="Count-in bars before recording (requires metronome)"
-        >
-          <option value={0}>No count-in</option>
-          <option value={1}>1 bar</option>
-          <option value={2}>2 bars</option>
-          <option value={4}>4 bars</option>
-        </select>
-      </div>
+          {/* Phone: Settings gear only */}
+          <div className="tb-cluster tb-actions">
+            <SettingsPopover />
+          </div>
+        </>
+      ) : (
+        <>
+          {/* Project cluster */}
+          <div className="tb-cluster tb-project">
+            <span className="tb-wordmark">OS</span>
+            <input
+              className="tb-project-name"
+              type="text"
+              value={projectNameDraft}
+              onChange={(e) => useStore.setState({ projectNameDraft: e.target.value })}
+              onBlur={() => void commitProjectNameDraft()}
+              onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+              title="Project name"
+            />
+          </div>
 
-      {/* MIDI + keyboard toggles */}
-      <div className="tb-cluster tb-midi-in">
-        <button
-          type="button"
-          className={`tb-midi-toggle ${midiInputEnabled ? 'on' : ''}`}
-          onClick={() => useStore.setState((s) => ({ midiInputEnabled: !s.midiInputEnabled }))}
-          title={midiInputEnabled ? 'MIDI input enabled — click to disable' : 'MIDI input disabled — click to enable'}
-        >
-          MIDI
-        </button>
-        <button
-          type="button"
-          className={`tb-keyboard-toggle ${computerKeyboardEnabled ? 'on' : ''}`}
-          onClick={() => useStore.setState((s) => ({ computerKeyboardEnabled: !s.computerKeyboardEnabled }))}
-          title={computerKeyboardEnabled ? `Computer keyboard: ON (Oct ${computerKeyboardOctave}, -/= to shift)` : 'Computer keyboard input: OFF'}
-        >
-          ⌨{computerKeyboardEnabled ? ` C${computerKeyboardOctave}` : ''}
-        </button>
-      </div>
+          {/* Parameters cluster */}
+          <div className="tb-cluster tb-params">
+            <div className="tb-led-group">
+              <span className="tb-led-label">BPM</span>
+              <input
+                className="tb-led-value"
+                style={{ cursor: 'ns-resize' }}
+                type="number"
+                min={50}
+                max={200}
+                value={bpmDraft}
+                onChange={(e) => useStore.setState({ bpmDraft: e.target.value })}
+                onBlur={() => void commitBpmDraft()}
+                onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+                onPointerDown={bpmDrag}
+              />
+            </div>
+            <div className="tb-led-group">
+              <span className="tb-led-label">SWG</span>
+              <input
+                className="tb-led-value"
+                style={{ cursor: 'ns-resize' }}
+                type="number"
+                min={0}
+                max={100}
+                value={swingDraft}
+                onChange={(e) => useStore.setState({ swingDraft: e.target.value })}
+                onBlur={() => void commitSwingDraft()}
+                onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+                onPointerDown={swingDrag}
+              />
+            </div>
+            <button type="button" className="tb-tap" onClick={tapTempo}>TAP</button>
+            <div className="tb-led-group">
+              <span className="tb-led-label">POLY</span>
+              <select
+                className="tb-led-value"
+                value={project.polyphony}
+                onChange={(e) => {
+                  const polyphony = Number(e.target.value) as 4 | 8 | 16 | 32
+                  audioEngine.setPolyphony(polyphony)
+                  void saveProject({ ...project, polyphony })
+                }}
+              >
+                <option value={4}>4</option>
+                <option value={8}>8</option>
+                <option value={16}>16</option>
+                <option value={32}>32</option>
+              </select>
+            </div>
+          </div>
 
-      {/* VU + actions cluster */}
-      <div className="tb-cluster tb-actions">
-        <VuMeter />
-        <button type="button" className="tb-secondary" onClick={() => useStore.setState({ showExportDialog: true })}>
-          Export
-        </button>
-        <button type="button" className="tb-secondary" onClick={() => useStore.setState({ showImportDialog: true })}>
-          Import
-        </button>
-        <button type="button" className="tb-secondary" onClick={() => void initializeCurrentProject()}>
-          Init
-        </button>
-        <button type="button" className="tb-secondary" onClick={() => window.location.reload()}>
-          Refresh
-        </button>
-        <SettingsPopover />
-      </div>
+          {/* Transport cluster */}
+          <div className="tb-cluster tb-transport">
+            <button type="button" className={`tb-play ${isPlaying ? 'playing' : ''}`} onClick={togglePlayPause}>
+              {isPlaying ? '⏸' : '▶'}
+            </button>
+            <button type="button" className="tb-stop" onClick={stopTransport} disabled={!isPlaying}>■</button>
+            <button
+              type="button"
+              className={`tb-loop ${loopEnabled ? 'on' : ''}`}
+              onClick={() => useStore.setState((s) => ({ loopEnabled: !s.loopEnabled }))}
+              title={loopEnabled ? 'Loop On' : 'Loop Off'}
+            >
+              ⟳
+            </button>
+            <button
+              type="button"
+              className={`tb-metronome ${metronomeEnabled ? 'on' : ''}`}
+              onClick={() => {
+                const next = !metronomeEnabled
+                useStore.setState({ metronomeEnabled: next })
+                localStorage.setItem('metronomeEnabled', String(next))
+              }}
+              title={metronomeEnabled ? 'Metronome On' : 'Metronome Off'}
+            >
+              MET
+            </button>
+          </div>
+
+          {/* Seq record cluster */}
+          <div className="tb-cluster tb-rec">
+            <button
+              type="button"
+              className={`seq-rec-btn ${seqRecordArmed ? 'armed' : ''}`}
+              onClick={() => useStore.setState((s) => ({ seqRecordArmed: !s.seqRecordArmed }))}
+              title="Arm sequencer recording"
+            >
+              ● REC
+            </button>
+            <button
+              type="button"
+              className={`seq-rec-option ${seqRecordQuantize ? 'active-toggle' : ''}`}
+              onClick={() => useStore.setState((s) => ({ seqRecordQuantize: !s.seqRecordQuantize }))}
+              title="Quantize recorded hits to grid"
+            >
+              Q
+            </button>
+            <button
+              type="button"
+              className={`seq-rec-option ${seqRecordOverdub ? 'active-toggle' : ''}`}
+              onClick={() => useStore.setState((s) => ({ seqRecordOverdub: !s.seqRecordOverdub }))}
+              title={seqRecordOverdub ? 'Overdub mode: adds to existing events' : 'Replace mode: clears pad events on first hit'}
+            >
+              {seqRecordOverdub ? 'OVR' : 'REP'}
+            </button>
+            <select
+              className="seq-rec-countdown"
+              value={countdownBars}
+              onChange={(e) => {
+                const v = Number(e.target.value)
+                useStore.setState({ countdownBars: v })
+                localStorage.setItem('countdownBars', String(v))
+              }}
+              title="Count-in bars before recording (requires metronome)"
+            >
+              <option value={0}>No count-in</option>
+              <option value={1}>1 bar</option>
+              <option value={2}>2 bars</option>
+              <option value={4}>4 bars</option>
+            </select>
+          </div>
+
+          {/* MIDI + keyboard toggles */}
+          <div className="tb-cluster tb-midi-in">
+            <button
+              type="button"
+              className={`tb-midi-toggle ${midiInputEnabled ? 'on' : ''}`}
+              onClick={() => useStore.setState((s) => ({ midiInputEnabled: !s.midiInputEnabled }))}
+              title={midiInputEnabled ? 'MIDI input enabled — click to disable' : 'MIDI input disabled — click to enable'}
+            >
+              MIDI
+            </button>
+            <button
+              type="button"
+              className={`tb-keyboard-toggle ${computerKeyboardEnabled ? 'on' : ''}`}
+              onClick={() => useStore.setState((s) => ({ computerKeyboardEnabled: !s.computerKeyboardEnabled }))}
+              title={computerKeyboardEnabled ? `Computer keyboard: ON (Oct ${computerKeyboardOctave}, -/= to shift)` : 'Computer keyboard input: OFF'}
+            >
+              ⌨{computerKeyboardEnabled ? ` C${computerKeyboardOctave}` : ''}
+            </button>
+          </div>
+
+          {/* VU + actions cluster */}
+          <div className="tb-cluster tb-actions">
+            <VuMeter />
+            <button type="button" className="tb-secondary" onClick={() => useStore.setState({ showExportDialog: true })}>
+              Export
+            </button>
+            <button type="button" className="tb-secondary" onClick={() => useStore.setState({ showImportDialog: true })}>
+              Import
+            </button>
+            <button type="button" className="tb-secondary" onClick={() => void initializeCurrentProject()}>
+              Init
+            </button>
+            <button type="button" className="tb-secondary" onClick={() => window.location.reload()}>
+              Refresh
+            </button>
+            <SettingsPopover />
+          </div>
+        </>
+      )}
     </header>
   )
 }
