@@ -663,6 +663,8 @@ export function PadGrid() {
                                       ...(lcdk.filterQ != null ? { filterQ: lcdk.filterQ } : {}),
                                       ...(lcdk.playMode ? { mode: lcdk.playMode } : {}),
                                       ...(lcdk.attack != null ? { envelope: { ...p.settings.envelope, attack: lcdk.attack } } : {}),
+                                      // LCDK samplestart = end boundary (keep first N%, truncate tail)
+                                      ...(matched[i].mapping.trimEnd != null ? { trim: { start: 0, end: matched[i].mapping.trimEnd! } } : {}),
                                     },
                                   }
                                 }),

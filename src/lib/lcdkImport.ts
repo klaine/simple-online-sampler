@@ -4,7 +4,8 @@ export interface LcdkPadMapping {
   index: number
   filename: string
   settings: ImportedPadSettings
-  trimStart?: number
+  /** LCDK `samplestart` controls how much of the sample to KEEP from the beginning (end boundary), not a start offset. */
+  trimEnd?: number
 }
 
 export interface LcdkPatternStep {
@@ -150,9 +151,10 @@ export function parseLcdk(jsonString: string, filename: string): LcdkResult | nu
       settings: Object.keys(settings).length > 1 ? settings : settings, // always include playMode
     }
 
-    // Sample start → trim (only fractional values; 0 and 1 both mean "no trim")
+    // LCDK `samplestart` is an END boundary: how much of the sample to keep from the beginning.
+    // e.g. 0.25 means "keep first 25%, truncate the tail" → trim { start: 0, end: 0.25 }
     if (pad.samplestart != null && (pad.samplestart as number) > 0 && (pad.samplestart as number) < 1) {
-      mapping.trimStart = pad.samplestart as number
+      mapping.trimEnd = pad.samplestart as number
     }
 
     pads.push(mapping)

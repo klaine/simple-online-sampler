@@ -560,7 +560,8 @@ export const createLibraryActions = (ctx: StoreContext) => ({
                 autosampleRunLabel: runLabel,
                 autosamplePadIndex: padIndex,
                 autosampleChokeGroup: padSettings.chokeGroup ?? 0,
-                ...(mapping.trimStart ? { autosampleTrim: { start: mapping.trimStart, end: 1 } } : {}),
+                // LCDK samplestart = end boundary (keep first N%, truncate tail)
+                ...(mapping.trimEnd != null ? { autosampleTrim: { start: 0, end: mapping.trimEnd } } : {}),
                 ...(hasPadSettings ? { autosampleImportedPadSettings: padSettings } : {}),
                 ...(isFirst && hasPatterns ? { autosamplePatterns: JSON.stringify(lcdkResult.patterns) } : {}),
               }
