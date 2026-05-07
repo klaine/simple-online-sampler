@@ -213,14 +213,6 @@ export const createSequencerActions = (ctx: StoreContext) => ({
     const s = ctx.get()
     const activeSeq = selectActiveSequence(s)
     if (!s.project || !activeSeq) return
-    if (
-      !(await showConfirm(
-        mode === 'double'
-          ? 'Duplicate pattern length and copy events?'
-          : 'Halve pattern length and truncate out-of-range events?',
-      ))
-    )
-      return
 
     s.pushSequencerHistory(s.project, activeSeq.id)
     const nextLength =

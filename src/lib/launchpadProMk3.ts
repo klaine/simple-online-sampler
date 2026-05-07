@@ -44,11 +44,12 @@ const BOTTOM_ROW_NOTES = [1, 2, 3, 4, 5, 6, 7, 8]
 // Bottom narrow buttons (CCs)
 const BOTTOM_NARROW_CCS = [101, 102, 103, 104, 105, 106, 107, 108]
 
-// Left column — top to bottom: Click(80), Undo(70), Delete(60), Quantise(50),
-// Duplicate(40), Double(30), Play(20), Record(10)
+// Left column — top to bottom: Click(80), Undo(70), Delete(60),
+// Duplicate(50), Quantise(40), Double(30), Play(20), Record(10)
+// NOTE: Verified on hardware — CC 40 = Quantise, CC 50 = Duplicate
 const LEFT_COL_RECORD = 10
 const LEFT_COL_PLAY = 20
-const LEFT_COL_DUPLICATE = 40
+const LEFT_COL_DUPLICATE = 50
 const LEFT_COL_SHIFT = 90
 
 // Colors for functional buttons
