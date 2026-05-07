@@ -3,7 +3,8 @@ import { db } from '../../lib/db'
 import { arrayBufferToHex, uid } from '../../lib/utils'
 import { encodeWavFromChannels } from '../../lib/wavEncode'
 import { normalizePcm, computeSilenceTrim } from '../../lib/autotrim'
-import type { SampleAsset } from '../../types'
+import { PATTERN_COLORS_CYCLE } from '../constants'
+import type { SampleAsset, SequenceEvent } from '../../types'
 import { mutableRefs, HOLD_REC_WORKLET_SRC, HOLD_REC_SAMPLE_RATE, HOLD_REC_MIN_MS } from '../refs'
 import type { StoreContext } from '../context'
 
@@ -192,5 +193,166 @@ export const createRecordingActions = (ctx: StoreContext) => ({
       ctx.get().addToast(`Recorded to ${name}`, 'success')
     }
     void finalize()
+  },
+
+  feedCaptureBuffer: (padId: string, velocity: number, type: 'on' | 'off', note?: number) => {
+    const now = performance.now()
+    mutableRefs.captureBuffer.push({
+      padId,
+      velocity,
+      note,
+      type,
+      timestamp: now,
+    })
+    if (type === 'on' && mutableRefs.captureFirstNoteTimeMs === null) {
+      mutableRefs.captureFirstNoteTimeMs = now
+    }
+    // Update reactive count for UI
+    const noteOnCount = mutableRefs.captureBuffer.filter((e) => e.type === 'on').length
+    ctx.set((d) => { d.captureBufferCount = noteOnCount })
+  },
+
+  captureMidi: async () => {
+    const buf = mutableRefs.captureBuffer
+    if (buf.length === 0) return
+    const s = ctx.get()
+    if (!s.project) return
+
+    const bpm = s.project.bpm
+    const stepDurationMs = 60_000 / bpm / 4
+    const maxBars = 4
+    const maxSteps = maxBars * 16
+    const now = performance.now()
+    const windowMs = maxSteps * stepDurationMs
+
+    // Filter to last 4 bars from now (or from last event if transport stopped)
+    const cutoff = now - windowMs
+    const events = buf.filter((e) => e.timestamp >= cutoff)
+    if (events.length === 0) {
+      mutableRefs.captureBuffer = []
+      mutableRefs.captureTransportStartMs = null
+      mutableRefs.captureFirstNoteTimeMs = null
+      ctx.set((d) => { d.captureBufferCount = 0 })
+      return
+    }
+
+    // Determine step positions
+    const wasPlaying = mutableRefs.captureTransportStartMs !== null
+    let patternLength: number
+
+    if (wasPlaying) {
+      const playingPatternId = s.playingPatternId ?? s.activeSequenceId
+      const playingSeq = s.project.sequences.find((seq) => seq.id === playingPatternId)
+      patternLength = playingSeq?.lengthSteps ?? 16
+    } else {
+      const t0 = mutableRefs.captureFirstNoteTimeMs ?? events[0].timestamp
+      const noteOns = events.filter((e) => e.type === 'on')
+      if (noteOns.length === 0) {
+        mutableRefs.captureBuffer = []
+        mutableRefs.captureTransportStartMs = null
+        mutableRefs.captureFirstNoteTimeMs = null
+        ctx.set((d) => { d.captureBufferCount = 0 })
+        return
+      }
+
+      let maxStep = 0
+      for (const onEvent of noteOns) {
+        const relativeStep = (onEvent.timestamp - t0) / stepDurationMs
+        const step = Math.round(relativeStep)
+        if (step > maxStep) maxStep = step
+      }
+
+      patternLength = Math.min(64, Math.max(16, Math.ceil((maxStep + 1) / 16) * 16))
+    }
+
+    // Build sequence events from note-on/note-off pairs
+    const noteOnEvents = events.filter((e) => e.type === 'on')
+    const noteOffEvents = events.filter((e) => e.type === 'off')
+    const finalEvents: SequenceEvent[] = []
+    const dedup = new Set<string>()
+
+    for (const onEv of noteOnEvents) {
+      if (onEv.timestamp < cutoff) continue
+
+      let step: number
+      if (wasPlaying) {
+        const absoluteStep = (onEv.timestamp - mutableRefs.captureTransportStartMs!) / stepDurationMs
+        step = Math.round(absoluteStep) % patternLength
+      } else {
+        const t0 = mutableRefs.captureFirstNoteTimeMs ?? events[0].timestamp
+        const relativeStep = (onEv.timestamp - t0) / stepDurationMs
+        step = Math.round(relativeStep) % patternLength
+      }
+      if (step < 0) continue
+
+      const dedupKey = `${onEv.padId}:${step}:${onEv.note ?? ''}`
+      if (dedup.has(dedupKey)) continue
+
+      const matchingOff = noteOffEvents.find((off) =>
+        off.padId === onEv.padId &&
+        off.timestamp > onEv.timestamp &&
+        (onEv.note != null ? off.note === onEv.note : off.note == null)
+      )
+
+      let gate = 1
+      if (matchingOff) {
+        const elapsedMs = matchingOff.timestamp - onEv.timestamp
+        gate = Math.round(elapsedMs / stepDurationMs)
+        gate = Math.max(1, Math.min(patternLength, gate))
+      }
+
+      dedup.add(dedupKey)
+      finalEvents.push({
+        id: uid(),
+        step,
+        padId: onEv.padId,
+        velocity: Math.max(1, Math.min(127, onEv.velocity)),
+        gate,
+        semitones: 0,
+        ...(onEv.note != null ? { note: onEv.note } : {}),
+      })
+    }
+
+    if (finalEvents.length === 0) {
+      mutableRefs.captureBuffer = []
+      mutableRefs.captureTransportStartMs = null
+      mutableRefs.captureFirstNoteTimeMs = null
+      ctx.set((d) => { d.captureBufferCount = 0 })
+      return
+    }
+
+    // Create new pattern with auto-sized length
+    const newPattern = {
+      id: uid(),
+      name: `Captured ${s.project.sequences.length + 1}`,
+      color: PATTERN_COLORS_CYCLE[s.project.sequences.length % PATTERN_COLORS_CYCLE.length],
+      resolution: 16 as const,
+      lengthSteps: patternLength,
+      events: finalEvents,
+    }
+
+    await s.saveProject({
+      ...s.project,
+      sequences: [...s.project.sequences, newPattern],
+    })
+
+    ctx.set((d) => {
+      d.activeSequenceId = newPattern.id
+    })
+
+    // Clear buffer
+    mutableRefs.captureBuffer = []
+    mutableRefs.captureTransportStartMs = null
+    mutableRefs.captureFirstNoteTimeMs = null
+    ctx.set((d) => { d.captureBufferCount = 0 })
+
+    ctx.get().addToast(`Captured ${finalEvents.length} events into new pattern`, 'success')
+  },
+
+  clearCaptureBuffer: () => {
+    mutableRefs.captureBuffer = []
+    mutableRefs.captureTransportStartMs = null
+    mutableRefs.captureFirstNoteTimeMs = null
+    ctx.set((d) => { d.captureBufferCount = 0 })
   },
 })

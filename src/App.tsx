@@ -396,6 +396,8 @@ function App() {
             requestAnimationFrame(() => {
               useStore.getState().flashSequencedPadHit(p.id)
             })
+            // Feed capture buffer
+            useStore.getState().feedCaptureBuffer(p.id, velocity, 'on', note)
             // Record as piano roll event if sequencer is recording
             const recState = useStore.getState()
             if (recState.isPlaying && recState.seqRecordArmed) {
@@ -413,6 +415,8 @@ function App() {
             (!p.settings.synthMidiDevice || p.settings.synthMidiDevice === (message.currentTarget as MIDIInput | null)?.id)
           ) {
             audioEngine.releasePad(p.id)
+            // Feed capture buffer
+            useStore.getState().feedCaptureBuffer(p.id, 0, 'off', note)
             // Update gate length for recording
             const recState = useStore.getState()
             if (recState.isPlaying && recState.seqRecordArmed) {
@@ -470,6 +474,7 @@ function App() {
           st.stopPadHoldRecord()
         } else {
           audioEngine.releasePad(pad.id)
+          useStore.getState().feedCaptureBuffer(pad.id, 0, 'off')
           // Send MIDI note-off for gate/adsr pads via the active-note registry
           releaseMidiNote(pad.id)
         }
@@ -562,6 +567,7 @@ function App() {
               st.stopPadHoldRecord()
             } else {
               audioEngine.releasePad(padId)
+              st.feedCaptureBuffer(padId, 0, 'off')
               releaseMidiNote(padId)
             }
           },
@@ -570,6 +576,7 @@ function App() {
             const pad = st.project?.pads.find((p) => p.id === padId)
             if (!pad) return
             audioEngine.releasePad(padId)
+            st.feedCaptureBuffer(padId, 0, 'off')
             // Record gate length if recording
             if (st.isPlaying && st.seqRecordArmed) {
               const baseNote = (pad.settings.synthParams?.baseNote ?? 60) + (pad.settings.semitones ?? 0)
@@ -1165,6 +1172,9 @@ function App() {
               bpm: ckState.project?.bpm ?? 120,
             })
 
+            // Feed capture buffer
+            useStore.getState().feedCaptureBuffer(selectedPadForCk!.id, 108, 'on', midiNote)
+
             // If sequencer is recording, record the note as a piano roll event
             if (ckState.isPlaying && ckState.seqRecordArmed) {
               ckState.recordPadHit(selectedPadForCk!.id, 108, midiNote)
@@ -1299,6 +1309,7 @@ function App() {
         const pad = s.selectedPadId ? s.project?.pads.find((p) => p.id === s.selectedPadId) : null
         if (pad) {
           audioEngine.releasePad(pad.id)
+          useStore.getState().feedCaptureBuffer(pad.id, 0, 'off', midiNote)
           // Update gate length for recording
           if (s.isPlaying && s.seqRecordArmed && pad.settings.source === 'synth') {
             s.recordPadRelease(pad.id, midiNote)

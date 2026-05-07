@@ -29,6 +29,9 @@ export const createTransportActions = (ctx: StoreContext) => ({
     mutableRefs.seqRecordCleared.clear()
     mutableRefs.activeRecordingNotes.clear()
 
+    // Clear capture transport start (buffer stays for post-stop capture)
+    mutableRefs.captureTransportStartMs = null
+
     if (mutableRefs.pendingPersist) {
       ctx.get().flushPendingProjectSave()
     }
@@ -146,6 +149,8 @@ export const createTransportActions = (ctx: StoreContext) => ({
         lookaheadMs,
         visualCompMs: 46,
       })
+
+      mutableRefs.captureTransportStartMs = transportStartMs
 
       const tick = () => {
         const currentState = ctx.get()

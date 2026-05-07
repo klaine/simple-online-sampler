@@ -75,6 +75,9 @@ export const createPadActions = (ctx: StoreContext) => ({
       st.recordPadHit(pad.id, Math.round(velocity * 127))
     }
 
+    // Feed capture buffer (always, regardless of record arm)
+    ctx.get().feedCaptureBuffer(pad.id, Math.round(velocity * 127), 'on')
+
     // MIDI out
     const midiOut = pad.settings.midiOut
     if (midiOut?.enabled) {

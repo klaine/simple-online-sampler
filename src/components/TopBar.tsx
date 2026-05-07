@@ -253,6 +253,7 @@ export function TopBar({ isPhone }: { isPhone?: boolean }) {
   const seqRecordArmed = useStore((s) => s.seqRecordArmed)
   const seqRecordQuantize = useStore((s) => s.seqRecordQuantize)
   const seqRecordOverdub = useStore((s) => s.seqRecordOverdub)
+  const captureBufferCount = useStore((s) => s.captureBufferCount)
   const midiInputEnabled = useStore((s) => s.midiInputEnabled)
   const computerKeyboardEnabled = useStore((s) => s.computerKeyboardEnabled)
   const computerKeyboardOctave = useStore((s) => s.computerKeyboardOctave)
@@ -453,16 +454,25 @@ export function TopBar({ isPhone }: { isPhone?: boolean }) {
             </button>
           </div>
 
-          {/* Seq record cluster */}
-          <div className="tb-cluster tb-rec">
-            <button
-              type="button"
-              className={`seq-rec-btn ${seqRecordArmed ? 'armed' : ''}`}
-              onClick={() => useStore.setState((s) => ({ seqRecordArmed: !s.seqRecordArmed }))}
-              title="Arm sequencer recording"
-            >
-              ● REC
-            </button>
+           {/* Seq record cluster */}
+           <div className="tb-cluster tb-rec">
+             <button
+               type="button"
+               className={`seq-rec-btn ${seqRecordArmed ? 'armed' : ''}`}
+               onClick={() => useStore.setState((s) => ({ seqRecordArmed: !s.seqRecordArmed }))}
+               title="Arm sequencer recording"
+             >
+               ● REC
+             </button>
+             <button
+               type="button"
+               className={`tb-capture ${captureBufferCount > 0 ? 'has-data' : ''}`}
+               onClick={() => void useStore.getState().captureMidi()}
+               disabled={captureBufferCount === 0}
+               title={captureBufferCount > 0 ? `Capture MIDI (${captureBufferCount} notes buffered)` : 'Capture MIDI — play some notes first'}
+             >
+               ⊞ CAP
+             </button>
             <button
               type="button"
               className={`seq-rec-option ${seqRecordQuantize ? 'active-toggle' : ''}`}

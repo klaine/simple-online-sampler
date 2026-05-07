@@ -250,6 +250,8 @@ export const useStore = create<AppState>()(
       seqRecordQuantize: true,
       seqRecordOverdub: true,
 
+      captureBufferCount: 0,
+
       metronomeEnabled: localStorage.getItem('metronomeEnabled') === 'true',
       metronomeVolume: Number(localStorage.getItem('metronomeVolume') || '0.7') || 0.7,
       countdownBars: Number(localStorage.getItem('countdownBars') || '0') || 0,

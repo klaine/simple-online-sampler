@@ -274,6 +274,7 @@ export function PadGrid() {
                   stopPadHoldRecord()
                 } else {
                   audioEngine.releasePad(pad.id)
+                  useStore.getState().feedCaptureBuffer(pad.id, 0, 'off')
                   releaseMidiNote(pad.id)
                 }
               }}
@@ -283,6 +284,7 @@ export function PadGrid() {
                   stopPadHoldRecord()
                 } else {
                   audioEngine.releasePad(pad.id)
+                  useStore.getState().feedCaptureBuffer(pad.id, 0, 'off')
                   releaseMidiNote(pad.id)
                 }
               }}
@@ -302,6 +304,7 @@ export function PadGrid() {
                   stopPadHoldRecord()
                 } else {
                   audioEngine.releasePad(pad.id)
+                  useStore.getState().feedCaptureBuffer(pad.id, 0, 'off')
                   releaseMidiNote(pad.id)
                 }
                 // Fallback unlock in case touchstart's resume was rejected by browser

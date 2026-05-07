@@ -193,6 +193,9 @@ export interface AppState {
   seqRecordQuantize: boolean
   seqRecordOverdub: boolean
 
+  // --- Capture MIDI ---
+  captureBufferCount: number
+
   // --- Metronome ---
   metronomeEnabled: boolean
   metronomeVolume: number
@@ -313,6 +316,10 @@ export interface AppState {
 
   recordPadHit: (padId: string, velocity: number, note?: number) => void
   recordPadRelease: (padId: string, note?: number) => void
+
+  feedCaptureBuffer: (padId: string, velocity: number, type: 'on' | 'off', note?: number) => void
+  captureMidi: () => Promise<void>
+  clearCaptureBuffer: () => void
 
   confirmSampleReplace: () => Promise<void>
   confirmSampleAddLayer: () => Promise<void>

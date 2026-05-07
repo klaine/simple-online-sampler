@@ -23,6 +23,17 @@ export const mutableRefs = {
   activeRecordingNotes: new Map<string, { eventId: string; startStep: number; patternId: string; startTimeMs: number }>(),
   frozenZoomRange: null as { start: number; end: number } | null,
 
+  // Capture MIDI buffer
+  captureBuffer: [] as Array<{
+    padId: string
+    velocity: number
+    note?: number
+    type: 'on' | 'off'
+    timestamp: number
+  }>,
+  captureTransportStartMs: null as number | null,
+  captureFirstNoteTimeMs: null as number | null,
+
   // Pad hold record
   holdRecStream: null as MediaStream | null,
   holdRecWorklet: null as AudioWorkletNode | null,

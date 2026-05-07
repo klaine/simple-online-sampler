@@ -68,7 +68,7 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - `src/store/selectors.ts` — All memoized selectors (`selectSelectedPad`, `selectEventsByPadAndStep`, `selectSequencerBankGroups`, etc.)
 - `src/store/visualStore.ts` — `transportVisualStore` pub/sub (no immer)
 - `src/store/confirmDialog.ts` — `showConfirm()` / `resolveConfirmDialog()` promise-based dialog
-- `src/store/refs.ts` — Module-level `mutableRefs` object + `storeRefs` export
+- `src/store/refs.ts` — Module-level `mutableRefs` object (capture buffer, active recording notes, drag state, etc.) + `storeRefs` export
 - `src/store/importHelpers.ts` — `importFileAsSample`, `loadPresetKits`
 - `src/store/context.ts` — `StoreContext` interface for slice factories
 - `src/store/slices/` — 16 domain slice factories: `project.ts`, `pad.ts`, `transport.ts`, `sequencer.ts`, `pianoRoll.ts`, `patterns.ts`, `songChain.ts`, `library.ts`, `sampleGroups.ts`, `chopSpreadDrag.ts`, `recording.ts`, `synthPatches.ts`, `midiOut.ts`, `mixer.ts`, `ui.ts`, `audioMonitor.ts`
@@ -87,7 +87,7 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - `PadEditor.tsx` — Collapsible pad settings, waveform trim with zoom (gain-scaled, layer-aware), filter knobs (LP12/LP24/HP/BP), MC-909 style AMP and FILTER envelope sections (vertical faders + ADSR curve visualization), filter envelope for both sample and synth pads, multisample layer UI, per-layer editing, stacked timeline (canvas waveforms + drag offset), bus selector, choke group selector, pan knob (with random pan toggle), MIDI Out section, source toggle (Sample/Synth), SynthEditor integration, per-pad effect slots (2 slots, synth pads), synth MIDI input section (channel/device), Crop button (destructively trims sample to trim markers), Normalize button (peak normalize to -0.3 dBFS), Reset Pad button (resets to defaults + clears sequencer events)
 - `EnvelopeSection.tsx` — Reusable MC-909 style envelope section with ADSR/AHR curve SVG visualization, vertical faders (with log-scale support), level/depth fader, mode-aware (ADSR shows A/D/S/R, AHR shows A/H/R), used for both AMP and FILTER envelopes in PadEditor
 - `PadGrid.tsx` — Pad grid with bank nav (double-click to rename banks), pad drag (move/copy/swap), record button overlay on empty pads, MIDI debug display, autosample group drop with metadata (trim/bus/choke), group drop on bank tabs (assigns starting from pad 1 of target bank), MPC .pgm import on file drop, synth pad display ("~ Synth"), synth patch drop from library, touch event handling (preventDefault to avoid double-trigger on mobile)
-- `TopBar.tsx` — Header with transport, BPM, swing, tap tempo, VU meter, metronome toggle, sequencer record arm/quantize/overdub/count-in buttons, MIDI input cluster, Audio Out device selector, drag-to-adjust BPM/Swing inputs, settings popover (buffer size, metronome volume, wide layout toggle)
+- `TopBar.tsx` — Header with transport, BPM, swing, tap tempo, VU meter, metronome toggle, sequencer record arm/quantize/overdub/count-in buttons, Capture MIDI button, MIDI input cluster, Audio Out device selector, drag-to-adjust BPM/Swing inputs, settings popover (buffer size, metronome volume, wide layout toggle)
 - `Sequencer.tsx` — Compact toolbar, draggable pattern strip (drag to reorder), song chain, sequencer matrix with collapsible bank groups (all 8 banks visible, auto-collapsed if no events in current pattern), inline ColorPicker (8×8 grid popover), performance stats overlay (FPS + tick drift)
 - `VirtualizedSequencerLanes.tsx` — Lightweight custom lane virtualizer: only renders visible bank groups + expanded piano roll lanes, uses cumulative height offsets with paddingTop/paddingBottom
 - `PianoRollLane.tsx` — Memoized inline piano roll for synth pad lanes: 24-row (2 octave) grid, click-to-toggle notes, velocity drag (Shift+drag), octave scroll buttons, note length drag (left/right edges adjust gate), aligned with sequencer step columns via shared CSS grid template
@@ -275,6 +275,28 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - `recordPadRelease(padId, note?)` computes gate length from elapsed time (`performance.now()`) and BPM, more accurate than visual playhead
 - Active recording notes tracked in module-level `_activeRecordingNotes` Map (cleared on transport stop)
 - Records into `playingPatternId` pattern; replace mode uses `_seqRecordCleared` Set
+
+### Capture MIDI (F5)
+- Ableton-style "Capture MIDI": always buffers incoming pad triggers regardless of record arm or transport state
+- **Capture buffer** (`mutableRefs.captureBuffer` in `refs.ts`): in-memory array of `{ padId, velocity, note?, type: 'on'|'off', timestamp }` events using `performance.now()` timestamps
+- **Feed points** (all call `feedCaptureBuffer`):
+  - `triggerPad` in pad.ts (drum pad note-on)
+  - MIDI handler in App.tsx (synth chromatic note-on/off + drum pad note-off)
+  - Computer keyboard handler in App.tsx (chromatic note-on/off)
+  - PadGrid mouse/touch release (drum pad note-off)
+- **Transport start tracking**: `mutableRefs.captureTransportStartMs` set when transport starts; cleared on stop (buffer preserved for post-stop capture)
+- **`captureMidi()` action** (in recording.ts):
+  - Filters buffer to last 4 bars (64 steps) from current time
+  - **Playing mode**: maps timestamps → steps using `captureTransportStartMs` as reference, uses playing pattern's `lengthSteps`
+  - **Stopped mode**: uses first note-on time as step 0, auto-sizes pattern length (rounds up to next multiple of 16, clamped 16–64)
+  - Pairs note-on/note-off events to compute gate length (same formula as `recordPadRelease`)
+  - Deduplicates: multiple note-ons on same step+padId+note keep highest velocity
+  - Creates a **new pattern** with captured events, switches `activeSequenceId` to it
+  - Single `saveProject` call (batch commit)
+  - Clears buffer and resets `captureBufferCount` to 0
+- **UI**: ⊞ CAP button in TopBar record cluster, enabled only when `captureBufferCount > 0`, glows blue when data available, shows buffered note count in tooltip
+- **Buffer lifecycle**: cleared on explicit capture or `clearCaptureBuffer()`. NOT cleared on transport stop (allows post-stop capture). Memory-only (lost on page refresh)
+- Reactive `captureBufferCount` state tracks note-on count for UI enable/disable
 
 ### Chromatic Spread
 - 🎹 button on library sample row opens inline popover
