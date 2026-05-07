@@ -175,6 +175,7 @@ export const useStore = create<AppState>()(
 
       activeBank: 0,
       selectedPadId: null,
+      selectedPadIds: [],
       selectedLayerId: null,
       hideEmptyLanes: true,
       seqFollowPlayback: true,

@@ -122,6 +122,7 @@ export interface AppState {
   // --- UI / View ---
   activeBank: number
   selectedPadId: string | null
+  selectedPadIds: string[]  // multi-select for batch editing
   selectedLayerId: string | null
   hideEmptyLanes: boolean
   seqFollowPlayback: boolean
@@ -227,6 +228,7 @@ export interface AppState {
 
   triggerPad: (pad: Pad, velocity?: number) => void
   updatePadSettings: (patch: Partial<Pad['settings']>) => void
+  updateMultiplePads: (padIds: string[], patch: Partial<Pad['settings']>) => Promise<void>
   assignFileToPad: (pad: Pad, file: File) => Promise<void>
   assignSampleToPad: (sample: SampleAsset, padId: string) => Promise<void>
   assignSampleToSelectedPad: (sample: SampleAsset) => Promise<void>

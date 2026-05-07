@@ -1,5 +1,5 @@
 import { useRef, useEffect, useCallback, type RefObject } from 'react'
-import type { FilterType, MultiSampleMode, Pad, PadSettings, BusId, SampleLayer } from '../types'
+import type { FilterType, MultiSampleMode, Pad, PadMode, PadSettings, BusId, SampleLayer } from '../types'
 import { BUS_IDS } from '../types'
 import {
   useStore,
@@ -182,15 +182,18 @@ function StackedTimeline({ layers, padSettings, sampleMap: sm }: { layers: Sampl
 
 export function PadEditor({ waveformRef, waveformCanvasRef, dragTargetRef }: PadEditorProps) {
   const selectedPad = useStore(selectSelectedPad)
+  const selectedPadIds = useStore((s) => s.selectedPadIds)
   const selectedLayer = useStore(selectSelectedLayer)
   const selectedLayerId = useStore((s) => s.selectedLayerId)
   const collapsed = useStore((s) => s.padEditorCollapsed)
   const trimDraft = useStore((s) => s.trimDraft)
   const waveformZoom = useStore((s) => s.waveformZoom)
   const sampleMap = useStore((s) => s.sampleMap)
+  const project = useStore((s) => s.project)
 
   const {
     updatePadSettings,
+    updateMultiplePads,
     assignFileToPad,
     renamePad,
     resetSelectedPadName,
@@ -206,6 +209,11 @@ export function PadEditor({ waveformRef, waveformCanvasRef, dragTargetRef }: Pad
 
   const eff = selectedPad ? effectiveSettings(selectedPad, selectedLayer) : null
 
+  // Batch editing mode
+  const isBatchMode = selectedPadIds.length > 0
+  const batchPads = isBatchMode && project ? project.pads.filter((p) => selectedPadIds.includes(p.id)) : null
+  const batchSettings = batchPads && batchPads.length > 0 ? batchPads[0].settings : null
+
   const toggleCollapse = () => useStore.setState((s) => ({ padEditorCollapsed: !s.padEditorCollapsed }))
 
   return (
@@ -217,7 +225,68 @@ export function PadEditor({ waveformRef, waveformCanvasRef, dragTargetRef }: Pad
           {collapsed ? '▸' : '▾'}
         </button>
       </div>
-      {selectedPad ? (
+      {isBatchMode && batchPads && batchSettings ? (
+        <>
+          <div className="editor-batch-header">
+            <span>Editing {batchPads.length} pads</span>
+            <button type="button" onClick={() => useStore.setState({ selectedPadIds: [] })} title="Clear selection">✕</button>
+          </div>
+          <div className="editor-top-row">
+            <label>
+              <span>Gain</span>
+              <KnobControl label="Gain" value={batchSettings.gain} min={0} max={2} step={0.01} onChange={(v) => void updateMultiplePads(selectedPadIds, { gain: v })} />
+            </label>
+            <label>
+              <span>Mode</span>
+              <select value={batchSettings.mode} onChange={(e) => void updateMultiplePads(selectedPadIds, { mode: e.target.value as PadMode })}>
+                <option value="one-shot">One-Shot</option>
+                <option value="adsr">ADSR</option>
+                <option value="ahr">AHR</option>
+              </select>
+            </label>
+            <label>
+              <span>Bus</span>
+              <select value={batchSettings.bus} onChange={(e) => void updateMultiplePads(selectedPadIds, { bus: e.target.value as BusId })}>
+                {BUS_IDS.map((id) => (<option key={id} value={id}>Bus {id}</option>))}
+              </select>
+            </label>
+            <label>
+              <span>Choke</span>
+              <select value={batchSettings.chokeGroup} onChange={(e) => void updateMultiplePads(selectedPadIds, { chokeGroup: Number(e.target.value) })}>
+                <option value={0}>Off</option>
+                {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (<option key={n} value={n}>Group {n}</option>))}
+              </select>
+            </label>
+            <label>
+              <span>Filter</span>
+              <select value={batchSettings.filterType} onChange={(e) => void updateMultiplePads(selectedPadIds, { filterType: e.target.value as FilterType })}>
+                <option value="off">Off</option>
+                <option value="lp12">LP12</option>
+                <option value="lp24">LP24</option>
+                <option value="highpass">HP</option>
+                <option value="bandpass">BP</option>
+                <option value="lphp">LPHP</option>
+              </select>
+            </label>
+            <label>
+              <span>Freq</span>
+              <KnobControl label="Freq" value={batchSettings.filterFreq} min={20} max={20000} step={1} freqScale onChange={(v) => void updateMultiplePads(selectedPadIds, { filterFreq: v })} />
+            </label>
+            <label>
+              <span>Q</span>
+              <KnobControl label="Q" value={batchSettings.filterQ} min={0.1} max={20} step={0.1} onChange={(v) => void updateMultiplePads(selectedPadIds, { filterQ: v })} />
+            </label>
+            <label>
+              <span>Pan</span>
+              <KnobControl label="Pan" value={batchSettings.pan ?? 0} min={-1} max={1} step={0.01} onChange={(v) => void updateMultiplePads(selectedPadIds, { pan: v })} />
+            </label>
+            <label>
+              <span>Mute</span>
+              <input type="checkbox" checked={batchSettings.mute ?? false} onChange={(e) => void updateMultiplePads(selectedPadIds, { mute: e.target.checked })} />
+            </label>
+          </div>
+        </>
+      ) : selectedPad ? (
         <>
           {/* --- Top row: only in expanded --- */}
           {!collapsed && (

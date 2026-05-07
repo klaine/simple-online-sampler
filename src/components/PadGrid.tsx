@@ -35,6 +35,7 @@ const velocityFromTouchEvent = (event: React.TouchEvent<HTMLElement>): number =>
 export function PadGrid() {
   const sampleMap = useStore((s) => s.sampleMap)
   const selectedPadId = useStore((s) => s.selectedPadId)
+  const selectedPadIds = useStore((s) => s.selectedPadIds)
   const sequencedPadHits = useSyncExternalStore(transportVisualStore.subscribe, transportVisualStore.getSequencedPadHits)
   const playheadStep = useSyncExternalStore(transportVisualStore.subscribe, transportVisualStore.getPlayheadStep)
   const activeBank = useStore((s) => s.activeBank)
@@ -45,6 +46,8 @@ export function PadGrid() {
   const displayedPads = useStore(selectDisplayedPads)
   const padHoldRecordEnabled = useStore((s) => s.padHoldRecordEnabled)
   const padHoldRecordingPadId = useStore((s) => s.padHoldRecordingPadId)
+
+  const _lastClickedPadRef = useRef<string | null>(null)
 
   const {
     triggerPad,
@@ -247,6 +250,7 @@ export function PadGrid() {
         {displayedPads.map((pad) => {
           const sample = pad.settings.sampleId ? sampleMap.get(pad.settings.sampleId) : undefined
           const selected = pad.id === selectedPadId
+          const multiSelected = selectedPadIds.includes(pad.id)
           const isSequencedHit = sequencedPadHits.has(pad.id)
           return (
             <div
@@ -254,7 +258,7 @@ export function PadGrid() {
               role="button"
               tabIndex={0}
               data-pad-id={pad.id}
-              className={`pad ${selected ? 'selected' : ''} ${isSequencedHit ? 'sequenced-hit' : ''} ${pad.id === padHoldRecordingPadId ? 'hold-recording' : ''} ${pad.settings.mute ? 'muted-pad' : ''}`}
+              className={`pad ${selected ? 'selected' : ''} ${multiSelected ? 'multi-selected' : ''} ${isSequencedHit ? 'sequenced-hit' : ''} ${pad.id === padHoldRecordingPadId ? 'hold-recording' : ''} ${pad.settings.mute ? 'muted-pad' : ''}`}
               draggable={!!pad.settings.sampleId}
               onDragStart={(e) => {
                 e.dataTransfer.effectAllowed = 'copyMove'
@@ -262,7 +266,31 @@ export function PadGrid() {
               }}
               onMouseDown={(e) => {
                 if (Date.now() - _lastTouchTime < 500) return
-                useStore.setState({ selectedPadId: pad.id })
+                const s = useStore.getState()
+                if (e.metaKey || e.ctrlKey) {
+                  // Ctrl+click: toggle pad in multi-select
+                  e.preventDefault()
+                  const next = s.selectedPadIds.includes(pad.id)
+                    ? s.selectedPadIds.filter((id) => id !== pad.id)
+                    : [...s.selectedPadIds, pad.id]
+                  useStore.setState({ selectedPadIds: next })
+                  _lastClickedPadRef.current = pad.id
+                } else if (e.shiftKey && _lastClickedPadRef.current) {
+                  // Shift+click: range select
+                  const lastId = _lastClickedPadRef.current
+                  const displayedIds = displayedPads.map((p) => p.id)
+                  const lastIdx = displayedIds.indexOf(lastId)
+                  const curIdx = displayedIds.indexOf(pad.id)
+                  if (lastIdx !== -1 && curIdx !== -1) {
+                    const [from, to] = lastIdx < curIdx ? [lastIdx, curIdx] : [curIdx, lastIdx]
+                    const rangeIds = displayedIds.slice(from, to + 1)
+                    useStore.setState({ selectedPadIds: [...new Set([...s.selectedPadIds, ...rangeIds])] })
+                  }
+                } else {
+                  // Plain click: single pad mode
+                  useStore.setState({ selectedPadId: pad.id, selectedPadIds: [] })
+                  _lastClickedPadRef.current = pad.id
+                }
                 if (padHoldRecordEnabled && !pad.settings.sampleId) {
                   startPadHoldRecord(pad.id)
                 } else {

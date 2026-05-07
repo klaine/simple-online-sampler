@@ -3423,6 +3423,11 @@ select.tb-led-value {
   box-shadow: 0 0 0 1px var(--accent-soft), var(--shadow-sm), 0 0 12px rgba(232, 168, 50, 0.1);
 }
 
+.pad.multi-selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent), 0 0 8px rgba(232, 168, 50, 0.3);
+}
+
 .pad.sequenced-hit {
   animation: pad-seq-hit 120ms ease-out;
   box-shadow:

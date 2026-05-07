@@ -149,6 +149,30 @@ export const createPadActions = (ctx: StoreContext) => ({
     }
   },
 
+  updateMultiplePads: async (padIds: string[], patch: Partial<Pad['settings']>) => {
+    const s = ctx.get()
+    if (!s.project || padIds.length === 0) return
+
+    s.pushUndo('Edit pads')
+    await s.saveProject({
+      ...s.project,
+      pads: s.project.pads.map((p) =>
+        padIds.includes(p.id) ? { ...p, settings: { ...p.settings, ...patch } } : p,
+      ),
+    })
+
+    // Live-update filter params on active voices for each pad
+    if ('filterType' in patch || 'filterFreq' in patch || 'filterQ' in patch || 'filterFreq2' in patch) {
+      for (const padId of padIds) {
+        const pad = s.project.pads.find((p) => p.id === padId)
+        if (pad) {
+          const merged = { ...pad.settings, ...patch }
+          audioEngine.updateActiveFilters(padId, merged.filterType, merged.filterFreq, merged.filterQ, merged.filterFreq2)
+        }
+      }
+    }
+  },
+
   assignFileToPad: async (pad: Pad, file: File) => {
     const raw = await file.arrayBuffer()
     const hash = await arrayBufferToHex(raw)
