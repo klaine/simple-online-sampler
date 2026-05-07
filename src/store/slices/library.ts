@@ -597,7 +597,7 @@ export const createLibraryActions = (ctx: StoreContext) => ({
     }
 
     // --- Battery 4 monolith .nbkt import ---
-    const nbktFiles = files.filter((f) => f.name.match(/\.nbkt$/i))
+    const nbktFiles = files.filter((f) => f.name.match(/\.nbk(t)?$/i))
     if (nbktFiles.length > 0) {
       const kitNames: string[] = []
       for (const nbktFile of nbktFiles) {
@@ -694,7 +694,61 @@ export const createLibraryActions = (ctx: StoreContext) => ({
         }
         continue
       }
-      if (!file.type.startsWith('audio/') && !file.name.match(/\.(wav|mp3|ogg|flac|aiff|aif|m4a|webm)$/i)) continue
+      if (!file.type.startsWith('audio/') && !file.name.match(/\.(wav|mp3|ogg|flac|aiff|aif|m4a|webm)$/i)) {
+        // Fallback: try parsing unrecognized files as Battery monoliths
+        if (file.name.match(/\.nbk/i) || file.size > 0x1000) {
+          try {
+            const buf = await file.arrayBuffer()
+            const result = parseBatteryMonolith(buf)
+            if (result && result.entries.length > 0) {
+              const runId = uid()
+              const runLabel = result.label
+              const velocityGroups = detectVelocityLayers(result.entries)
+              let kitAdded = 0
+              let padIndexCounter = 0
+              for (const [, group] of velocityGroups) {
+                const { entries: groupEntries, velocityRanges } = group
+                const hasLayers = groupEntries.length > 1
+                for (let li = 0; li < groupEntries.length; li++) {
+                  const entry = groupEntries[li]
+                  const wavBlob = extractWavFromMonolith(buf, entry)
+                  const audioFile = new File([wavBlob], entry.filename, { type: 'audio/wav' })
+                  const sample = await importFileAsSample(audioFile, ctx.get, ctx.set)
+                  const updated: SampleAsset = {
+                    ...sample,
+                    autosampleRunId: runId,
+                    autosampleRunLabel: runLabel,
+                    autosampleBattery: true,
+                    autosamplePadIndex: padIndexCounter,
+                    ...(hasLayers
+                      ? {
+                          autosampleMpcLayerIndex: li,
+                          autosampleMpcVelocityMax: velocityRanges[li][1],
+                        }
+                      : {}),
+                  }
+                  await db.putSample(updated)
+                  ctx.set((s) => {
+                    const idx = s.samples.findIndex((x) => x.id === updated.id)
+                    if (idx >= 0) s.samples[idx] = updated
+                    s.sampleMap.set(updated.id, updated)
+                  })
+                  kitAdded++
+                }
+                padIndexCounter++
+              }
+              if (kitAdded > 0) {
+                added += kitAdded
+                ctx.get().addToast(`Imported Battery kit: ${runLabel}`)
+              }
+              continue
+            }
+          } catch {
+            // Not a Battery monolith, skip silently
+          }
+        }
+        continue
+      }
       try {
         const sample = await importFileAsSample(file, ctx.get, ctx.set)
         importedSamples.push(sample)
