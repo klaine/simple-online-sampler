@@ -7,7 +7,7 @@ import type { SampleAsset, BusId, TrimSettings } from '../../types'
 import { showConfirm } from '../confirmDialog'
 import { parseMpcPgm, matchMpcSamplesToFiles } from '../../lib/mpcImport'
 import { parseLcdk, matchLcdkSamplesToFiles } from '../../lib/lcdkImport'
-import { parseBatteryMonolith, extractWavFromMonolith, detectVelocityLayers } from '../../lib/batteryMonolithImport'
+import { parseBatteryMonolith, extractWavFromMonolith, detectVelocityLayers, parseWavListChunks } from '../../lib/batteryMonolithImport'
 import { importFileAsSample } from '../importHelpers'
 import type { StoreContext } from '../context'
 
@@ -621,12 +621,20 @@ export const createLibraryActions = (ctx: StoreContext) => ({
               const wavBlob = extractWavFromMonolith(buf, entry)
               const audioFile = new File([wavBlob], entry.filename, { type: 'audio/wav' })
               const sample = await importFileAsSample(audioFile, ctx.get, ctx.set)
+              // Parse metadata tags from extracted WAV
+              let metadataTags: Record<string, string> | undefined
+              try {
+                const wavBuf = await wavBlob.arrayBuffer()
+                const tags = parseWavListChunks(wavBuf)
+                if (Object.keys(tags).length > 0) metadataTags = tags
+              } catch { /* ignore */ }
               const updated: SampleAsset = {
                 ...sample,
                 autosampleRunId: runId,
                 autosampleRunLabel: runLabel,
                 autosampleBattery: true,
                 autosamplePadIndex: padIndexCounter,
+                ...(metadataTags ? { metadataTags } : {}),
                 ...(hasLayers
                   ? {
                       autosampleMpcLayerIndex: li,
@@ -714,12 +722,20 @@ export const createLibraryActions = (ctx: StoreContext) => ({
                   const wavBlob = extractWavFromMonolith(buf, entry)
                   const audioFile = new File([wavBlob], entry.filename, { type: 'audio/wav' })
                   const sample = await importFileAsSample(audioFile, ctx.get, ctx.set)
+                  // Parse metadata tags from extracted WAV
+                  let metadataTags: Record<string, string> | undefined
+                  try {
+                    const wavBuf = await wavBlob.arrayBuffer()
+                    const tags = parseWavListChunks(wavBuf)
+                    if (Object.keys(tags).length > 0) metadataTags = tags
+                  } catch { /* ignore */ }
                   const updated: SampleAsset = {
                     ...sample,
                     autosampleRunId: runId,
                     autosampleRunLabel: runLabel,
                     autosampleBattery: true,
                     autosamplePadIndex: padIndexCounter,
+                    ...(metadataTags ? { metadataTags } : {}),
                     ...(hasLayers
                       ? {
                           autosampleMpcLayerIndex: li,
@@ -751,6 +767,24 @@ export const createLibraryActions = (ctx: StoreContext) => ({
       }
       try {
         const sample = await importFileAsSample(file, ctx.get, ctx.set)
+        // Parse WAV metadata tags for any WAV file
+        if (file.name.match(/\.wav$/i)) {
+          try {
+            const buf = await file.arrayBuffer()
+            const tags = parseWavListChunks(buf)
+            if (Object.keys(tags).length > 0) {
+              const updated: SampleAsset = { ...sample, metadataTags: tags }
+              await db.putSample(updated)
+              ctx.set((s) => {
+                const idx = s.samples.findIndex((x) => x.id === updated.id)
+                if (idx >= 0) s.samples[idx] = updated
+                s.sampleMap.set(updated.id, updated)
+              })
+            }
+          } catch {
+            // Ignore tag parse errors
+          }
+        }
         importedSamples.push(sample)
         added++
       } catch (e) {

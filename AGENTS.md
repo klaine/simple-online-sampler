@@ -201,6 +201,7 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - `SampleAsset.autosampleMpc?: boolean` — true only when imported via .pgm program file
 - `SampleAsset.autosamplePreset?: boolean` — true for factory preset samples
 - `SampleAsset.autosampleBattery?: boolean` — true when imported via Battery 4 monolith .nbkt
+- `SampleAsset.metadataTags?: Record<string, string>` — metadata tags extracted from WAV LIST/INFO chunks (INAM, IART, ICMT, etc.)
 - `SampleAsset.autosampleMpcPadSettings?: MpcPadImportSettings` — per-pad settings from .pgm (pan, level, tuning, filter, envelope, playMode)
 - `SampleAsset.autosampleMpcLayerIndex?: number` — velocity layer index within an MPC pad (0=primary, 1–3=additional)
 - `SampleAsset.autosampleMpcVelocityMax?: number` — MPC velocity range max for this layer
@@ -242,6 +243,13 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - **Velocity subgroups**: within groups, samples with `_vNN` or ` VNN` filename suffix (e.g. `Kick_v32.wav`, `Kick V1.wav`) are automatically detected and displayed as collapsible subgroups showing base name + layer count. Requires ≥2 samples with matching base name to form a subgroup. Ungrouped samples are NOT auto-detected (must be grouped first).
 - **Velocity subgroup drag**: dragging a velocity subgroup onto a pad assigns all its samples as velocity layers on that single pad (`multiMode: 'velocity'`), with auto-computed velocity splits. Works from both library sidebar and pad grid drop.
 - Velocity subgroup detection uses regex `(?:_v| V)(\d+)` before the file extension; samples are sorted by velocity value ascending within subgroups
+
+### Metadata Tags
+- WAV `LIST/INFO` chunks are parsed during import for all WAV files (not just Battery kits), extracting tags like `INAM` (name), `IART` (artist), `ICMT` (comment), `IPRD` (product), `ISFT` (software), `IGNR` (genre), `IKEY` (keywords)
+- Tags stored on `SampleAsset.metadataTags: Record<string, string>`
+- Settings popover has a "Sample Metadata Tags" section with a master toggle + individual tag type checkboxes (persisted in localStorage)
+- Enabled tags appear as small inline chips in the sample library sidebar and on pad grid pads
+- `ungroupSample` clears `metadataTags` along with other group fields
 
 ### Chop Modal (F2)
 - `chopPoints: number[]` stored on `SampleAsset` in IndexedDB — sorted fractional positions (0–1)

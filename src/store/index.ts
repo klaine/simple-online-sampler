@@ -212,6 +212,8 @@ export const useStore = create<AppState>()(
       favoriteSampleIds: new Set(),
       libraryWavePeaks: {},
       previewSampleId: null,
+      showMetadataTags: localStorage.getItem('showMetadataTags') !== 'false',
+      metadataTagWhitelist: new Set(JSON.parse(localStorage.getItem('metadataTagWhitelist') || '["INAM","IART","ICMT","IPRD"]')),
 
       expandedPianoRollPads: new Set<string>(),
       pianoRollOctaveOffset: {},

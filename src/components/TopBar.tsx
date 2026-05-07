@@ -77,9 +77,56 @@ export function SettingsContent() {
   const audioInputs = useStore((s) => s.audioInputs)
   const audioInputDeviceId = useStore((s) => s.audioInputDeviceId)
   const metronomeVolume = useStore((s) => s.metronomeVolume)
+  const showMetadataTags = useStore((s) => s.showMetadataTags)
+  const metadataTagWhitelist = useStore((s) => s.metadataTagWhitelist)
+
+  const toggleTag = (tag: string) => {
+    const next = new Set(metadataTagWhitelist)
+    if (next.has(tag)) next.delete(tag)
+    else next.add(tag)
+    useStore.setState({ metadataTagWhitelist: next })
+    localStorage.setItem('metadataTagWhitelist', JSON.stringify([...next]))
+  }
+
+  const TAG_OPTIONS = [
+    { id: 'INAM', label: 'Name' },
+    { id: 'IART', label: 'Artist' },
+    { id: 'ICMT', label: 'Comment' },
+    { id: 'IPRD', label: 'Product' },
+    { id: 'ISFT', label: 'Software' },
+    { id: 'IGNR', label: 'Genre' },
+    { id: 'IKEY', label: 'Keywords' },
+  ] as const
 
   return (
     <>
+      <strong className="settings-section-title">Sample Metadata Tags</strong>
+      <label className="settings-row">
+        <span>Show tags</span>
+        <input
+          type="checkbox"
+          checked={showMetadataTags}
+          onChange={(e) => {
+            useStore.setState({ showMetadataTags: e.target.checked })
+            localStorage.setItem('showMetadataTags', String(e.target.checked))
+          }}
+        />
+      </label>
+      {showMetadataTags && (
+        <div className="settings-tag-list">
+          {TAG_OPTIONS.map((tag) => (
+            <label key={tag.id} className="settings-row settings-tag-row">
+              <span>{tag.label}</span>
+              <input
+                type="checkbox"
+                checked={metadataTagWhitelist.has(tag.id)}
+                onChange={() => toggleTag(tag.id)}
+              />
+            </label>
+          ))}
+        </div>
+      )}
+
       <strong className="settings-section-title">MIDI Input</strong>
       <label className="settings-row">
         <span>Enabled</span>

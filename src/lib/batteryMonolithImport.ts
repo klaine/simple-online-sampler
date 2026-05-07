@@ -209,6 +209,51 @@ export function detectVelocityLayers(
 }
 
 /**
+ * Parse LIST/INFO chunks from a WAV buffer and return metadata tags.
+ * Returns a map of tag key → value (e.g. { INAM: 'Kick 1', IART: 'NI' }).
+ */
+export function parseWavListChunks(buffer: ArrayBuffer): Record<string, string> {
+  const data = new Uint8Array(buffer)
+  const tags: Record<string, string> = {}
+  if (data.length < 36) return tags
+
+  // Walk through RIFF chunks looking for LIST
+  const view = new DataView(buffer)
+  let offset = 12 // after RIFF header + WAVE
+  const end = data.length
+
+  while (offset + 8 <= end) {
+    const chunkId = String.fromCharCode(data[offset], data[offset + 1], data[offset + 2], data[offset + 3])
+    const chunkSize = view.getUint32(offset + 4, true)
+    if (chunkId === 'LIST') {
+      const listType = String.fromCharCode(data[offset + 8], data[offset + 9], data[offset + 10], data[offset + 11])
+      if (listType === 'INFO') {
+        let infoOff = offset + 12
+        const infoEnd = offset + 8 + chunkSize
+        while (infoOff + 8 <= infoEnd) {
+          const tagId = String.fromCharCode(data[infoOff], data[infoOff + 1], data[infoOff + 2], data[infoOff + 3])
+          const tagSize = view.getUint32(infoOff + 4, true)
+          if (tagSize > 0 && infoOff + 8 + tagSize <= infoEnd) {
+            // Read null-terminated string, strip trailing nulls
+            const raw = new Uint8Array(buffer, infoOff + 8, tagSize)
+            let len = tagSize
+            while (len > 0 && raw[len - 1] === 0) len--
+            try {
+              const value = new TextDecoder('utf-8').decode(raw.subarray(0, len))
+              if (value) tags[tagId] = value
+            } catch { /* ignore decode errors */ }
+          }
+          infoOff += 8 + tagSize + (tagSize % 2) // pad to word boundary
+        }
+      }
+    }
+    offset += 8 + chunkSize + (chunkSize % 2)
+  }
+
+  return tags
+}
+
+/**
  * Suggest a drum category from a Battery sample filename + optional NI tag.
  */
 export function classifyBatterySample(filename: string): {

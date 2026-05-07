@@ -160,6 +160,8 @@ export interface AppState {
   favoriteSampleIds: Set<string>
   libraryWavePeaks: Record<string, number[]>
   previewSampleId: string | null
+  showMetadataTags: boolean
+  metadataTagWhitelist: Set<string>
 
 
 

@@ -127,6 +127,8 @@ export interface SampleAsset {
   autosamplePreset?: boolean       // true for factory preset samples
   autosampleLcdk?: boolean        // true when imported via .lcdk Loopcloud Drum kit file
   autosampleBattery?: boolean      // true when imported via Battery 4 monolith .nbkt
+  /** Metadata tags extracted from WAV LIST/INFO chunks (e.g. INAM, IART, ICMT) */
+  metadataTags?: Record<string, string>
   /** Imported kit pad settings (applied on pad assignment) */
   autosampleImportedPadSettings?: ImportedPadSettings
   /** MPC velocity layer index within a pad (0=primary, 1–3=additional layers) */
@@ -206,5 +208,5 @@ export interface PackageManifest {
   exportedAt: number
   project: Project
   usedSampleIds: string[]
-  sampleMeta?: { id: string; name: string; chopPoints?: number[]; autosampleRunId?: string; autosampleRunLabel?: string; autosamplePadIndex?: number; autosampleTrim?: TrimSettings; autosampleBus?: BusId; autosampleChokeGroup?: number; autosampleMpc?: boolean; autosamplePreset?: boolean; autosampleLcdk?: boolean; autosampleBattery?: boolean; autosampleImportedPadSettings?: ImportedPadSettings; autosampleMpcLayerIndex?: number; autosampleMpcVelocityMax?: number }[]
+  sampleMeta?: { id: string; name: string; chopPoints?: number[]; autosampleRunId?: string; autosampleRunLabel?: string; autosamplePadIndex?: number; autosampleTrim?: TrimSettings; autosampleBus?: BusId; autosampleChokeGroup?: number; autosampleMpc?: boolean; autosamplePreset?: boolean; autosampleLcdk?: boolean; autosampleBattery?: boolean; metadataTags?: Record<string, string>; autosampleImportedPadSettings?: ImportedPadSettings; autosampleMpcLayerIndex?: number; autosampleMpcVelocityMax?: number }[]
 }

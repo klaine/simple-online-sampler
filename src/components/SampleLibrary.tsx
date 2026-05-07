@@ -15,6 +15,30 @@ let _expandedChops = new Set<string>()
 let _expandedGroups = new Set<string>()
 let _expandedVeloGroups = new Set<string>()
 
+const TAG_LABELS: Record<string, string> = {
+  INAM: 'Name', IART: 'Artist', ICMT: 'Comment',
+  IPRD: 'Product', ISFT: 'Software', IGNR: 'Genre', IKEY: 'Keywords',
+}
+
+export function MetadataTagChips({ sample, max = 3 }: { sample: SampleAsset; max?: number }) {
+  const showTags = useStore((s) => s.showMetadataTags)
+  const whitelist = useStore((s) => s.metadataTagWhitelist)
+  if (!showTags || !sample.metadataTags) return null
+  const entries = Object.entries(sample.metadataTags)
+    .filter(([k]) => whitelist.has(k))
+    .slice(0, max)
+  if (entries.length === 0) return null
+  return (
+    <span className="metadata-tag-chips">
+      {entries.map(([k, v]) => (
+        <span key={k} className="metadata-tag-chip" title={`${TAG_LABELS[k] ?? k}: ${v}`}>
+          {v}
+        </span>
+      ))}
+    </span>
+  )
+}
+
 interface SampleRowProps {
   sample: SampleAsset
   inGroup?: boolean
@@ -103,6 +127,7 @@ const SampleRow = memo(function SampleRow({
           <span className="sample-name">{sample.name}</span>
           <small>{`${Math.max(1, Math.round(sample.size / 1024))} KB`}</small>
         </button>
+        <MetadataTagChips sample={sample} />
         <div className="sample-actions">
           <button
             type="button"

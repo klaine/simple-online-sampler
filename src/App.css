@@ -553,6 +553,19 @@ select.tb-led-value {
   margin-top: 0.4rem;
 }
 
+.settings-tag-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding-left: 0.6rem;
+  margin-top: 0.1rem;
+}
+
+.settings-tag-row {
+  font-size: 0.7rem;
+  color: var(--muted-light);
+}
+
 .import-dialog-overlay {
   position: fixed;
   inset: 0;
@@ -3890,6 +3903,45 @@ select.tb-led-value {
   color: var(--bg);
   vertical-align: middle;
   letter-spacing: 0.03em;
+}
+
+/* --- Metadata Tag Chips --- */
+
+.metadata-tag-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem;
+  padding: 0 0.4rem 0.2rem;
+  margin-top: -0.1rem;
+  min-width: 0;
+}
+
+.metadata-tag-chip {
+  display: inline-block;
+  font-size: 0.55rem;
+  font-weight: 500;
+  padding: 0.04rem 0.3rem;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  line-height: 1.2;
+}
+
+.pad .metadata-tag-chips {
+  padding: 0;
+  margin-top: 0;
+  gap: 0.1rem;
+}
+
+.pad .metadata-tag-chip {
+  font-size: 0.5rem;
+  padding: 0.02rem 0.2rem;
+  max-width: 100%;
 }
 
 /* --- Velocity Subgroups --- */

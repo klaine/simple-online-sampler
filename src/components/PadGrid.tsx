@@ -14,6 +14,7 @@ import {
   selectDisplayedPads,
   selectVisibleSequence,
 } from '../store'
+import { MetadataTagChips } from './SampleLibrary'
 
 // Guard: suppress mouse events that follow a recent touch (prevents double-trigger)
 let _lastTouchTime = 0
@@ -770,6 +771,7 @@ export function PadGrid() {
               <strong>{pad.name}</strong>
               <small>{midiToName(pad.midiNote)}</small>
               <em>{sample ? sample.name : 'Drop sample'}</em>
+              {sample && <MetadataTagChips sample={sample} max={1} />}
               {!pad.settings.sampleId && (
                 <button
                   type="button"
