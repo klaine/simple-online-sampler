@@ -73,6 +73,8 @@ const PAL_YELLOW = 13
 const PAL_DIM_WHITE = 2
 const PAL_WHITE = 3
 const PAL_ORANGE = 9
+const PAL_RED = 5
+const PAL_RED_BRIGHT = 6
 const PAL_BLUE = 45
 const PAL_BLUE_BRIGHT = 41
 const PAL_LIGHT_BLUE = 44
@@ -415,6 +417,9 @@ function rgbToPalette(r: number, g: number, b: number): number {
   if (r > 40 && g > 40 && b < 20) return PAL_YELLOW
   // Orange
   if (r > 80 && g > 30 && g < 80 && b < 20) return PAL_ORANGE
+  // Red family
+  if (r > 80 && r > g && r > b && g < 40 && b < 40) return PAL_RED_BRIGHT
+  if (r > g && r > b && r >= 20) return PAL_RED
   // White
   if (r > 80 && g > 80 && b > 80) return PAL_WHITE
   return PAL_DIM_WHITE
