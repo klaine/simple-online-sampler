@@ -214,7 +214,6 @@ function parseTrailingPatch(data: Uint8Array): BatteryPatchData | null {
 
   let dsinT: DsinContainer | null = null
   let largestDsin = 0
-  let dsinE: DsinContainer | null = null
 
   let scanPos = contentStart
   while (scanPos < contentEnd - 12) {
@@ -226,9 +225,6 @@ function parseTrailingPatch(data: Uint8Array): BatteryPatchData | null {
         dsinT = dsin
       }
     }
-    if (dsin.type === 0x65) { // 'e'
-      dsinE = dsin
-    }
     scanPos += 12 + dsin.size
   }
 
@@ -236,10 +232,9 @@ function parseTrailingPatch(data: Uint8Array): BatteryPatchData | null {
   const cells: BatteryCellInfo[] = []
   const sampleFilenames: string[] = []
 
-  // Extract kit name from DSIN 'e' (at fixed offset within its content)
-  if (dsinE) {
-    kitName = extractKitName(data, dsinE)
-  }
+  // Extract kit name by scanning trailing data for the charCount+UTF16LE pattern
+  // The kit name appears in the nested DSIN structure, not inside DSIN 'e' content (which is just a marker)
+  kitName = extractKitNameFromTrailingData(data, trailOff, trailSize)
 
   // Try to decompress and parse DSIN 't'
   if (dsinT) {
@@ -249,7 +244,6 @@ function parseTrailingPatch(data: Uint8Array): BatteryPatchData | null {
       const compressed = content.subarray(0x71)
       const decompressed = fastLzDecompress(compressed)
       if (decompressed && decompressed.length > 0x200) {
-        // Parse decompressed blob
         const parsed = parseDecompressedPatch(decompressed)
         if (parsed) {
           if (!kitName) kitName = parsed.kitName
@@ -260,41 +254,31 @@ function parseTrailingPatch(data: Uint8Array): BatteryPatchData | null {
     }
   }
 
-  // Also try to extract cell count from 4KIN(v4) footer
-  // Find footer: scan for "4taB" marker near end of trailing data
-  const footerKitName = extractKitNameFromFooter()
-
-  if (!kitName && footerKitName) kitName = footerKitName
-
   if (cells.length === 0 && sampleFilenames.length === 0 && !kitName) return null
 
   return { kitName, cells, sampleFilenames }
 }
 
-function extractKitName(data: Uint8Array, dsinE: DsinContainer): string {
-  const contentStart = dsinE.contentOffset
-  const contentEnd = contentStart + dsinE.size
+function extractKitNameFromTrailingData(data: Uint8Array, trailOff: number, trailSize: number): string {
+  // Search for the kit name pattern: uint32 charCount followed by UTF-16LE text
+  // The name appears in the nested DSIN structure between 0x100-0x300 from the start
+  const searchStart = trailOff + 0xE0
+  const searchEnd = trailOff + Math.min(trailSize, 0x300)
 
-  // Search for UTF-16LE strings that look like kit names
-  // Kit names are short (2-60 chars), preceeded by a uint32 char count
-  for (let off = contentStart; off < Math.min(contentEnd - 8, contentStart + 0x300); off += 2) {
+  for (let off = searchStart; off < searchEnd - 8; off++) {
     const charCount = readU32(data, off)
-    if (charCount < 2 || charCount > 60) continue
+    if (charCount < 2 || charCount > 80) continue
     const nameStart = off + 4
-    if (nameStart + charCount * 2 > contentEnd) continue
+    if (nameStart + charCount * 2 > data.length) continue
+    // Read UTF-16LE string (null-terminated within charCount*2 bytes)
     const name = readUtf16Le(data, nameStart, (charCount - 1) * 2)
     if (!name || name.length < 2) continue
-    // Kit names: human-readable, no control chars, not "Kontakt" or "(null)"
     if (!/^[\x20-\x7E]+$/.test(name)) continue
     if (name === '(null)' || name.includes('Kontakt') || name.includes('Native')) continue
+    // Verify: next fields after the name should look like floats (1.0, 0.0)
+    // This helps distinguish kit names from other strings
     return name
   }
-  return ''
-}
-
-function extractKitNameFromFooter(): string {
-  // The 4KIN(v4) footer contains "4taB" marker and some metadata
-  // Not a reliable source for kit name, but attempt to find it
   return ''
 }
 
