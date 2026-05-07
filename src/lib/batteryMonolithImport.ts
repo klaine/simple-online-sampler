@@ -270,13 +270,14 @@ function extractKitNameFromTrailingData(data: Uint8Array, trailOff: number, trai
     if (charCount < 2 || charCount > 80) continue
     const nameStart = off + 4
     if (nameStart + charCount * 2 > data.length) continue
-    // Read UTF-16LE string (null-terminated within charCount*2 bytes)
-    const name = readUtf16Le(data, nameStart, (charCount - 1) * 2)
-    if (!name || name.length < 2) continue
+    // Read UTF-16LE string (null-terminated, read up to charCount*2 bytes)
+    const name = readUtf16Le(data, nameStart, charCount * 2)
+    if (!name || name.length < 3) continue
     if (!/^[\x20-\x7E]+$/.test(name)) continue
     if (name === '(null)' || name.includes('Kontakt') || name.includes('Native')) continue
-    // Verify: next fields after the name should look like floats (1.0, 0.0)
-    // This helps distinguish kit names from other strings
+    if (/^\d[\d.]*$/.test(name)) continue
+    // Skip very short all-digit or version-like strings
+    if (name.length < 3) continue
     return name
   }
   return ''
@@ -292,10 +293,11 @@ function parseDecompressedPatch(data: Uint8Array): { kitName: string; cells: Bat
     if (charCount < 2 || charCount > 60) continue
     const nameStart = off + 4
     if (nameStart + charCount * 2 > data.length) continue
-    const name = readUtf16Le(data, nameStart, (charCount - 1) * 2)
+    const name = readUtf16Le(data, nameStart, charCount * 2)
     if (!name || name.length < 2) continue
     if (!/^[\x20-\x7E]+$/.test(name)) continue
     if (name === '(null)' || name.includes('Kontakt') || name.includes('Native')) continue
+    if (/^\d[\d.]*$/.test(name)) continue
     // Verify: name length should be charCount - 1 (null terminator)
     if (name.length === charCount - 1) {
       kitName = name
@@ -330,7 +332,7 @@ function parseDecompressedPatch(data: Uint8Array): { kitName: string; cells: Bat
       continue
     }
 
-    const name = readUtf16Le(data, nameStart, (charCount - 1) * 2).replace(/\0/g, '').trim()
+    const name = readUtf16Le(data, nameStart, charCount * 2).replace(/\0/g, '').trim()
     if (!name || name === '(null)') {
       // Still count as a cell slot for padIndex, but skip unnamed
       cellIdx++
@@ -393,7 +395,7 @@ function parseDecompressedPatch(data: Uint8Array): { kitName: string; cells: Bat
       continue
     }
 
-    const fname = readUtf16Le(data, nameOff, (charCount - 1) * 2).replace(/\0/g, '').trim()
+    const fname = readUtf16Le(data, nameOff, charCount * 2).replace(/\0/g, '').trim()
     if (!fname || fname.length < 3) {
       tablePos++
       continue
