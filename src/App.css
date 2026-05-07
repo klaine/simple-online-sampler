@@ -4196,6 +4196,108 @@ select.tb-led-value {
   border-color: var(--border);
 }
 
+/* --- Synth Mode Selector --- */
+.synth-mode-selector {
+  display: flex;
+  gap: 0.3rem;
+  margin-bottom: 0.35rem;
+}
+.synth-mode-selector button {
+  flex: 1;
+  font-size: 0.68rem;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--muted);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.synth-mode-selector button.active {
+  background: var(--accent-glow);
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+/* --- VA Oscillator Section --- */
+.va-osc-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem;
+  margin-bottom: 0.35rem;
+}
+.va-osc-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.35rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: rgba(0,0,0,0.12);
+}
+.va-osc-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  align-items: center;
+}
+.va-osc-controls select {
+  font-size: 0.7rem;
+  padding: 0.15rem 0.25rem;
+  width: 3.5rem;
+}
+.va-osc-controls .knob-control {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+}
+.va-osc-controls .knob-label {
+  font-size: 0.6rem;
+}
+
+/* --- VA Mixer Section --- */
+.va-mixer-section {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.2rem 0;
+}
+.va-sync-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--muted-light);
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.va-sync-toggle input[type="checkbox"] {
+  accent-color: var(--accent);
+}
+
+/* --- VA Voice Section (Mono/Poly + Glide) --- */
+.va-voice-section {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.2rem 0;
+}
+.va-poly-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.va-poly-toggle select {
+  font-size: 0.7rem;
+  padding: 0.15rem 0.25rem;
+}
+
 /* --- Toast Notifications --- */
 
 .toast-container {

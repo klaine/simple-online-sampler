@@ -94,6 +94,7 @@ export const normalizeProject = (incoming: Project): Project => {
         ...(pad.settings.synthParams?.lfo && 'target' in ((pad.settings.synthParams!.lfo as unknown) as Record<string, unknown>) ? {
           synthParams: {
             ...pad.settings.synthParams,
+            synthMode: pad.settings.synthParams.synthMode ?? 'additive',
             lfo: (() => {
               const old = (pad.settings.synthParams!.lfo as unknown) as Record<string, unknown>
               const target = old.target as string | undefined
@@ -103,8 +104,15 @@ export const normalizeProject = (incoming: Project): Project => {
                 pitchDepth: target === 'pitch' ? (depth ?? 0) : 0,
                 filterDepth: target === 'filter' ? (depth ?? 0) : 0,
                 gainDepth: target === 'gain' ? (depth ?? 0) : 0,
+                pwDepth: (old as Record<string, unknown>).pwDepth as number ?? 0,
+                triggerMode: (old as Record<string, unknown>).triggerMode as (import('../types').LfoTriggerMode | undefined) ?? 'free',
               }
             })(),
+          },
+        } : pad.settings.synthParams ? {
+          synthParams: {
+            ...pad.settings.synthParams,
+            synthMode: pad.settings.synthParams.synthMode ?? 'additive',
           },
         } : {}),
       },

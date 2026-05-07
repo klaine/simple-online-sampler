@@ -2,6 +2,7 @@ import type { BusId, EffectSlot, Pad, PadSettings, Project, SampleAsset, Sequenc
 import { BUS_IDS } from '../types'
 import { buildEffectChain, getSCWorkletUrl } from './audioEngine'
 import { createSynthVoice } from './synthEngine'
+import { renderVASynthToBuffer } from './vaSynthEngine'
 import { encodeWav } from './wavEncode'
 import type { WavLoopPoints } from './wavEncode'
 import {
@@ -437,6 +438,91 @@ export const renderProjectAudioWav = async (
       semitoneOffset = entry.event.note - (synthParams.baseNote + (settings.semitones ?? 0))
     }
 
+    const isVA = synthParams.synthMode === 'va'
+
+    // --- VA mode: use CPU-side buffer render (avoids AudioWorklet in OfflineAudioContext) ---
+    if (isVA && synthParams.va) {
+      const vaNoteDurationSec = noteDurationSec
+        ?? (settings.mode === 'one-shot' ? settings.envelope.attack + settings.envelope.decay + settings.envelope.release : 2)
+      const release = settings.envelope.release
+      const totalDuration = vaNoteDurationSec + release + EXPORT_TAIL_SEC
+
+      const { buffer } = renderVASynthToBuffer(
+        synthParams, settings,
+        entry.event.velocity / 127,
+        totalDuration,
+        project.bpm,
+        semitoneOffset,
+        DEFAULT_SAMPLE_RATE,
+      )
+
+      const source = offline.createBufferSource()
+      source.buffer = buffer
+
+      const gainNode = offline.createGain()
+      gainNode.gain.value = 1 // Envelope is baked into the buffer
+      source.connect(gainNode)
+
+      // Per-pad filter
+      const filterChain = createFilterChain(offline, settings)
+      const filterNodes = filterChain ? filterChain.nodes : []
+      let srcOutput: AudioNode = gainNode
+      if (filterChain) {
+        gainNode.connect(filterChain.input)
+        srcOutput = filterChain.output
+        // Apply filter envelope
+        scheduleFilterEnvelope(
+          filterNodes,
+          noteStart,
+          settings,
+          vaNoteDurationSec,
+          vaNoteDurationSec,
+          false,
+        )
+      }
+
+      // Per-pad pan
+      const padPanNode = createPanNode(offline, settings)
+      padPanNode.connect(busDestination)
+      srcOutput.connect(padPanNode)
+
+      // Pad effects
+      const padFxInput = padEffectInputs.get(pad.id)
+      if (padFxInput) {
+        srcOutput.disconnect()
+        srcOutput.connect(padFxInput)
+      }
+
+      source.start(noteStart)
+      source.stop(noteStart + totalDuration)
+
+      // Choke group
+      if (chokeGroup > 0) {
+        const activeInGroup = chokeActiveGains.get(chokeGroup) ?? []
+        for (const prev of activeInGroup) {
+          if (prev.endSec > noteStart) {
+            scheduleSynthChokeRelease(
+              prev.gainNode.gain,
+              prev.filters,
+              prev.filterBaseFreq,
+              noteStart,
+              settings,
+            )
+          }
+        }
+        const voiceEnd = noteStart + totalDuration
+        activeInGroup.push({
+          gainNode,
+          endSec: voiceEnd,
+          filters: filterNodes,
+          filterBaseFreq: undefined,
+        })
+        chokeActiveGains.set(chokeGroup, activeInGroup)
+      }
+      return
+    }
+
+    // --- Additive mode: use OfflineAudioContext node graph ---
     const synthVoice = createSynthVoice(
       offline, synthParams, settings,
       entry.event.velocity / 127,

@@ -9,7 +9,7 @@ import {
 } from '../store'
 import { KnobControl } from './KnobControl'
 import { EnvelopeSection } from './EnvelopeSection'
-import { SynthHarmonicsEditor, SynthLfoEditor } from './SynthEditor'
+import { SynthHarmonicsEditor, SynthLfoEditor, SynthModeSelector, SynthVAEditor, SynthBaseNoteEditor } from './SynthEditor'
 import { EffectSlotUI } from './Mixer'
 import { midiToName, createDefaultSynthParams } from '../lib/utils'
 import { audioEngine } from '../lib/audioEngine'
@@ -478,8 +478,17 @@ export function PadEditor({ waveformRef, waveformCanvasRef, dragTargetRef }: Pad
               </div>
               )}
 
-              {/* --- Synth: Harmonics + Base Note --- */}
+              {/* --- Synth: Mode selector (shown for both modes) --- */}
+              {(selectedPad.settings.source ?? 'sample') === 'synth' && <SynthModeSelector />}
+
+              {/* --- Synth: Additive — Harmonics + Base Note --- */}
               {(selectedPad.settings.source ?? 'sample') === 'synth' && <SynthHarmonicsEditor />}
+
+              {/* --- Synth: VA — Oscillator controls */}
+              {(selectedPad.settings.source ?? 'sample') === 'synth' && <SynthVAEditor />}
+
+              {/* --- Synth: Base Note (VA mode only, shown outside VA editor) --- */}
+              {(selectedPad.settings.source ?? 'sample') === 'synth' && (selectedPad.settings.synthParams?.synthMode ?? 'additive') === 'va' && <SynthBaseNoteEditor />}
 
               {/* --- Synth: Envelope sections (AMP + FILTER) --- */}
               {(selectedPad.settings.source ?? 'sample') === 'synth' && (

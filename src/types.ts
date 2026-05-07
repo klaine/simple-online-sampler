@@ -78,6 +78,7 @@ export interface MidiOutConfig {
 
 export type LfoWaveform = 'sine' | 'ramp-up' | 'ramp-down' | 'square'
 export type LfoRateMode = 'free' | 'sync'
+export type LfoTriggerMode = 'free' | 'trigger'
 
 export interface LfoSettings {
   waveform: LfoWaveform
@@ -87,6 +88,8 @@ export interface LfoSettings {
   pitchDepth: number       // 0–1 (pitch modulation amount, 0=off)
   filterDepth: number      // 0–1 (filter cutoff modulation amount, 0=off)
   gainDepth: number        // 0–1 (gain/tremolo modulation amount, 0=off)
+  pwDepth?: number         // 0–1 (PWM modulation depth, VA mode only)
+  triggerMode?: LfoTriggerMode // 'free' (continuous) or 'trigger' (retrigger on note)
 }
 
 export interface FilterEnvelopeSettings {
@@ -97,7 +100,28 @@ export interface FilterEnvelopeSettings {
   depth: number            // semitones of filter cutoff modulation (0–96)
 }
 
+export type SynthMode = 'additive' | 'va'
+export type VAOscWaveform = 'saw' | 'square' | 'triangle' | 'sine'
+
+export interface VAOscillatorParams {
+  waveform: VAOscWaveform
+  pulseWidth: number      // 0.1–0.9 (square wave duty cycle, ignored for other waveforms)
+  semitones: number       // coarse detune from base note (-24 to +24)
+  fineCents: number       // fine detune (-100 to +100)
+  level: number           // 0–1 (oscillator level)
+}
+
+export interface VASynthParams {
+  osc1: VAOscillatorParams
+  osc2: VAOscillatorParams
+  oscSync: boolean        // hard-sync OSC2 to OSC1 phase reset
+  oscMix: number          // -1 (full OSC1) to +1 (full OSC2), 0 = equal
+  glide: number           // portamento time in seconds (0 = off)
+}
+
 export interface SynthParams {
+  /** Synthesis mode: 'additive' (16 sine harmonics) or 'va' (virtual analog 2-osc) */
+  synthMode?: SynthMode
   /** 16 harmonic amplitudes (0–1), index 0 = fundamental */
   harmonics: number[]
   /** Base frequency as MIDI note (default 60 = C4) */
@@ -106,6 +130,10 @@ export interface SynthParams {
   filterEnvelope: FilterEnvelopeSettings
   /** LFO */
   lfo: LfoSettings
+  /** VA-specific parameters (only used when synthMode === 'va') */
+  va?: VASynthParams
+  /** Polyphony mode: 'mono' = 1 voice (legato + glide), 'poly' = standard */
+  polyMode?: 'mono' | 'poly'
 }
 
 export interface PadSettings {
@@ -258,6 +286,9 @@ export interface SynthPatch {
     gain: number
     semitones: number
     fineCents: number
+    synthMode?: SynthMode
+    polyMode?: 'mono' | 'poly'
+    glide?: number
   }
 }
 

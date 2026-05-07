@@ -105,6 +105,83 @@ function getSCWorkletUrl(): string {
 }
 
 // ---------------------------------------------------------------------------
+// VA oscillator worklet source (dual oscillator + hard sync + PWM)
+// ---------------------------------------------------------------------------
+
+const VA_OSC_WORKLET_JS = `
+  var id = "__va_osc_worklet_config__";
+  class VADualOscillatorProcessor extends AudioWorkletProcessor {
+    constructor(opts) {
+      super();
+      this.osc1Phase = 0;
+      this.osc2Phase = 0;
+      this.syncTriggered = false;
+      this.osc1Wave = 0;
+      this.osc2Wave = 0;
+      this.syncEnabled = false;
+    }
+    static get parameterDescriptors() {
+      return [
+        { name: 'osc1Freq', defaultValue: 261.63, minValue: 1, maxValue: 15000, automationRate: 'a-rate' },
+        { name: 'osc2Freq', defaultValue: 261.63, minValue: 1, maxValue: 15000, automationRate: 'a-rate' },
+        { name: 'osc1Pw',   defaultValue: 0.5, minValue: 0.05, maxValue: 0.95, automationRate: 'a-rate' },
+        { name: 'osc2Pw',   defaultValue: 0.5, minValue: 0.05, maxValue: 0.95, automationRate: 'a-rate' },
+        { name: 'oscMix',   defaultValue: 0, minValue: -1, maxValue: 1, automationRate: 'a-rate' },
+      ];
+    }
+    process(inputs, outputs, parameters) {
+      var out = outputs[0];
+      if (!out || !out[0]) return true;
+      var ch = out[0];
+      var sr = sampleRate;
+      var f1 = parameters.osc1Freq;
+      var f2 = parameters.osc2Freq;
+      var pw1 = parameters.osc1Pw;
+      var pw2 = parameters.osc2Pw;
+      var mix = parameters.oscMix;
+      var aRate = f1.length > 1;
+      for (var i = 0; i < ch.length; i++) {
+        var ff1 = aRate ? f1[i] : f1[0];
+        var ff2 = aRate ? f2[i] : f2[0];
+        var pp1 = aRate ? pw1[i] : pw1[0];
+        var pp2 = aRate ? pw2[i] : pw2[0];
+        var mm = aRate ? mix[i] : mix[0];
+        this.osc1Phase += ff1 / sr;
+        if (this.osc1Phase >= 1.0) { this.osc1Phase -= 1.0; this.syncTriggered = true; }
+        if (this.syncEnabled && this.syncTriggered) this.osc2Phase = 0;
+        this.syncTriggered = false;
+        this.osc2Phase += ff2 / sr;
+        if (this.osc2Phase >= 1.0) this.osc2Phase -= 1.0;
+        var s1 = this.wave(this.osc1Phase, this.osc1Wave, pp1);
+        var s2 = this.wave(this.osc2Phase, this.osc2Wave, pp2);
+        var m2 = (mm + 1) / 2;
+        var m1 = 1 - m2;
+        ch[i] = s1 * m1 + s2 * m2;
+      }
+      return true;
+    }
+    wave(phase, type, pw) {
+      switch (type) {
+        case 0: return 2 * phase - 1;
+        case 1: return phase < pw ? 1 : -1;
+        case 2: return 4 * Math.abs(phase - 0.5) - 1;
+        case 3: return Math.sin(2 * Math.PI * phase);
+        default: return 0;
+      }
+    }
+  }
+  registerProcessor('va-dual-osc', VADualOscillatorProcessor);
+`
+
+let vaOscWorkletUrl: string | null = null
+function getVAOscWorkletUrl(): string {
+  if (!vaOscWorkletUrl) {
+    vaOscWorkletUrl = 'data:application/javascript,' + encodeURIComponent(VA_OSC_WORKLET_JS)
+  }
+  return vaOscWorkletUrl
+}
+
+// ---------------------------------------------------------------------------
 // Effect chain helpers
 // ---------------------------------------------------------------------------
 
@@ -431,6 +508,12 @@ export class AudioEngine {
     structuralKey: string
   }>()
 
+  /** Per-pad mono mode state (track last voice + frequency for glide) */
+  private monoVoices = new Map<string, {
+    nodes: SynthVoiceNodes
+    lastFreq: number
+  }>()
+
   private polyphony = 32
 
   // Node pools to reduce allocation in hot path
@@ -438,6 +521,7 @@ export class AudioEngine {
   private filterPool: BiquadFilterNode[] = []
 
   private workletReady = false
+  private vaWorkletReady = false
 
   // Input monitor state
   private monitorStream: MediaStream | null = null
@@ -498,6 +582,23 @@ export class AudioEngine {
     }
   }
 
+  private async registerVAWorklet(): Promise<void> {
+    if (!this.ctx || this.vaWorkletReady) return
+    try {
+      await this.ctx.audioWorklet.addModule(getVAOscWorkletUrl())
+      this.vaWorkletReady = true
+    } catch (e) {
+      console.warn('Failed to register VA oscillator worklet:', e)
+    }
+  }
+
+  /** Ensure VA worklet is loaded (call before playing VA synth notes) */
+  ensureVAWorklet(): boolean {
+    if (this.vaWorkletReady) return true
+    void this.registerVAWorklet()
+    return false
+  }
+
   getBufferSize(): number {
     return this._bufferSize
   }
@@ -555,6 +656,7 @@ export class AudioEngine {
     this.filterPool.length = 0
     this.padEffectChains.clear()
     this.workletReady = false
+    this.vaWorkletReady = false
 
     // Re-init by calling getContext
     this.getContext()
@@ -1015,7 +1117,7 @@ export class AudioEngine {
     }
   }
 
-  /** Play a synth pad using additive synthesis */
+  /** Play a synth pad (additive or VA) */
   private playSynthPad(
     pad: Pad,
     velocity: number,
@@ -1024,24 +1126,45 @@ export class AudioEngine {
     const ctx = this.getContext()
     const settings = pad.settings
     const synthParams = settings.synthParams!
+    const isVA = synthParams.synthMode === 'va'
+
+    // Lazy-load VA worklet if needed
+    if (isVA && !this.vaWorkletReady) {
+      this.ensureVAWorklet()
+    }
+
     const busDestination = this.getBusDestination(settings.bus ?? 'A')
     const startTime = options?.atTimeSec ?? (ctx.currentTime + 0.01)
     const bpm = options?.bpm ?? 120
     const hold = options?.hold ?? ((settings.mode === 'adsr' || settings.mode === 'ahr') && options?.forceDuration == null)
+
+    // --- Mono mode voice stealing ---
+    const polyMode = synthParams.polyMode ?? 'poly'
+    if (polyMode === 'mono') {
+      const existing = this.monoVoices.get(pad.id)
+      if (existing) {
+        // Stop existing voice with very fast release
+        stopSynthVoice(ctx, existing.nodes, 0.005)
+        window.setTimeout(() => disposeSynthVoice(existing.nodes), 20)
+        this.monoVoices.delete(pad.id)
+      }
+    }
+
+    // --- Glide frequency ---
+    const va = synthParams.va
+    const glide = va?.glide ?? 0
 
     // Choke group
     const chokeGroup = settings.chokeGroup ?? 0
     if (chokeGroup > 0) {
       const chokeTime = options?.atTimeSec ?? ctx.currentTime
       const chokeDelayMs = Math.max(0, (chokeTime - ctx.currentTime) * 1000) + 15
-      // Choke sample voices
       const toChoke = this.activeVoices.filter((v) => v.chokeGroup === chokeGroup)
       for (const v of toChoke) {
         try { v.gain.gain.setValueAtTime(v.gain.gain.value, chokeTime); v.gain.gain.linearRampToValueAtTime(0, chokeTime + 0.005) } catch { /* */ }
         try { v.source.stop(chokeTime + 0.01) } catch { /* */ }
         window.setTimeout(() => this.disposeVoice(v), chokeDelayMs)
       }
-      // Choke synth voices
       const toChokeSynth = this.activeSynthVoices.filter((v) => v.chokeGroup === chokeGroup)
       for (const sv of toChokeSynth) {
         window.setTimeout(() => {
@@ -1057,6 +1180,27 @@ export class AudioEngine {
       ctx, synthParams, settings, velocity, startTime, bpm,
       options?.forceDuration, options?.semitoneOffset,
     )
+
+    // --- Glide: ramp worklet frequencies from last note ---
+    if (glide > 0 && polyMode === 'mono' && synthVoice.vaWorklet) {
+      const existing = this.monoVoices.get(pad.id)
+      if (existing) {
+        const wParams = synthVoice.vaWorklet.parameters as Map<string, AudioParam>
+        const osc1Freq = wParams.get('osc1Freq')
+        const osc2Freq = wParams.get('osc2Freq')
+        if (osc1Freq && osc2Freq) {
+          const lastFreq = existing.lastFreq
+          osc1Freq.setValueAtTime(lastFreq, startTime)
+          osc2Freq.setValueAtTime(lastFreq, startTime)
+          const targetFreq1 = osc1Freq.value
+          const targetFreq2 = osc2Freq.value
+          osc1Freq.value = lastFreq  // reset to start point
+          osc2Freq.value = lastFreq
+          osc1Freq.linearRampToValueAtTime(targetFreq1, startTime + glide)
+          osc2Freq.linearRampToValueAtTime(targetFreq2, startTime + glide)
+        }
+      }
+    }
 
     // Connect output: filter → pan → pad effects → bus, or voiceGain → pan → pad effects → bus
     const output = synthVoice.filters.length > 0 ? synthVoice.filters[synthVoice.filters.length - 1] : synthVoice.voiceGain
@@ -1088,6 +1232,14 @@ export class AudioEngine {
     }
     this.activeSynthVoices.push(activeEntry)
 
+    // Track mono voice for glide
+    if (polyMode === 'mono') {
+      const baseNote = synthParams.baseNote + settings.semitones + (options?.semitoneOffset ?? 0)
+      const fineShift = (settings.fineCents ?? 0) / 100
+      const baseFreq = 440 * Math.pow(2, (baseNote + fineShift - 69) / 12)
+      this.monoVoices.set(pad.id, { nodes: synthVoice, lastFreq: baseFreq })
+    }
+
     // Auto-dispose for non-hold modes
     if (!hold || options?.forceDuration != null) {
       let durationMs: number
@@ -1107,6 +1259,9 @@ export class AudioEngine {
         activeEntry.disposed = true
         disposeSynthVoice(synthVoice)
         this.activeSynthVoices = this.activeSynthVoices.filter((v) => v !== activeEntry)
+        if (this.monoVoices.get(pad.id)?.nodes === synthVoice) {
+          this.monoVoices.delete(pad.id)
+        }
       }, durationMs + 150)
     }
   }
@@ -1304,6 +1459,8 @@ export class AudioEngine {
         if (sv.disposed) return
         sv.disposed = true
         disposeSynthVoice(sv.nodes)
+        const mono = this.monoVoices.get(padId)
+        if (mono?.nodes === sv.nodes) this.monoVoices.delete(padId)
       }, cleanupMs)
     }
     this.activeSynthVoices = this.activeSynthVoices.filter((v) => !holdSynths.includes(v))
@@ -1331,6 +1488,10 @@ export class AudioEngine {
       if (ctx) stopSynthVoice(ctx, sv.nodes, 0.005)
       sv.disposed = true
       window.setTimeout(() => disposeSynthVoice(sv.nodes), 20)
+      // Clean up mono tracking
+      for (const [padId, mono] of this.monoVoices) {
+        if (mono.nodes === sv.nodes) this.monoVoices.delete(padId)
+      }
       this.activeSynthVoices.splice(candidateIdx, 1)
     }
     while (this.activeVoices.length + this.activeSynthVoices.length >= this.polyphony) {
@@ -1516,6 +1677,6 @@ export class AudioEngine {
 }
 
 // Export shared helpers for audioExport.ts
-export { buildEffectChain, getSCWorkletUrl, type EffectChainNode }
+export { buildEffectChain, getSCWorkletUrl, getVAOscWorkletUrl, type EffectChainNode }
 
 export const audioEngine = new AudioEngine()

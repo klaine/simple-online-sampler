@@ -9,14 +9,21 @@
 
 import type { SynthParams, PadSettings } from '../types'
 import { resolveFilterType } from './voiceUtils'
+import { createVASynthVoice, stopVASynthVoice, disposeVASynthVoice, renderVASynthToBuffer } from './vaSynthEngine'
 
 export interface SynthVoiceNodes {
+  /** Native oscillators (additive mode) */
   oscillators: OscillatorNode[]
+  /** Per-harmonic gain nodes (additive mode) */
   harmonicGains: GainNode[]
   voiceGain: GainNode
   filters: BiquadFilterNode[]
   lfo: OscillatorNode | null
   lfoGain: GainNode | null
+  /** VA AudioWorkletNode (VA mode — dual oscillator + sync + PWM) */
+  vaWorklet?: AudioWorkletNode
+  /** PWM LFO gain node (VA mode, separate from LFO for PWM) */
+  pwGain?: GainNode | null
   /** Base filter frequency for filter envelope release (Hz). Set when filter envelope is active. */
   filterBaseFreq?: number
   /** Filter envelope release time in seconds. Set when filter envelope is active. */
@@ -57,6 +64,11 @@ export function createSynthVoice(
   forceDuration?: number,
   semitoneOffset?: number,
 ): SynthVoiceNodes {
+  // Dispatch to VA synth engine if mode is 'va'
+  if (synthParams.synthMode === 'va' && synthParams.va) {
+    return createVASynthVoice(ctx, synthParams, settings, velocity, startTime, bpm, forceDuration, semitoneOffset)
+  }
+
   const baseNote = synthParams.baseNote + (settings.semitones ?? 0) + (semitoneOffset ?? 0)
   const fineShift = (settings.fineCents ?? 0) / 100
   const baseFreq = 440 * Math.pow(2, (baseNote + fineShift - 69) / 12)
@@ -383,6 +395,12 @@ export function stopSynthVoice(
   nodes: SynthVoiceNodes,
   release: number,
 ): void {
+  // Dispatch to VA stop for VA voices
+  if (nodes.vaWorklet) {
+    stopVASynthVoice(ctx, nodes, release)
+    return
+  }
+
   const now = ctx.currentTime
   nodes.voiceGain.gain.cancelScheduledValues(now)
   nodes.voiceGain.gain.setValueAtTime(nodes.voiceGain.gain.value, now)
@@ -410,6 +428,12 @@ export function stopSynthVoice(
  * Disconnect and clean up a synth voice's nodes.
  */
 export function disposeSynthVoice(nodes: SynthVoiceNodes): void {
+  // Dispatch to VA dispose for VA voices
+  if (nodes.vaWorklet) {
+    disposeVASynthVoice(nodes)
+    return
+  }
+
   for (const osc of nodes.oscillators) {
     try { osc.disconnect() } catch { /* ignore */ }
   }
@@ -432,6 +456,11 @@ export function renderSynthToBuffer(
   sampleRate: number = 44100,
   durationSec: number = 2,
 ): { buffer: AudioBuffer; loopStart: number; loopEnd: number } {
+  // Dispatch to VA render for VA mode
+  if (synthParams.synthMode === 'va' && synthParams.va) {
+    return renderVASynthToBuffer(synthParams, settings, 1, durationSec, 120, undefined, sampleRate)
+  }
+
   const baseNote = synthParams.baseNote + (settings.semitones ?? 0)
   const fineShift = (settings.fineCents ?? 0) / 100
   const baseFreq = 440 * Math.pow(2, (baseNote + fineShift - 69) / 12)
