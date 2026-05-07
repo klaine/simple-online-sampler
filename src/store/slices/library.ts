@@ -7,7 +7,7 @@ import type { SampleAsset, BusId, TrimSettings } from '../../types'
 import { showConfirm } from '../confirmDialog'
 import { parseMpcPgm, matchMpcSamplesToFiles } from '../../lib/mpcImport'
 import { parseLcdk, matchLcdkSamplesToFiles } from '../../lib/lcdkImport'
-import { parseBatteryMonolith, extractWavFromMonolith, detectVelocityLayers, parseWavListChunks } from '../../lib/batteryMonolithImport'
+import { parseBatteryMonolith, extractWavFromMonolith, detectVelocityLayers, parseWavListChunks, matchCellsToSamples, getCategoryForCell, getChokeGroupForCell } from '../../lib/batteryMonolithImport'
 import { importFileAsSample } from '../importHelpers'
 import type { StoreContext } from '../context'
 
@@ -610,7 +610,23 @@ export const createLibraryActions = (ctx: StoreContext) => ({
           }
           const runId = uid()
           const runLabel = result.label
-          const velocityGroups = detectVelocityLayers(result.entries)
+          const velocityGroups = detectVelocityLayers(result.entries, result.patchData)
+          // Build cell → sample mapping from patch data
+          const cellToSamples = result.patchData ? matchCellsToSamples(result.entries, result.patchData) : null
+          // Build filename → cell info map (category, choke group, pad index)
+          const filenameToCell = new Map<string, { category: string; chokeGroup: number; padIndex: number }>()
+          if (result.patchData && cellToSamples) {
+            for (const cell of result.patchData.cells) {
+              const fnames = cellToSamples.get(cell.name)
+              if (fnames) {
+                const catInfo = getCategoryForCell(cell)
+                const info = { category: catInfo, chokeGroup: getChokeGroupForCell(cell), padIndex: cell.padIndex }
+                for (const fname of fnames) {
+                  filenameToCell.set(fname, info)
+                }
+              }
+            }
+          }
           let kitAdded = 0
           let padIndexCounter = 0
           for (const [, group] of velocityGroups) {
@@ -628,12 +644,21 @@ export const createLibraryActions = (ctx: StoreContext) => ({
                 const tags = parseWavListChunks(wavBuf)
                 if (Object.keys(tags).length > 0) metadataTags = tags
               } catch { /* ignore */ }
+              // Build imported pad settings from cell data
+              const cellInfo = filenameToCell.get(entry.filename)
+              const importedSettings: import('../../types').ImportedPadSettings = {}
+              if (cellInfo) {
+                if (cellInfo.chokeGroup) importedSettings.chokeGroup = cellInfo.chokeGroup
+              }
+              // Use patch-data pad index if available (maps directly to Battery's 8×16 grid)
+              const patchPadIndex = cellInfo?.padIndex
               const updated: SampleAsset = {
                 ...sample,
                 autosampleRunId: runId,
                 autosampleRunLabel: runLabel,
                 autosampleBattery: true,
-                autosamplePadIndex: padIndexCounter,
+                autosamplePadIndex: patchPadIndex ?? padIndexCounter,
+                autosampleChokeGroup: cellInfo?.chokeGroup ?? 0,
                 ...(metadataTags ? { metadataTags } : {}),
                 ...(hasLayers
                   ? {
@@ -641,6 +666,7 @@ export const createLibraryActions = (ctx: StoreContext) => ({
                       autosampleMpcVelocityMax: velocityRanges[li][1],
                     }
                   : {}),
+                ...(Object.keys(importedSettings).length > 0 ? { autosampleImportedPadSettings: importedSettings } : {}),
               }
               await db.putSample(updated)
               ctx.set((s) => {
@@ -703,66 +729,87 @@ export const createLibraryActions = (ctx: StoreContext) => ({
         continue
       }
       if (!file.type.startsWith('audio/') && !file.name.match(/\.(wav|mp3|ogg|flac|aiff|aif|m4a|webm)$/i)) {
-        // Fallback: try parsing unrecognized files as Battery monoliths
-        if (file.name.match(/\.nbk/i) || file.size > 0x1000) {
-          try {
-            const buf = await file.arrayBuffer()
-            const result = parseBatteryMonolith(buf)
-            if (result && result.entries.length > 0) {
-              const runId = uid()
-              const runLabel = result.label
-              const velocityGroups = detectVelocityLayers(result.entries)
-              let kitAdded = 0
-              let padIndexCounter = 0
-              for (const [, group] of velocityGroups) {
-                const { entries: groupEntries, velocityRanges } = group
-                const hasLayers = groupEntries.length > 1
-                for (let li = 0; li < groupEntries.length; li++) {
-                  const entry = groupEntries[li]
-                  const wavBlob = extractWavFromMonolith(buf, entry)
-                  const audioFile = new File([wavBlob], entry.filename, { type: 'audio/wav' })
-                  const sample = await importFileAsSample(audioFile, ctx.get, ctx.set)
-                  // Parse metadata tags from extracted WAV
-                  let metadataTags: Record<string, string> | undefined
-                  try {
-                    const wavBuf = await wavBlob.arrayBuffer()
-                    const tags = parseWavListChunks(wavBuf)
-                    if (Object.keys(tags).length > 0) metadataTags = tags
-                  } catch { /* ignore */ }
-                  const updated: SampleAsset = {
-                    ...sample,
-                    autosampleRunId: runId,
-                    autosampleRunLabel: runLabel,
-                    autosampleBattery: true,
-                    autosamplePadIndex: padIndexCounter,
-                    ...(metadataTags ? { metadataTags } : {}),
-                    ...(hasLayers
-                      ? {
-                          autosampleMpcLayerIndex: li,
-                          autosampleMpcVelocityMax: velocityRanges[li][1],
-                        }
-                      : {}),
+// Fallback: try parsing unrecognized files as Battery monoliths
+          if (file.name.match(/\.nbk/i) || file.size > 0x1000) {
+            try {
+              const buf = await file.arrayBuffer()
+              const result = parseBatteryMonolith(buf)
+              if (result && result.entries.length > 0) {
+                const runId = uid()
+                const runLabel = result.label
+                const velocityGroups = detectVelocityLayers(result.entries, result.patchData)
+                const cellToSamples = result.patchData ? matchCellsToSamples(result.entries, result.patchData) : null
+                const filenameToCell = new Map<string, { category: string; chokeGroup: number; padIndex: number }>()
+                if (result.patchData && cellToSamples) {
+                  for (const cell of result.patchData.cells) {
+                    const fnames = cellToSamples.get(cell.name)
+                    if (fnames) {
+                      const catInfo = getCategoryForCell(cell)
+                      const info = { category: catInfo, chokeGroup: getChokeGroupForCell(cell), padIndex: cell.padIndex }
+                      for (const fname of fnames) {
+                        filenameToCell.set(fname, info)
+                      }
+                    }
                   }
-                  await db.putSample(updated)
-                  ctx.set((s) => {
-                    const idx = s.samples.findIndex((x) => x.id === updated.id)
-                    if (idx >= 0) s.samples[idx] = updated
-                    s.sampleMap.set(updated.id, updated)
-                  })
-                  kitAdded++
                 }
-                padIndexCounter++
+                let kitAdded = 0
+                let padIndexCounter = 0
+                for (const [, group] of velocityGroups) {
+                  const { entries: groupEntries, velocityRanges } = group
+                  const hasLayers = groupEntries.length > 1
+                  for (let li = 0; li < groupEntries.length; li++) {
+                    const entry = groupEntries[li]
+                    const wavBlob = extractWavFromMonolith(buf, entry)
+                    const audioFile = new File([wavBlob], entry.filename, { type: 'audio/wav' })
+                    const sample = await importFileAsSample(audioFile, ctx.get, ctx.set)
+                    let metadataTags: Record<string, string> | undefined
+                    try {
+                      const wavBuf = await wavBlob.arrayBuffer()
+                      const tags = parseWavListChunks(wavBuf)
+                      if (Object.keys(tags).length > 0) metadataTags = tags
+                    } catch { /* ignore */ }
+                    const cellInfo = filenameToCell.get(entry.filename)
+                    const importedSettings: import('../../types').ImportedPadSettings = {}
+                    if (cellInfo) {
+                      if (cellInfo.chokeGroup) importedSettings.chokeGroup = cellInfo.chokeGroup
+                    }
+                    const patchPadIndex = cellInfo?.padIndex
+                    const updated: SampleAsset = {
+                      ...sample,
+                      autosampleRunId: runId,
+                      autosampleRunLabel: runLabel,
+                      autosampleBattery: true,
+                      autosamplePadIndex: patchPadIndex ?? padIndexCounter,
+                      autosampleChokeGroup: cellInfo?.chokeGroup ?? 0,
+                      ...(metadataTags ? { metadataTags } : {}),
+                      ...(hasLayers
+                        ? {
+                            autosampleMpcLayerIndex: li,
+                            autosampleMpcVelocityMax: velocityRanges[li][1],
+                          }
+                        : {}),
+                      ...(Object.keys(importedSettings).length > 0 ? { autosampleImportedPadSettings: importedSettings } : {}),
+                    }
+                    await db.putSample(updated)
+                    ctx.set((s) => {
+                      const idx = s.samples.findIndex((x) => x.id === updated.id)
+                      if (idx >= 0) s.samples[idx] = updated
+                      s.sampleMap.set(updated.id, updated)
+                    })
+                    kitAdded++
+                  }
+                  padIndexCounter++
+                }
+                if (kitAdded > 0) {
+                  added += kitAdded
+                  ctx.get().addToast(`Imported Battery kit: ${runLabel}`)
+                }
+                continue
               }
-              if (kitAdded > 0) {
-                added += kitAdded
-                ctx.get().addToast(`Imported Battery kit: ${runLabel}`)
-              }
-              continue
+            } catch {
+              // Not a Battery monolith, skip silently
             }
-          } catch {
-            // Not a Battery monolith, skip silently
           }
-        }
         continue
       }
       try {
