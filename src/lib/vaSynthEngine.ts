@@ -412,7 +412,14 @@ export function createVASynthVoice(
     }
   }
 
-  // Note: worklet doesn't need start/stop — it runs continuously while connected to graph
+  // Schedule worklet disconnect at stopTime so it doesn't burn CPU on silent output
+  if (stopTime != null && vaWorklet && ctx instanceof AudioContext) {
+    const disconnectDelay = Math.max(5, (stopTime - ctx.currentTime) * 1000 + 10)
+    const wl = vaWorklet
+    setTimeout(() => {
+      try { wl.disconnect() } catch { /* */ }
+    }, disconnectDelay)
+  }
 
   return {
     oscillators,
@@ -466,10 +473,22 @@ export function stopVASynthVoice(
 export function disposeVASynthVoice(nodes: SynthVoiceNodes): void {
   if (nodes.vaWorklet) {
     try { nodes.vaWorklet.disconnect() } catch { /* ignore */ }
+    nodes.vaWorklet = undefined
+  }
+  // Stop and disconnect native oscillators (fallback path)
+  for (const osc of nodes.oscillators) {
+    try { osc.stop() } catch { /* ignore */ }
+    try { osc.disconnect() } catch { /* ignore */ }
+  }
+  for (const hg of nodes.harmonicGains) {
+    try { hg.disconnect() } catch { /* ignore */ }
   }
   try { nodes.voiceGain.disconnect() } catch { /* ignore */ }
   for (const f of nodes.filters) { try { f.disconnect() } catch { /* ignore */ } }
-  if (nodes.lfo) try { nodes.lfo.disconnect() } catch { /* ignore */ }
+  if (nodes.lfo) {
+    try { nodes.lfo.stop() } catch { /* ignore */ }
+    try { nodes.lfo.disconnect() } catch { /* ignore */ }
+  }
   if (nodes.lfoGain) try { nodes.lfoGain.disconnect() } catch { /* ignore */ }
   if (nodes.pwGain) try { nodes.pwGain.disconnect() } catch { /* ignore */ }
 }

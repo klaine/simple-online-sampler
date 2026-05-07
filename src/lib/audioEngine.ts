@@ -133,7 +133,7 @@ const VA_OSC_WORKLET_JS = `
         { name: 'osc2Freq', defaultValue: 261.63, minValue: 1, maxValue: 15000, automationRate: 'a-rate' },
         { name: 'osc1Pw',   defaultValue: 0.5, minValue: 0.05, maxValue: 0.95, automationRate: 'a-rate' },
         { name: 'osc2Pw',   defaultValue: 0.5, minValue: 0.05, maxValue: 0.95, automationRate: 'a-rate' },
-        { name: 'oscMix',   defaultValue: 0, minValue: -1, maxValue: 1, automationRate: 'a-rate' },
+        { name: 'oscMix',   defaultValue: 0, minValue: -1, maxValue: 1, automationRate: 'k-rate' },
       ];
     }
     process(inputs, outputs, parameters) {
@@ -575,8 +575,6 @@ export class AudioEngine {
 
       // Register sidechain worklet (async, non-blocking)
       void this.registerWorklet()
-      // Register VA oscillator worklet (async, non-blocking)
-      void this.registerVAWorklet()
     }
     return this.ctx
   }
@@ -1199,12 +1197,12 @@ export class AudioEngine {
         const osc2Freq = wParams.get('osc2Freq')
         if (osc1Freq && osc2Freq) {
           const lastFreq = existing.lastFreq
-          osc1Freq.setValueAtTime(lastFreq, startTime)
-          osc2Freq.setValueAtTime(lastFreq, startTime)
           const targetFreq1 = osc1Freq.value
           const targetFreq2 = osc2Freq.value
-          osc1Freq.value = lastFreq  // reset to start point
-          osc2Freq.value = lastFreq
+          osc1Freq.cancelScheduledValues(startTime)
+          osc2Freq.cancelScheduledValues(startTime)
+          osc1Freq.setValueAtTime(lastFreq, startTime)
+          osc2Freq.setValueAtTime(lastFreq, startTime)
           osc1Freq.linearRampToValueAtTime(targetFreq1, startTime + glide)
           osc2Freq.linearRampToValueAtTime(targetFreq2, startTime + glide)
         }
