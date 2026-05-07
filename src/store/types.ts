@@ -193,6 +193,11 @@ export interface AppState {
   // --- Capture MIDI ---
   captureBufferCount: number
 
+  // --- Undo/Redo ---
+  undoStack: { description: string; project: import('../types').Project }[]
+  redoStack: { description: string; project: import('../types').Project }[]
+  isUndoingOrRedoing: boolean
+
   // --- Metronome ---
   metronomeEnabled: boolean
   metronomeVolume: number
@@ -313,6 +318,11 @@ export interface AppState {
   feedCaptureBuffer: (padId: string, velocity: number, type: 'on' | 'off', note?: number) => void
   captureMidi: () => Promise<void>
   clearCaptureBuffer: () => void
+
+  pushUndo: (description: string) => void
+  undo: () => void
+  redo: () => void
+  clearUndoHistory: () => void
 
   confirmSampleReplace: () => Promise<void>
   confirmSampleAddLayer: () => Promise<void>

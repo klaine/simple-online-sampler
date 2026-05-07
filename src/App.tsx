@@ -1100,14 +1100,23 @@ function App() {
 
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
         event.preventDefault()
-        if (event.shiftKey) void useStore.getState().redoSequencer()
-        else void useStore.getState().undoSequencer()
+        if (event.shiftKey) {
+          const s = useStore.getState()
+          if (s.redoStack.length > 0) s.redo()
+          else void s.redoSequencer()
+        } else {
+          const s = useStore.getState()
+          if (s.undoStack.length > 0) s.undo()
+          else void s.undoSequencer()
+        }
         return
       }
 
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'y') {
         event.preventDefault()
-        void useStore.getState().redoSequencer()
+        const s = useStore.getState()
+        if (s.redoStack.length > 0) s.redo()
+        else void s.redoSequencer()
         return
       }
 

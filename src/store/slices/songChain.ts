@@ -6,6 +6,7 @@ export const createSongChainActions = (ctx: StoreContext) => ({
   addChainEntry: async (patternId: string) => {
     const s = ctx.get()
     if (!s.project) return
+    s.pushUndo('Add to chain')
     ctx.get().pushSequencerHistory(s.project, s.activeSequenceId)
     const entry: SongChainEntry = { id: uid(), patternId, repeats: 1 }
     await s.saveProject({ ...s.project, songChain: [...s.project.songChain, entry] })
@@ -14,6 +15,7 @@ export const createSongChainActions = (ctx: StoreContext) => ({
   addChainEntryAt: async (patternId: string, targetIndex: number) => {
     const s = ctx.get()
     if (!s.project) return
+    s.pushUndo('Add to chain')
     ctx.get().pushSequencerHistory(s.project, s.activeSequenceId)
     const entry: SongChainEntry = { id: uid(), patternId, repeats: 1 }
     const next = [...s.project.songChain]
@@ -24,6 +26,7 @@ export const createSongChainActions = (ctx: StoreContext) => ({
   removeChainEntry: async (entryId: string) => {
     const s = ctx.get()
     if (!s.project) return
+    s.pushUndo('Remove from chain')
     ctx.get().pushSequencerHistory(s.project, s.activeSequenceId)
     await s.saveProject({ ...s.project, songChain: s.project.songChain.filter((e) => e.id !== entryId) })
     ctx.set((d) => { if (d.selectedChainEntryId === entryId) d.selectedChainEntryId = null })

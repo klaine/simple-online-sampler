@@ -39,6 +39,7 @@ export const createSequencerActions = (ctx: StoreContext) => ({
     const activeSeq = selectActiveSequence(s)
     if (!s.project || !activeSeq) return
 
+    s.pushUndo('Toggle step')
     s.pushSequencerHistory(s.project, activeSeq.id)
 
     const existing = activeSeq.events.find((e) => e.step === step && e.padId === padId)
@@ -112,6 +113,7 @@ export const createSequencerActions = (ctx: StoreContext) => ({
     if (!s.project || !activeSeq) return
     if (!(await showConfirm('Clear this lane events?'))) return
 
+    s.pushUndo('Clear lane')
     s.pushSequencerHistory(s.project, activeSeq.id)
     await s.saveProject({
       ...s.project,
@@ -214,6 +216,7 @@ export const createSequencerActions = (ctx: StoreContext) => ({
     const activeSeq = selectActiveSequence(s)
     if (!s.project || !activeSeq) return
 
+    s.pushUndo(mode === 'double' ? 'Double pattern' : 'Halve pattern')
     s.pushSequencerHistory(s.project, activeSeq.id)
     const nextLength =
       mode === 'double'

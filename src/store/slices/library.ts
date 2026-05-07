@@ -35,6 +35,8 @@ export const createLibraryActions = (ctx: StoreContext) => ({
   deleteSampleFromLibrary: async (sample: SampleAsset) => {
     const s = ctx.get()
     if (!s.project) return
+
+    s.pushUndo('Delete sample')
     const usedByPrimary = s.project.pads.filter((p) => p.settings.sampleId === sample.id)
     const usedByLayer = s.project.pads.filter((p) =>
       p.settings.layers.some((l) => l.sampleId === sample.id),
@@ -224,7 +226,8 @@ export const createLibraryActions = (ctx: StoreContext) => ({
   removeUnassignedSamples: async () => {
     const s = ctx.get()
     if (!s.project) return
-    // Collect all sample IDs referenced by any pad (primary + layers)
+
+    s.pushUndo('Remove unassigned samples')
     const usedIds = new Set<string>()
     for (const pad of s.project.pads) {
       if (pad.settings.sampleId) usedIds.add(pad.settings.sampleId)

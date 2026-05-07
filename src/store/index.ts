@@ -37,6 +37,7 @@ import { createChopSpreadDragActions } from './slices/chopSpreadDrag'
 import { createRecordingActions } from './slices/recording'
 import { createMidiOutActions } from './slices/midiOut'
 import { createAudioMonitorActions } from './slices/audioMonitor'
+import { createHistoryActions } from './slices/history'
 
 export const useStore = create<AppState>()(
   immer((set, get) => {
@@ -123,6 +124,7 @@ export const useStore = create<AppState>()(
     const recordingActions = createRecordingActions(ctx)
     const midiOutActions = createMidiOutActions(ctx)
     const audioMonitorActions = createAudioMonitorActions(ctx)
+    const historyActions = createHistoryActions(ctx)
 
     return {
       // --- Initial state ---
@@ -229,6 +231,10 @@ export const useStore = create<AppState>()(
       seqRecordOverdub: true,
 
       captureBufferCount: 0,
+
+      undoStack: [],
+      redoStack: [],
+      isUndoingOrRedoing: false,
 
       metronomeEnabled: localStorage.getItem('metronomeEnabled') === 'true',
       metronomeVolume: Number(localStorage.getItem('metronomeVolume') || '0.7') || 0.7,
@@ -522,6 +528,7 @@ export const useStore = create<AppState>()(
       ...recordingActions,
       ...midiOutActions,
       ...audioMonitorActions,
+      ...historyActions,
     }
   }),
 )

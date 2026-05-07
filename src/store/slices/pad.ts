@@ -207,6 +207,7 @@ export const createPadActions = (ctx: StoreContext) => ({
       ctx.set((d) => { d.sampleAssignPrompt = { padId, sample } })
       return
     }
+    ctx.get().pushUndo('Assign sample')
     await ctx.get().saveProject({
       ...project,
       pads: project.pads.map((p) =>
@@ -389,6 +390,7 @@ export const createPadActions = (ctx: StoreContext) => ({
     if (pad.settings.sampleId) {
       if (!(await showConfirm(`Reset pad "${pad.name}" to defaults? This will clear its sample and sequencer events.`))) return
     }
+    s.pushUndo('Reset pad')
     const updatedPads = s.project.pads.map((p) => {
       if (p.id !== padId) return p
       return {
@@ -429,6 +431,7 @@ export const createPadActions = (ctx: StoreContext) => ({
     if (hasContent) {
       if (!(await showConfirm(`Reset all 16 pads in Bank ${bank + 1} to defaults? This will clear all samples and sequencer events.`))) return
     }
+    s.pushUndo('Reset bank')
     const bankPadIds = new Set(bankPads.map((p) => p.id))
     const updatedPads = s.project.pads.map((p) => {
       if (!bankPadIds.has(p.id)) return p
