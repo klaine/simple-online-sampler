@@ -225,7 +225,7 @@ export const createSequencerActions = (ctx: StoreContext) => ({
     s.pushSequencerHistory(s.project, activeSeq.id)
     const nextLength =
       mode === 'double'
-        ? clampSequenceLength(Math.min(128, activeSeq.lengthSteps * 2))
+        ? clampSequenceLength(Math.min(64, activeSeq.lengthSteps * 2))
         : clampSequenceLength(Math.max(8, Math.floor(activeSeq.lengthSteps / 2)))
 
     const nextEvents =

@@ -315,6 +315,15 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - **Per-synth MIDI channel**: synth pads can receive chromatic note input on their own `synthMidiChannel` (1–16) and optional `synthMidiDevice`, independent of global pad triggering
 - **Computer keyboard chromatic input**: Ableton-style 2-octave layout (Z-M = lower octave, Q-U = upper octave), toggle via TopBar button, -/= shift octave
 
+### Launchpad Pro MK3 (Programmer Mode)
+- Enabled via "LP Pro MK3 Mode" checkbox in TopBar when device is detected; enters Programmer Mode via SysEx on connect
+- **Grid layout**: bottom 4 rows = drum pads (left 4×4) + chromatic play (right 4×4); top rows = sequencer steps (16-step or 32-step depending on pattern length)
+- **Left column** (top → bottom): Click(CC 80), Undo(70), Delete(60), Quantise(50), **Duplicate(40)**, Double(30), Play(20), Record(10)
+- **Duplicate button (CC 40)**: doubles active pattern length up to 64 steps (copies events to second half)
+- **Shift + Duplicate (CC 90 + CC 40)**: halves active pattern length (truncates out-of-range events)
+- **Bottom row**: notes 1–8 and narrow CCs 101–108 switch between 8 banks
+- LED feedback: drum pads show assignment state, sequencer steps show event state, active bank highlighted in orange
+
 ### Autosampler
 - `AutosampleDialog.tsx` — Full autosample workflow: MIDI out → audio capture → auto-trim → normalize → pad assignment
 - Configurable: MIDI device/channel, audio input device, note range/step/velocity, timing, threshold, name pattern, normalize, mix bus, choke group

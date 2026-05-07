@@ -593,6 +593,9 @@ function App() {
           setBank: (bank) => {
             useStore.setState({ activeBank: bank })
           },
+          duplicateLength: (mode) => {
+            void useStore.getState().duplicatePatternLength(mode)
+          },
           subscribeStore: (listener) => useStore.subscribe(listener),
         })
       }

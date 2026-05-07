@@ -44,9 +44,12 @@ const BOTTOM_ROW_NOTES = [1, 2, 3, 4, 5, 6, 7, 8]
 // Bottom narrow buttons (CCs)
 const BOTTOM_NARROW_CCS = [101, 102, 103, 104, 105, 106, 107, 108]
 
-// Left column — Record and Play
+// Left column — top to bottom: Click(80), Undo(70), Delete(60), Quantise(50),
+// Duplicate(40), Double(30), Play(20), Record(10)
 const LEFT_COL_RECORD = 10
 const LEFT_COL_PLAY = 20
+const LEFT_COL_DUPLICATE = 40
+const LEFT_COL_SHIFT = 90
 
 // Colors for functional buttons
 const COLOR_RECORD_OFF: [number, number, number] = [20, 0, 0]
@@ -55,6 +58,7 @@ const COLOR_PLAY_OFF: [number, number, number] = [0, 20, 0]
 const COLOR_PLAY_ON: [number, number, number] = [0, 127, 0]
 const COLOR_BANK_OFF: [number, number, number] = [10, 10, 10]
 const COLOR_BANK_ON: [number, number, number] = [127, 80, 0]   // orange (active bank)
+const COLOR_DUPLICATE_DIM: [number, number, number] = [20, 20, 40]   // dim blueish white
 
 // Palette indices for note-velocity LED method
 const PAL_OFF = 0
@@ -169,8 +173,10 @@ let _toggleRecordCb: (() => void) | null = null
 let _setBankCb: ((bank: number) => void) | null = null
 let _getIsPlaying: (() => boolean) | null = null
 let _getIsRecordArmed: (() => boolean) | null = null
+let _duplicateLengthCb: ((mode: 'double' | 'half') => void) | null = null
 
 let _activeBank = 0  // 0-7
+let _shiftHeld = false
 // Track flash state for pads
 const _flashTimers = new Map<number, ReturnType<typeof setTimeout>>()
 // Track active chromatic notes for release
@@ -232,6 +238,7 @@ export function connect(
     togglePlay: () => void
     toggleRecord: () => void
     setBank: (bank: number) => void
+    duplicateLength: (mode: 'double' | 'half') => void
     subscribeStore: (listener: () => void) => () => void
   },
 ): void {
@@ -252,6 +259,7 @@ export function connect(
   _togglePlayCb = opts.togglePlay
   _toggleRecordCb = opts.toggleRecord
   _setBankCb = opts.setBank
+  _duplicateLengthCb = opts.duplicateLength
 
   // Enter Programmer mode — send to ALL outputs
   for (const out of _allOutputs) {
@@ -304,6 +312,8 @@ export function disconnect(): void {
   _connected = false
   _lastTriggeredPadId = null
   _activeChromaticNotes.clear()
+  _shiftHeld = false
+  _duplicateLengthCb = null
 }
 
 /** Called externally when a pad is triggered (from UI, MIDI, or sequencer) */
@@ -424,6 +434,7 @@ function clearAll(): void {
   // Clear left column
   setLedCC(LEFT_COL_RECORD, PAL_OFF)
   setLedCC(LEFT_COL_PLAY, PAL_OFF)
+  setLedCC(LEFT_COL_DUPLICATE, PAL_OFF)
 }
 
 function repaintDrumGrid(): void {
@@ -493,23 +504,34 @@ function handleMidiMessage(event: MIDIMessageEvent): void {
   const command = status & 0xf0
 
   // --- CC messages ---
-  if (command === 0xb0 && velocity > 0) {
-    if (note === LEFT_COL_RECORD) {
-      _toggleRecordCb?.()
+  if (command === 0xb0) {
+    // Track Shift state on both press and release
+    if (note === LEFT_COL_SHIFT) {
+      _shiftHeld = velocity > 0
       return
     }
-    if (note === LEFT_COL_PLAY) {
-      _togglePlayCb?.()
-      return
-    }
-    // Bottom narrow row CCs for bank switching (all 8)
-    if (BOTTOM_NARROW_CCS.includes(note)) {
-      const bank = BOTTOM_NARROW_CCS.indexOf(note)
-      _activeBank = bank
-      _setBankCb?.(bank)
-      repaintDrumGrid()
-      repaintFunctionButtons()
-      return
+    if (velocity > 0) {
+      if (note === LEFT_COL_RECORD) {
+        _toggleRecordCb?.()
+        return
+      }
+      if (note === LEFT_COL_PLAY) {
+        _togglePlayCb?.()
+        return
+      }
+      if (note === LEFT_COL_DUPLICATE) {
+        _duplicateLengthCb?.(_shiftHeld ? 'half' : 'double')
+        return
+      }
+      // Bottom narrow row CCs for bank switching (all 8)
+      if (BOTTOM_NARROW_CCS.includes(note)) {
+        const bank = BOTTOM_NARROW_CCS.indexOf(note)
+        _activeBank = bank
+        _setBankCb?.(bank)
+        repaintDrumGrid()
+        repaintFunctionButtons()
+        return
+      }
     }
     return
   }
@@ -598,6 +620,9 @@ function repaintFunctionButtons(): void {
   // Play button (left column — uses CC for LED)
   const isPlaying = _getIsPlaying?.() ?? false
   setLedCC(LEFT_COL_PLAY, rgbToPalette(...(isPlaying ? COLOR_PLAY_ON : COLOR_PLAY_OFF)))
+
+  // Duplicate button — dim blueish white to show it's active
+  setLedCC(LEFT_COL_DUPLICATE, rgbToPalette(...COLOR_DUPLICATE_DIM))
 
   // Bank buttons — bottom row (note-addressed) and narrow CCs
   for (let i = 0; i < 8; i++) {
