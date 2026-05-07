@@ -457,18 +457,18 @@ export function PadEditor({ waveformRef, waveformCanvasRef, dragTargetRef }: Pad
                         onChange={(e) => void updatePadSettings({ filterType: e.target.value as FilterType })}
                       >
                         <option value="off">Off</option>
-                        <option value="lp12">LP12</option>
-                        <option value="lp24">LP24</option>
-                        <option value="highpass">HP</option>
-                        <option value="bandpass">BP</option>
-                        <option value="lphp">LP+HP</option>
+                        <option value="lp12">High Cut 12dB</option>
+                        <option value="lp24">High Cut 24dB</option>
+                        <option value="highpass">Low Cut</option>
+                        <option value="bandpass">Band Pass</option>
+                        <option value="lphp">Low Cut + High Cut</option>
                       </select>
                     </label>
                     {eff!.filterType !== 'off' && (
                       <>
-                        <KnobControl label={eff!.filterType === 'lphp' ? 'HP' : 'Freq'} value={eff!.filterFreq} min={20} max={20000} step={1} precision={0} freqScale onChange={(v) => void updatePadSettings({ filterFreq: Math.round(v) })} />
+                        <KnobControl label={eff!.filterType === 'lphp' ? 'Low Cut' : 'Freq'} value={eff!.filterFreq} min={20} max={20000} step={1} precision={0} freqScale onChange={(v) => void updatePadSettings({ filterFreq: Math.round(v) })} />
                         {eff!.filterType === 'lphp' && (
-                          <KnobControl label="LP" value={eff!.filterFreq2 ?? 20000} min={20} max={20000} step={1} precision={0} freqScale onChange={(v) => void updatePadSettings({ filterFreq2: Math.round(v) })} />
+                          <KnobControl label="High Cut" value={eff!.filterFreq2 ?? 20000} min={20} max={20000} step={1} precision={0} freqScale onChange={(v) => void updatePadSettings({ filterFreq2: Math.round(v) })} />
                         )}
                         <KnobControl label="Q" value={eff!.filterQ} min={0.1} max={20} step={0.1} onChange={(v) => void updatePadSettings({ filterQ: v })} />
                       </>
@@ -543,18 +543,18 @@ export function PadEditor({ waveformRef, waveformCanvasRef, dragTargetRef }: Pad
                         onChange={(e) => void updatePadSettings({ filterType: e.target.value as FilterType })}
                       >
                         <option value="off">Off</option>
-                        <option value="lp12">LP12</option>
-                        <option value="lp24">LP24</option>
-                        <option value="highpass">HP</option>
-                        <option value="bandpass">BP</option>
-                        <option value="lphp">LP+HP</option>
+                        <option value="lp12">High Cut 12dB</option>
+                        <option value="lp24">High Cut 24dB</option>
+                        <option value="highpass">Low Cut</option>
+                        <option value="bandpass">Band Pass</option>
+                        <option value="lphp">Low Cut + High Cut</option>
                       </select>
                     </label>
                     {eff!.filterType !== 'off' && (
                       <>
-                        <KnobControl label={eff!.filterType === 'lphp' ? 'HP' : 'Freq'} value={eff!.filterFreq} min={20} max={20000} step={1} precision={0} freqScale onChange={(v) => void updatePadSettings({ filterFreq: Math.round(v) })} />
+                        <KnobControl label={eff!.filterType === 'lphp' ? 'Low Cut' : 'Freq'} value={eff!.filterFreq} min={20} max={20000} step={1} precision={0} freqScale onChange={(v) => void updatePadSettings({ filterFreq: Math.round(v) })} />
                         {eff!.filterType === 'lphp' && (
-                          <KnobControl label="LP" value={eff!.filterFreq2 ?? 20000} min={20} max={20000} step={1} precision={0} freqScale onChange={(v) => void updatePadSettings({ filterFreq2: Math.round(v) })} />
+                          <KnobControl label="High Cut" value={eff!.filterFreq2 ?? 20000} min={20} max={20000} step={1} precision={0} freqScale onChange={(v) => void updatePadSettings({ filterFreq2: Math.round(v) })} />
                         )}
                         <KnobControl label="Q" value={eff!.filterQ} min={0.1} max={20} step={0.1} onChange={(v) => void updatePadSettings({ filterQ: v })} />
                         <KnobControl label="Key" value={eff!.filterKeyTrack ?? 0} min={-100} max={100} step={1} precision={0} onChange={(v) => void updatePadSettings({ filterKeyTrack: Math.round(v) })} />
