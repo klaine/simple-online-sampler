@@ -56,7 +56,7 @@ const LEFT_COL_CLICK = 80
 const LEFT_COL_UNDO = 70
 
 // Colors for functional buttons
-const COLOR_RECORD_OFF: [number, number, number] = [20, 0, 0]
+const COLOR_RECORD_OFF: [number, number, number] = [20, 20, 20]
 const COLOR_RECORD_ON: [number, number, number] = [127, 0, 0]
 const COLOR_PLAY_OFF: [number, number, number] = [0, 20, 0]
 const COLOR_PLAY_ON: [number, number, number] = [0, 127, 0]
