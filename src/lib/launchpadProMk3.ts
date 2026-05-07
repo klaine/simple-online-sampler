@@ -290,6 +290,7 @@ export function connect(
 
   // Subscribe to store changes — debounced repaint
   _unsubStore = opts.subscribeStore(() => {
+    _activeBank = opts.getActiveBank?.() ?? _activeBank
     if (_repaintTimer) clearTimeout(_repaintTimer)
     _repaintTimer = setTimeout(() => {
       _repaintTimer = null

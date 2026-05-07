@@ -3975,6 +3975,10 @@ select.tb-led-value {
   color: var(--text);
 }
 
+.sample-group-assign {
+  font-size: 14px;
+}
+
 .group-selected-btn {
   font-size: 0.72rem;
   padding: 0.2rem 0.5rem;

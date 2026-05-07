@@ -678,6 +678,7 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
                       <div className="sample-group-actions">
                         <button
                           type="button"
+                          className="sample-group-assign"
                           title="Assign group to pads (from selected pad)"
                           onClick={() => void assignGroupToPads(item.key)}
                         >
