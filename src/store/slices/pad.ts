@@ -27,6 +27,17 @@ export const createPadActions = (ctx: StoreContext) => ({
       // No context yet or suspended — use async path to unlock + decode + play
       void (async () => {
         await unlockP
+        // Defensive check: Safari may resolve unlock promise while context is still suspended
+        const ctx2 = audioEngine.getContextIfReady()
+        if (!ctx2 || ctx2.state !== 'running') {
+          // Try one more unlock attempt as fallback
+          try { await audioEngine.unlockAndPrepare() } catch { /* */ }
+        }
+        const finalCtx = audioEngine.getContextIfReady()
+        if (!finalCtx || finalCtx.state !== 'running') {
+          console.warn('[triggerPad] AudioContext not running after unlock, skipping playback')
+          return
+        }
         for (const sid of neededSampleIds) {
           if (!audioEngine.hasSample(sid)) {
             const sample = ctx.get().sampleMap.get(sid)
@@ -42,6 +53,11 @@ export const createPadActions = (ctx: StoreContext) => ({
         // Must go async to decode missing buffers
         void (async () => {
           await unlockP
+          // Defensive check: ensure context is running before scheduling playback
+          const ctx2 = audioEngine.getContextIfReady()
+          if (!ctx2 || ctx2.state !== 'running') {
+            try { await audioEngine.unlockAndPrepare() } catch { /* */ }
+          }
           for (const sid of missing) {
             const sample = ctx.get().sampleMap.get(sid)
             if (sample) await audioEngine.registerSample(sample)

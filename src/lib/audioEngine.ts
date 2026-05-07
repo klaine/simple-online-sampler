@@ -1025,7 +1025,7 @@ export class AudioEngine {
     const settings = pad.settings
     const synthParams = settings.synthParams!
     const busDestination = this.getBusDestination(settings.bus ?? 'A')
-    const startTime = options?.atTimeSec ?? ctx.currentTime
+    const startTime = options?.atTimeSec ?? (ctx.currentTime + 0.01)
     const bpm = options?.bpm ?? 120
     const hold = options?.hold ?? ((settings.mode === 'adsr' || settings.mode === 'ahr') && options?.forceDuration == null)
 

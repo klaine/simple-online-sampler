@@ -304,6 +304,8 @@ export function PadGrid() {
                   audioEngine.releasePad(pad.id)
                   releaseMidiNote(pad.id)
                 }
+                // Fallback unlock in case touchstart's resume was rejected by browser
+                void audioEngine.unlockAndPrepare()
               }}
               onDragOver={(e) => e.preventDefault()}
               onDrop={async (e) => {
