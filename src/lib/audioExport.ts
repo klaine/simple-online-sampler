@@ -1,8 +1,6 @@
 import type { BusId, EffectSlot, Pad, PadSettings, Project, SampleAsset, SequenceEvent, SequencePattern } from '../types'
 import { BUS_IDS } from '../types'
 import { buildEffectChain, getSCWorkletUrl } from './audioEngine'
-import { createSynthVoice } from './synthEngine'
-import { renderVASynthToBuffer } from './vaSynthEngine'
 import { encodeWav } from './wavEncode'
 import type { WavLoopPoints } from './wavEncode'
 import {
@@ -10,9 +8,7 @@ import {
   resolveLayer,
   createFilterChain,
   scheduleAmplitudeEnvelope,
-  scheduleFilterEnvelope,
   createPanNode,
-  scheduleSynthChokeRelease,
 } from './voiceUtils'
 
 type ExportMode = 'pattern' | 'song'
@@ -66,7 +62,7 @@ const scheduleSequenceEvents = (
 
   sequence.events.forEach((event) => {
     const pad = padsById.get(event.padId)
-    if (!pad || (!pad.settings.sampleId && pad.settings.source !== 'synth')) {
+      if (!pad || !pad.settings.sampleId) {
       return
     }
 
@@ -204,11 +200,7 @@ export const renderProjectAudioWav = async (
     }
   }
 
-  // Separate synth events from sample events
-  const synthEvents = scheduled.filter((e) => e.pad.settings.source === 'synth' && e.pad.settings.synthParams)
-  const sampleScheduled = scheduled.filter((e) => e.pad.settings.source !== 'synth')
-
-  const notes = sampleScheduled
+  const notes = scheduled
     .flatMap((entry) => {
       // --- Stacked mode: expand into one note per layer ---
       if (entry.pad.settings.multiMode === 'stacked' && entry.pad.settings.layers && entry.pad.settings.layers.length > 0) {
@@ -233,20 +225,8 @@ export const renderProjectAudioWav = async (
     })
     .filter((value): value is NonNullable<typeof value> => Boolean(value))
 
-  if (notes.length === 0 && synthEvents.length === 0) {
-    throw new Error('No assigned samples or synths found for notes in the selected scope.')
-  }
-
-  // Account for synth event durations
-  for (const entry of synthEvents) {
-    const s = entry.pad.settings
-    const release = s.envelope.release
-    const gate = Math.max(1, entry.event.gate)
-    const forceDurationSec = s.mode === 'one-shot'
-      ? s.envelope.attack + s.envelope.decay
-      : Math.max(0.04, gate * entry.stepDurationSec)
-    const endSec = entry.atSec + forceDurationSec + release
-    maxNoteEndSec = Math.max(maxNoteEndSec, endSec)
+  if (notes.length === 0) {
+    throw new Error('No assigned samples found for notes in the selected scope.')
   }
 
   const totalDurationSec = Math.max(1, maxNoteEndSec + EXPORT_TAIL_SEC)
@@ -321,7 +301,7 @@ export const renderProjectAudioWav = async (
   notes.sort((a, b) => a.entry.atSec - b.entry.atSec)
 
   // Track active choke group voices for cut-off
-  const chokeActiveGains = new Map<number, { gainNode: GainNode; endSec: number; filters?: BiquadFilterNode[]; filterBaseFreq?: number }[]>()
+  const chokeActiveGains = new Map<number, { gainNode: GainNode; endSec: number }[]>()
 
   notes.forEach(({ entry, ms, sourceBuffer, trimStartSec, playbackDurationSec, noteDurationSec, busId, chokeGroup }) => {
     const source = offline.createBufferSource()
@@ -329,7 +309,7 @@ export const renderProjectAudioWav = async (
 
     let eventSemitones = entry.event.semitones ?? 0
     if (entry.event.note != null) {
-      eventSemitones = entry.event.note - (60 + (ms.semitones ?? 0))
+      eventSemitones = entry.event.note - ((ms.baseNote ?? 60) + (ms.semitones ?? 0))
     }
     const semitoneShift = (ms.semitones ?? 0) + eventSemitones
     const fineShift = (ms.fineCents ?? 0) / 100
@@ -359,23 +339,12 @@ export const renderProjectAudioWav = async (
 
     // Per-pad filter
     const filterChain = createFilterChain(offline, ms)
-    const filterNodes = filterChain ? filterChain.nodes : []
     if (filterChain) {
       gainNode.connect(filterChain.input)
       filterChain.output.connect(padPanNode)
     } else {
       gainNode.connect(padPanNode)
     }
-
-    // --- Filter envelope ---
-    scheduleFilterEnvelope(
-      filterNodes,
-      noteStart,
-      ms,
-      playbackDurationSec,
-      noteDurationSec,
-      false,
-    )
 
     source.start(noteStart, trimStartSec, playbackDurationSec)
     source.stop(noteStart + envResult.sourceStopSec)
@@ -385,186 +354,13 @@ export const renderProjectAudioWav = async (
       const activeInGroup = chokeActiveGains.get(chokeGroup) ?? []
       for (const prev of activeInGroup) {
         if (prev.endSec > noteStart) {
-          scheduleSynthChokeRelease(
-            prev.gainNode.gain,
-            prev.filters,
-            prev.filterBaseFreq,
-            noteStart,
-            ms,
-          )
+          prev.gainNode.gain.setValueAtTime(prev.gainNode.gain.value, noteStart)
+          prev.gainNode.gain.linearRampToValueAtTime(0, noteStart + 0.005)
         }
       }
       // Register this voice
       const voiceEnd = noteStart + envResult.sourceStopSec
       activeInGroup.push({ gainNode, endSec: voiceEnd })
-      chokeActiveGains.set(chokeGroup, activeInGroup)
-    }
-  })
-
-  // --- Build per-pad effect chains for synth pads ---
-  const padEffectInputs = new Map<string, AudioNode>()
-  synthEvents.forEach((entry) => {
-    const padId = entry.pad.id
-    if (padEffectInputs.has(padId)) return
-    const settings = entry.pad.settings
-    const padEffects = settings.padEffects
-    if (padEffects && padEffects.some((s) => s.type !== 'off' && s.enabled)) {
-      const busDestination = busGainNodes.get((settings.bus ?? 'A') as BusId) ?? busGainNodes.get('A')!
-      const chain = buildEffectChain(offline, padEffects)
-      chain.output.connect(busDestination)
-      padEffectInputs.set(padId, chain.input)
-    }
-  })
-
-  // --- Schedule synth voices ---
-  synthEvents.forEach((entry) => {
-    const pad = entry.pad
-    const settings = pad.settings
-    const synthParams = settings.synthParams!
-    const busId = (settings.bus ?? 'A') as BusId
-    const busDestination = busGainNodes.get(busId) ?? busGainNodes.get('A')!
-    const noteStart = entry.atSec
-    const chokeGroup = settings.chokeGroup ?? 0
-
-    const noteDurationSec = settings.mode === 'one-shot'
-      ? undefined
-      : settings.mode === 'ahr'
-        ? (settings.envelope.attack + (settings.envelope.hold ?? 0) + settings.envelope.release)
-        : Math.max(0.04, entry.event.gate * entry.stepDurationSec)
-
-    // For piano roll events with absolute note, compute semitone offset from synth base
-    let semitoneOffset = entry.event.semitones
-    if (entry.event.note != null) {
-      semitoneOffset = entry.event.note - (synthParams.baseNote + (settings.semitones ?? 0))
-    }
-
-    const isVA = synthParams.synthMode === 'va'
-
-    // --- VA mode: use CPU-side buffer render (avoids AudioWorklet in OfflineAudioContext) ---
-    if (isVA && synthParams.va) {
-      const vaNoteDurationSec = noteDurationSec
-        ?? (settings.mode === 'one-shot' ? settings.envelope.attack + settings.envelope.decay + settings.envelope.release : 2)
-      const release = settings.envelope.release
-      const totalDuration = vaNoteDurationSec + release + EXPORT_TAIL_SEC
-
-      const { buffer } = renderVASynthToBuffer(
-        synthParams, settings,
-        entry.event.velocity / 127,
-        totalDuration,
-        project.bpm,
-        semitoneOffset,
-        DEFAULT_SAMPLE_RATE,
-      )
-
-      const source = offline.createBufferSource()
-      source.buffer = buffer
-
-      const gainNode = offline.createGain()
-      gainNode.gain.value = 1 // Envelope is baked into the buffer
-      source.connect(gainNode)
-
-      // Per-pad filter
-      const filterChain = createFilterChain(offline, settings)
-      const filterNodes = filterChain ? filterChain.nodes : []
-      let srcOutput: AudioNode = gainNode
-      if (filterChain) {
-        gainNode.connect(filterChain.input)
-        srcOutput = filterChain.output
-        // Apply filter envelope
-        scheduleFilterEnvelope(
-          filterNodes,
-          noteStart,
-          settings,
-          vaNoteDurationSec,
-          vaNoteDurationSec,
-          false,
-        )
-      }
-
-      // Per-pad pan
-      const padPanNode = createPanNode(offline, settings)
-      padPanNode.connect(busDestination)
-      srcOutput.connect(padPanNode)
-
-      // Pad effects
-      const padFxInput = padEffectInputs.get(pad.id)
-      if (padFxInput) {
-        srcOutput.disconnect()
-        srcOutput.connect(padFxInput)
-      }
-
-      source.start(noteStart)
-      source.stop(noteStart + totalDuration)
-
-      // Choke group
-      if (chokeGroup > 0) {
-        const activeInGroup = chokeActiveGains.get(chokeGroup) ?? []
-        for (const prev of activeInGroup) {
-          if (prev.endSec > noteStart) {
-            scheduleSynthChokeRelease(
-              prev.gainNode.gain,
-              prev.filters,
-              prev.filterBaseFreq,
-              noteStart,
-              settings,
-            )
-          }
-        }
-        const voiceEnd = noteStart + totalDuration
-        activeInGroup.push({
-          gainNode,
-          endSec: voiceEnd,
-          filters: filterNodes,
-          filterBaseFreq: undefined,
-        })
-        chokeActiveGains.set(chokeGroup, activeInGroup)
-      }
-      return
-    }
-
-    // --- Additive mode: use OfflineAudioContext node graph ---
-    const synthVoice = createSynthVoice(
-      offline, synthParams, settings,
-      entry.event.velocity / 127,
-      noteStart, project.bpm,
-      noteDurationSec, semitoneOffset,
-    )
-
-    // Connect to bus (via pan → pad effects if active)
-    const output = synthVoice.filters.length > 0 ? synthVoice.filters[synthVoice.filters.length - 1] : synthVoice.voiceGain
-    const synthExpPan = offline.createStereoPanner()
-    const synthExpPanVal = settings.pan ?? 0
-    synthExpPan.pan.value = settings.randomPan ? (Math.random() * 2 - 1) * synthExpPanVal : synthExpPanVal
-    output.connect(synthExpPan)
-    const padFxInput = padEffectInputs.get(pad.id)
-    synthExpPan.connect(padFxInput ?? busDestination)
-
-    // Choke group
-    if (chokeGroup > 0) {
-      const activeInGroup = chokeActiveGains.get(chokeGroup) ?? []
-      for (const prev of activeInGroup) {
-        if (prev.endSec > noteStart) {
-          scheduleSynthChokeRelease(
-            prev.gainNode.gain,
-            prev.filters,
-            prev.filterBaseFreq,
-            noteStart,
-            settings,
-          )
-        }
-      }
-      const attack = settings.envelope.attack
-      const decay = settings.envelope.decay
-      const release = settings.envelope.release
-      const voiceEnd = noteDurationSec != null
-        ? noteStart + noteDurationSec + release
-        : noteStart + attack + decay
-      activeInGroup.push({
-        gainNode: synthVoice.voiceGain,
-        endSec: voiceEnd,
-        filters: synthVoice.filters,
-        filterBaseFreq: synthVoice.filterBaseFreq,
-      })
       chokeActiveGains.set(chokeGroup, activeInGroup)
     }
   })

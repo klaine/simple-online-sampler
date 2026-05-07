@@ -9,13 +9,6 @@
   box-sizing: border-box;
 }
 
-.app.app-alt-layout {
-  height: 100vh;
-  overflow: hidden;
-  grid-template-rows: auto 1fr auto;
-  gap: 0.4rem;
-  padding-bottom: 0.2rem;
-}
 
 .app.app-perf-layout {
   height: 100vh;
@@ -210,13 +203,7 @@ html:has(.app-perf-layout) {
   touch-action: manipulation;
 }
 
-.app-alt-layout .studio-layout {
-  min-height: 0;
-}
 
-.app-alt-layout .footer {
-  padding: 0.1rem 0;
-}
 
 .topbar {
   display: flex;
@@ -1528,12 +1515,6 @@ select.tb-led-value {
   color: #9dc0df;
 }
 
-/* --- Lane synth badge --- */
-.lane-synth-badge {
-  font-weight: 700;
-  color: #7bb8e8;
-  margin-right: 3px;
-}
 
 /* --- Piano Roll Lane Group --- */
 .sequencer-lane-group {
@@ -2244,111 +2225,11 @@ select.tb-led-value {
   overflow-x: hidden;
 }
 
-/* Mobile: columns stack vertically, ignore inline width */
-@media (max-width: 1099px) {
-  .studio-col-left,
-  .studio-col-right {
-    width: 100% !important;
-    flex-shrink: 1 !important;
-  }
 
-  .studio-collapse-strip {
-    display: none !important;
-  }
-}
 
-.studio-col-left {
-  display: grid;
-  gap: 0;
-}
 
-.studio-col-center {
-  display: grid;
-  gap: 1rem;
-  min-width: 0;
-  align-content: start;
-}
 
-.studio-col-center .pad-editor-panel,
-.studio-col-center .pad-panel {
-  width: 100%;
-}
 
-.studio-col-right,
-.studio-col-main {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.seq-mixer-pane {
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  display: flex;
-  flex-direction: column;
-}
-
-.seq-mixer-pane.alt-bottom-row {
-  flex-direction: row;
-  gap: 0.5rem;
-  overflow-y: hidden;
-}
-
-.alt-bottom-row > .mixer-panel {
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-  overflow-y: auto;
-  align-self: stretch;
-}
-
-.alt-bottom-row > .pad-editor-panel {
-  flex: 1;
-  min-width: 0;
-  overflow-y: auto;
-  min-height: 0;
-  align-self: stretch;
-}
-
-.alt-bottom-row > .pad-panel {
-  flex-shrink: 0;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  align-self: stretch;
-}
-
-.alt-bottom-row > .pad-panel > .grid {
-  flex: 1;
-  grid-template-rows: repeat(4, 1fr);
-}
-
-.alt-bottom-row > .pad-panel > .grid > .pad {
-  min-height: 0;
-}
-
-.seq-mixer-pane > .sequencer,
-.seq-mixer-pane > .mixer-panel {
-  flex: 1;
-  min-height: 0;
-}
-
-.seq-mixer-pane > .sequencer {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-  min-width: 0;
-  width: 100%;
-}
-
-.seq-mixer-pane > .sequencer > .sequencer-matrix-wrap {
-  flex: 1;
-  min-height: 0;
-  max-height: none;
-  width: 100%;
-}
 
 .seq-mixer-divider {
   display: none; /* shown at >=1100px */
@@ -4044,263 +3925,24 @@ select.tb-led-value {
   font-weight: 600;
 }
 
-/* --- Synth Patches in Library --- */
 
-.synth-patches-section {
-  border-top: 1px solid var(--border);
-  padding-top: 6px;
-  margin-top: 4px;
-}
 
-.synth-patches-header {
-  font-size: 11px;
-  color: var(--text-muted);
-  padding: 2px 6px 4px;
-}
 
-.synth-patch-row {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 6px;
-  font-size: 11px;
-  cursor: grab;
-  border-radius: var(--radius-sm);
-}
 
-.synth-patch-row:hover {
-  background: var(--surface-inset);
-}
 
-.synth-patch-name {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--text);
-}
 
-.synth-patch-actions {
-  display: flex;
-  gap: 2px;
-  flex-shrink: 0;
-}
 
-.synth-patch-actions button {
-  background: none;
-  border: none;
-  padding: 1px 4px;
-  cursor: pointer;
-  font-size: 12px;
-  color: var(--text-muted);
-  border-radius: var(--radius-sm);
-}
 
-.synth-patch-actions button:hover {
-  background: var(--surface);
-  color: var(--text);
-}
 
-.synth-patch-actions button:disabled {
-  opacity: 0.3;
-  cursor: default;
-}
 
-/* --- Synth Editor --- */
 
-.synth-editor {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
 
-.synth-section {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
 
-.synth-section-label {
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: var(--muted-light);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
 
-.harmonic-editor-canvas {
-  border: 1px solid var(--border);
-  display: block;
-}
 
-.synth-base-note {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.76rem;
-}
 
-.synth-base-note label {
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-  color: var(--muted);
-  font-size: 0.72rem;
-}
 
-.synth-input-sm {
-  width: 3.5rem;
-  padding: 0.15rem 0.3rem;
-  font-size: 0.74rem;
-}
 
-.synth-note-name {
-  color: var(--accent);
-  font-weight: 600;
-  font-size: 0.76rem;
-}
-
-.synth-lfo-row {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-  flex-wrap: wrap;
-}
-
-.synth-lfo-row label {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  font-size: 0.72rem;
-  color: var(--muted);
-}
-
-.synth-lfo-row select {
-  font-size: 0.72rem;
-  padding: 0.15rem 0.25rem;
-}
-
-.synth-sync-select {
-  font-size: 0.72rem;
-  padding: 0.15rem 0.25rem;
-  width: 3.5rem;
-}
-
-.synth-export-btn {
-  font-size: 0.7rem;
-  padding: 0.25rem 0.5rem;
-  align-self: flex-start;
-  color: var(--muted);
-  border-color: var(--border-subtle);
-  background: transparent;
-}
-
-.synth-export-btn:hover {
-  color: var(--text);
-  border-color: var(--border);
-}
-
-/* --- Synth Mode Selector --- */
-.synth-mode-selector {
-  display: flex;
-  gap: 0.3rem;
-  margin-bottom: 0.35rem;
-}
-.synth-mode-selector button {
-  flex: 1;
-  font-size: 0.68rem;
-  padding: 0.3rem 0.5rem;
-  border: 1px solid var(--border-subtle);
-  background: transparent;
-  color: var(--muted);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-.synth-mode-selector button.active {
-  background: var(--accent-glow);
-  color: var(--text);
-  border-color: var(--accent);
-}
-
-/* --- VA Oscillator Section --- */
-.va-osc-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.4rem;
-  margin-bottom: 0.35rem;
-}
-.va-osc-section {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  padding: 0.35rem;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  background: rgba(0,0,0,0.12);
-}
-.va-osc-controls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem;
-  align-items: center;
-}
-.va-osc-controls select {
-  font-size: 0.7rem;
-  padding: 0.15rem 0.25rem;
-  width: 3.5rem;
-}
-.va-osc-controls .knob-control {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.1rem;
-}
-.va-osc-controls .knob-label {
-  font-size: 0.6rem;
-}
-
-/* --- VA Mixer Section --- */
-.va-mixer-section {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.2rem 0;
-}
-.va-sync-toggle {
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-  font-size: 0.7rem;
-  font-weight: 600;
-  color: var(--muted-light);
-  cursor: pointer;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-.va-sync-toggle input[type="checkbox"] {
-  accent-color: var(--accent);
-}
-
-/* --- VA Voice Section (Mono/Poly + Glide) --- */
-.va-voice-section {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.2rem 0;
-}
-.va-poly-toggle {
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-  font-size: 0.72rem;
-  color: var(--muted);
-}
-.va-poly-toggle select {
-  font-size: 0.7rem;
-  padding: 0.15rem 0.25rem;
-}
 
 /* --- Toast Notifications --- */
 

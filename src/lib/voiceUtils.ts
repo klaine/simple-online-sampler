@@ -212,77 +212,6 @@ export function scheduleAmplitudeEnvelope(
   return { noteDurationSec, sourceStopSec }
 }
 
-/** Schedule a per-pad filter envelope on a chain of BiquadFilterNodes */
-export function scheduleFilterEnvelope(
-  filterNodes: BiquadFilterNode[],
-  startTime: number,
-  settings: PadSettings,
-  playbackDurationSec: number,
-  forceDurationSec?: number,
-  hold?: boolean,
-): void {
-  const fEnv = settings.filterEnvelope
-  if (!fEnv || fEnv.depth <= 0 || filterNodes.length === 0) return
-
-  const baseFreqHz = settings.filterFreq ?? 1000
-  const peakFreqHz = Math.min(20000, baseFreqHz * Math.pow(2, fEnv.depth / 12))
-  const sustainFreqHz = baseFreqHz + (peakFreqHz - baseFreqHz) * fEnv.sustain
-
-  for (const f of filterNodes) {
-    f.frequency.setValueAtTime(baseFreqHz, startTime)
-    f.frequency.linearRampToValueAtTime(peakFreqHz, startTime + fEnv.attack)
-    f.frequency.linearRampToValueAtTime(sustainFreqHz, startTime + fEnv.attack + fEnv.decay)
-  }
-
-  const mode = settings.mode
-
-  if (mode === 'one-shot') {
-    const fEnd = startTime + fEnv.attack + fEnv.decay
-    for (const f of filterNodes) {
-      f.frequency.setValueAtTime(sustainFreqHz, fEnd)
-      f.frequency.linearRampToValueAtTime(baseFreqHz, fEnd + fEnv.release)
-    }
-    return
-  }
-
-  if (mode === 'ahr') {
-    const holdTime = settings.envelope.hold ?? 0
-    const noteDurationSec = Math.min(playbackDurationSec, Math.max(0.05, settings.envelope.attack + holdTime + settings.envelope.release))
-    const actualAttack = Math.min(settings.envelope.attack, noteDurationSec) // Bug D fix
-    const holdEnd = startTime + actualAttack + holdTime
-    for (const f of filterNodes) {
-      f.frequency.setValueAtTime(sustainFreqHz, holdEnd)
-      f.frequency.linearRampToValueAtTime(baseFreqHz, holdEnd + fEnv.release)
-    }
-    return
-  }
-
-  // ADSR
-  if (forceDurationSec != null && forceDurationSec > 0) {
-    const noteDurationSec = Math.min(playbackDurationSec, forceDurationSec)
-    const noteEnd = startTime + noteDurationSec
-    for (const f of filterNodes) {
-      f.frequency.setValueAtTime(sustainFreqHz, noteEnd)
-      f.frequency.linearRampToValueAtTime(baseFreqHz, noteEnd + fEnv.release)
-    }
-    return
-  }
-
-  if (hold) {
-    // Live hold: release deferred to caller (releasePad / stopSynthVoice)
-    return
-  }
-
-  // Self-terminating ADSR
-  const adsrDuration = Math.max(0.05, settings.envelope.attack + settings.envelope.decay + settings.envelope.release)
-  const noteDurationSec = Math.min(playbackDurationSec, adsrDuration)
-  const noteEnd = startTime + noteDurationSec
-  for (const f of filterNodes) {
-    f.frequency.setValueAtTime(sustainFreqHz, noteEnd)
-    f.frequency.linearRampToValueAtTime(baseFreqHz, noteEnd + fEnv.release)
-  }
-}
-
 /** Create a StereoPannerNode for a pad */
 export function createPanNode(ctx: BaseAudioContext, settings: PadSettings): StereoPannerNode {
   const panNode = ctx.createStereoPanner()
@@ -291,24 +220,4 @@ export function createPanNode(ctx: BaseAudioContext, settings: PadSettings): Ste
   return panNode
 }
 
-/** Schedule a rapid gain fade-out and optional filter envelope release for synth choke */
-export function scheduleSynthChokeRelease(
-  gainParam: AudioParam,
-  filterNodes: BiquadFilterNode[] | undefined,
-  filterBaseFreq: number | undefined,
-  startTime: number,
-  settings: PadSettings,
-): void {
-  gainParam.setValueAtTime(gainParam.value, startTime)
-  gainParam.linearRampToValueAtTime(0, startTime + 0.005)
 
-  if (filterNodes && filterNodes.length > 0 && filterBaseFreq != null) {
-    const fEnv = settings.filterEnvelope
-    const releaseSec = fEnv?.release ?? 0.1
-    for (const f of filterNodes) {
-      f.frequency.cancelScheduledValues(startTime)
-      f.frequency.setValueAtTime(f.frequency.value, startTime)
-      f.frequency.linearRampToValueAtTime(filterBaseFreq, startTime + releaseSec)
-    }
-  }
-}

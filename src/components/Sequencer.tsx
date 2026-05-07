@@ -206,7 +206,7 @@ export function Sequencer() {
     return () => cancelAnimationFrame(rafId)
   }, [showPerfStats])
 
-  const layoutMode = useStore((s) => s.layoutMode)
+
 
   const chainWithPatterns = useMemo(() => {
     if (!project) return []
@@ -224,9 +224,9 @@ export function Sequencer() {
 
   if (!project || !activeSequence || !visibleSequence) return null
 
-  const fitSteps = layoutMode === 'wide' || layoutMode === 'performance' || visibleSequence.lengthSteps <= 16
-  const stepColSize = fitSteps ? 'minmax(0, 1fr)' : 'minmax(24px, 1fr)'
-  const laneLabelWidth = layoutMode === 'performance' ? 172 : 148
+  const fitSteps = true
+  const stepColSize = 'minmax(0, 1fr)'
+  const laneLabelWidth = 172
   const sequenceGridColumns = `${laneLabelWidth}px repeat(3, 26px) repeat(${visibleSequence.lengthSteps}, ${stepColSize})`
   const stepGridColumns = `repeat(${visibleSequence.lengthSteps}, ${stepColSize})`
 

@@ -7,7 +7,6 @@ import type {
   SampleAsset,
   SampleLayer,
   SequenceResolution,
-  SynthPatch,
   TrimSettings,
 } from '../types'
 
@@ -128,7 +127,6 @@ export interface AppState {
   seqFollowPlayback: boolean
   seqExpandedBanks: Set<number>
   seqCollapsedBanks: Set<number>
-  layoutMode: 'classic' | 'wide' | 'performance'
   performanceTab: 'library' | 'padEditor' | 'sequencer' | 'mixer' | 'settings' | 'projects'
   showSongChain: boolean
   padEditorCollapsed: boolean
@@ -162,8 +160,7 @@ export interface AppState {
   libraryWavePeaks: Record<string, number[]>
   previewSampleId: string | null
 
-  // --- Synth Patches ---
-  synthPatches: SynthPatch[]
+
 
   // --- Piano Roll ---
   expandedPianoRollPads: Set<string>
@@ -295,10 +292,6 @@ export interface AppState {
   toggleFavoriteSample: (sampleId: string) => void
   addSamplesToLibrary: (files: File[], padIndexMap?: Map<string, number>, groupLabel?: string) => Promise<void>
 
-  saveSynthPatch: (name: string, pad: Pad) => void
-  deleteSynthPatch: (patchId: string) => Promise<void>
-  applySynthPatchToPad: (patch: SynthPatch, padId: string) => void
-
   openChopModal: (sampleId: string) => void
   closeChopModal: () => void
   updateChopPoints: (sampleId: string, points: number[]) => Promise<void>
@@ -390,9 +383,6 @@ export interface AppState {
   setBusEffectEnabled: (busId: BusId, slotIndex: number, enabled: boolean) => void
   setBusEffectParam: (busId: BusId, slotIndex: number, paramName: string, value: number) => void
   setBusEffectSidechainSource: (busId: BusId, slotIndex: number, source: BusId) => void
-  setPadEffectType: (padId: string, slotIndex: number, effectType: EffectType) => void
-  setPadEffectEnabled: (padId: string, slotIndex: number, enabled: boolean) => void
-  setPadEffectParam: (padId: string, slotIndex: number, paramName: string, value: number) => void
   setMasterGain: (gain: number) => void
   setMasterEffectType: (slotIndex: number, effectType: EffectType) => void
   setMasterEffectEnabled: (slotIndex: number, enabled: boolean) => void

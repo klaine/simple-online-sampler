@@ -318,7 +318,6 @@ export const createLibraryActions = (ctx: StoreContext) => ({
         ...pad,
         name: `${midiToName(pad.midiNote)} Pad`,
         settings: {
-          source: 'sample' as const,
           sampleId: null, gain: 1, semitones: 0, fineCents: 0,
           mode: 'one-shot' as const, trim: { start: 0, end: 1 },
           envelope: { attack: 0, decay: 0.2, sustain: 0, release: 0.2 },

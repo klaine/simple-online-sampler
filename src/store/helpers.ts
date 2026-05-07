@@ -1,4 +1,4 @@
-import type { Project, SampleLayer, SequencePattern, SynthPatch } from '../types'
+import type { Project, SampleLayer, SequencePattern } from '../types'
 import { uid } from '../lib/utils'
 import { createDefaultMixBuses, createDefaultMasterBus } from '../lib/utils'
 import { PATTERN_COLORS_CYCLE } from './constants'
@@ -14,20 +14,6 @@ export const getDefaultEffectParams = (type: string): Record<string, number> => 
     case 'chorus': return { rate: 1.5, depth: 5, mix: 0.3 }
     default: return {}
   }
-}
-
-export function loadSynthPatches(): SynthPatch[] {
-  try {
-    const raw = localStorage.getItem('synthPatches')
-    if (raw) return JSON.parse(raw)
-  } catch { /* ignore */ }
-  return []
-}
-
-export function saveSynthPatches(patches: SynthPatch[]): void {
-  try {
-    localStorage.setItem('synthPatches', JSON.stringify(patches))
-  } catch { /* ignore */ }
 }
 
 export const createLayer = (sampleId: string, overrides?: Partial<SampleLayer>): SampleLayer => ({
@@ -90,31 +76,7 @@ export const normalizeProject = (incoming: Project): Project => {
         filterQ: pad.settings.filterQ ?? 1,
         bus: pad.settings.bus ?? 'A',
         chokeGroup: pad.settings.chokeGroup ?? 0,
-        source: pad.settings.source ?? 'sample',
-        ...(pad.settings.synthParams?.lfo && 'target' in ((pad.settings.synthParams!.lfo as unknown) as Record<string, unknown>) ? {
-          synthParams: {
-            ...pad.settings.synthParams,
-            synthMode: pad.settings.synthParams.synthMode ?? 'additive',
-            lfo: (() => {
-              const old = (pad.settings.synthParams!.lfo as unknown) as Record<string, unknown>
-              const target = old.target as string | undefined
-              const depth = old.depth as number | undefined
-              return {
-                ...(old as unknown as import('../types').LfoSettings),
-                pitchDepth: target === 'pitch' ? (depth ?? 0) : 0,
-                filterDepth: target === 'filter' ? (depth ?? 0) : 0,
-                gainDepth: target === 'gain' ? (depth ?? 0) : 0,
-                pwDepth: (old as Record<string, unknown>).pwDepth as number ?? 0,
-                triggerMode: (old as Record<string, unknown>).triggerMode as (import('../types').LfoTriggerMode | undefined) ?? 'free',
-              }
-            })(),
-          },
-        } : pad.settings.synthParams ? {
-          synthParams: {
-            ...pad.settings.synthParams,
-            synthMode: pad.settings.synthParams.synthMode ?? 'additive',
-          },
-        } : {}),
+        baseNote: pad.settings.baseNote ?? 60,
       },
     })),
     sequences: incoming.sequences.map((sequence, index) => ({

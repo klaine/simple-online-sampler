@@ -77,7 +77,6 @@ export function SettingsContent() {
   const audioInputs = useStore((s) => s.audioInputs)
   const audioInputDeviceId = useStore((s) => s.audioInputDeviceId)
   const metronomeVolume = useStore((s) => s.metronomeVolume)
-  const layoutMode = useStore((s) => s.layoutMode)
 
   return (
     <>
@@ -204,24 +203,6 @@ export function SettingsContent() {
         </select>
       </label>
       <p className="settings-hint">Lower = less latency, higher CPU. Requires stopping playback.</p>
-
-      <strong className="settings-section-title">Layout</strong>
-      <label className="settings-row">
-        <span>Mode</span>
-        <select
-          value={layoutMode}
-          onChange={(e) => {
-            const mode = e.target.value as 'classic' | 'wide' | 'performance'
-            useStore.setState({ layoutMode: mode })
-            localStorage.setItem('layoutMode', mode)
-          }}
-        >
-          <option value="classic">Classic</option>
-          <option value="wide">Wide</option>
-          <option value="performance">Performance</option>
-        </select>
-      </label>
-      <p className="settings-hint">Classic: 3-column. Wide: sequencer on top. Performance: pads + tabs.</p>
     </>
   )
 }

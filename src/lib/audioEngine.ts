@@ -1,13 +1,11 @@
 import type { BusId, EffectSlot, FilterType, MixBus, Pad, PadSettings, SampleAsset } from '../types'
 import { BUS_IDS } from '../types'
-import { createSynthVoice, stopSynthVoice, disposeSynthVoice, type SynthVoiceNodes } from './synthEngine'
 import {
   mergeLayerSettings,
   resolveFilterType,
   resolveLayer,
   createFilterChain,
   scheduleAmplitudeEnvelope,
-  scheduleFilterEnvelope,
   createPanNode,
 } from './voiceUtils'
 
@@ -23,19 +21,7 @@ interface ActiveVoice {
   padId: string
   chokeGroup: number
   disposed: boolean
-  filterBaseFreq?: number
-  filterRelease?: number
   release?: number
-}
-
-interface ActiveSynthVoice {
-  nodes: SynthVoiceNodes
-  startedAt: number
-  hold: boolean
-  padId: string
-  chokeGroup: number
-  disposed: boolean
-  release: number
 }
 
 // ---------------------------------------------------------------------------
@@ -102,90 +88,6 @@ function getSCWorkletUrl(): string {
     scWorkletDataUrl = 'data:application/javascript,' + encodeURIComponent(SC_WORKLET_SOURCE)
   }
   return scWorkletDataUrl
-}
-
-// ---------------------------------------------------------------------------
-// VA oscillator worklet source (dual oscillator + hard sync + PWM)
-// ---------------------------------------------------------------------------
-
-const VA_OSC_WORKLET_JS = `
-  var id = "__va_osc_worklet_config__";
-  class VADualOscillatorProcessor extends AudioWorkletProcessor {
-    constructor(opts) {
-      super();
-      this.osc1Phase = 0;
-      this.osc2Phase = 0;
-      this.syncTriggered = false;
-      this.osc1Wave = 0;
-      this.osc2Wave = 0;
-      this.syncEnabled = false;
-      this.port.onmessage = (e) => {
-        if (e.data.type === 'config') {
-          this.osc1Wave = e.data.osc1Wave;
-          this.osc2Wave = e.data.osc2Wave;
-          this.syncEnabled = e.data.syncEnabled;
-        }
-      };
-    }
-    static get parameterDescriptors() {
-      return [
-        { name: 'osc1Freq', defaultValue: 261.63, minValue: 1, maxValue: 15000, automationRate: 'a-rate' },
-        { name: 'osc2Freq', defaultValue: 261.63, minValue: 1, maxValue: 15000, automationRate: 'a-rate' },
-        { name: 'osc1Pw',   defaultValue: 0.5, minValue: 0.05, maxValue: 0.95, automationRate: 'a-rate' },
-        { name: 'osc2Pw',   defaultValue: 0.5, minValue: 0.05, maxValue: 0.95, automationRate: 'a-rate' },
-        { name: 'oscMix',   defaultValue: 0, minValue: -1, maxValue: 1, automationRate: 'k-rate' },
-      ];
-    }
-    process(inputs, outputs, parameters) {
-      var out = outputs[0];
-      if (!out || !out[0]) return true;
-      var ch = out[0];
-      var sr = sampleRate;
-      var f1 = parameters.osc1Freq;
-      var f2 = parameters.osc2Freq;
-      var pw1 = parameters.osc1Pw;
-      var pw2 = parameters.osc2Pw;
-      var mix = parameters.oscMix;
-      var aRate = f1.length > 1;
-      for (var i = 0; i < ch.length; i++) {
-        var ff1 = aRate ? f1[i] : f1[0];
-        var ff2 = aRate ? f2[i] : f2[0];
-        var pp1 = aRate ? pw1[i] : pw1[0];
-        var pp2 = aRate ? pw2[i] : pw2[0];
-        var mm = aRate ? mix[i] : mix[0];
-        this.osc1Phase += ff1 / sr;
-        if (this.osc1Phase >= 1.0) { this.osc1Phase -= 1.0; this.syncTriggered = true; }
-        if (this.syncEnabled && this.syncTriggered) this.osc2Phase = 0;
-        this.syncTriggered = false;
-        this.osc2Phase += ff2 / sr;
-        if (this.osc2Phase >= 1.0) this.osc2Phase -= 1.0;
-        var s1 = this.wave(this.osc1Phase, this.osc1Wave, pp1);
-        var s2 = this.wave(this.osc2Phase, this.osc2Wave, pp2);
-        var m2 = (mm + 1) / 2;
-        var m1 = 1 - m2;
-        ch[i] = s1 * m1 + s2 * m2;
-      }
-      return true;
-    }
-    wave(phase, type, pw) {
-      switch (type) {
-        case 0: return 2 * phase - 1;
-        case 1: return phase < pw ? 1 : -1;
-        case 2: return 4 * Math.abs(phase - 0.5) - 1;
-        case 3: return Math.sin(2 * Math.PI * phase);
-        default: return 0;
-      }
-    }
-  }
-  registerProcessor('va-dual-osc', VADualOscillatorProcessor);
-`
-
-let vaOscWorkletUrl: string | null = null
-function getVAOscWorkletUrl(): string {
-  if (!vaOscWorkletUrl) {
-    vaOscWorkletUrl = 'data:application/javascript,' + encodeURIComponent(VA_OSC_WORKLET_JS)
-  }
-  return vaOscWorkletUrl
 }
 
 // ---------------------------------------------------------------------------
@@ -506,20 +408,6 @@ export class AudioEngine {
   private buffers = new Map<string, AudioBuffer>()
 
   private activeVoices: ActiveVoice[] = []
-  private activeSynthVoices: ActiveSynthVoice[] = []
-
-  /** Per-pad effect chains for synth pads (padId → chain) */
-  private padEffectChains = new Map<string, {
-    chain: ReturnType<typeof buildEffectChain>
-    busId: BusId
-    structuralKey: string
-  }>()
-
-  /** Per-pad mono mode state (track last voice + frequency for glide) */
-  private monoVoices = new Map<string, {
-    nodes: SynthVoiceNodes
-    lastFreq: number
-  }>()
 
   private polyphony = 32
 
@@ -528,7 +416,6 @@ export class AudioEngine {
   private filterPool: BiquadFilterNode[] = []
 
   private workletReady = false
-  private vaWorkletReady = false
 
   // Input monitor state
   private monitorStream: MediaStream | null = null
@@ -589,21 +476,9 @@ export class AudioEngine {
     }
   }
 
-  private async registerVAWorklet(): Promise<void> {
-    if (!this.ctx || this.vaWorkletReady) return
-    try {
-      await this.ctx.audioWorklet.addModule(getVAOscWorkletUrl())
-      this.vaWorkletReady = true
-    } catch (e) {
-      console.warn('Failed to register VA oscillator worklet:', e)
-    }
-  }
-
-  /** Ensure VA worklet is loaded (call before playing VA synth notes) */
-  ensureVAWorklet(): boolean {
-    if (this.vaWorkletReady) return true
-    void this.registerVAWorklet()
-    return false
+  /** Return the AudioContext if already created, or null */
+  getContextIfReady(): AudioContext | null {
+    return this.ctx
   }
 
   getBufferSize(): number {
@@ -617,7 +492,6 @@ export class AudioEngine {
 
     if (!this.ctx) return
 
-    // Stop all active voices
     for (const v of this.activeVoices) {
       if (!v.disposed) {
         v.disposed = true
@@ -629,16 +503,6 @@ export class AudioEngine {
     }
     this.activeVoices.length = 0
 
-    // Stop all active synth voices
-    for (const sv of this.activeSynthVoices) {
-      if (!sv.disposed) {
-        sv.disposed = true
-        disposeSynthVoice(sv.nodes)
-      }
-    }
-    this.activeSynthVoices.length = 0
-
-    // Stop input monitor
     if (this.monitorSource) {
       try { this.monitorSource.disconnect() } catch { /* ignore */ }
       this.monitorSource = null
@@ -649,10 +513,8 @@ export class AudioEngine {
     }
     this.monitorGain = null
 
-    // Close old context
     await this.ctx.close()
 
-    // Clear node references (buffers survive since they're just data)
     this.ctx = null
     this.masterGain = null
     this.masterEffectChain = null
@@ -661,83 +523,9 @@ export class AudioEngine {
     this.busNodes.clear()
     this.gainPool.length = 0
     this.filterPool.length = 0
-    this.padEffectChains.clear()
     this.workletReady = false
-    this.vaWorkletReady = false
 
-    // Re-init by calling getContext
     this.getContext()
-  }
-
-  /** Get the gain node for a bus (used as sidechain tap point) */
-  getBusGainNode(busId: BusId): GainNode | null {
-    return this.busNodes.get(busId)?.gain ?? null
-  }
-
-  private getBusDestination(busId: BusId): GainNode {
-    this.getContext()
-    return this.busNodes.get(busId)!.gain
-  }
-
-  // iOS silent switch workaround: playing a tiny <audio> element promotes the
-  // audio session from "ambient" (muted by silent switch) to "playback".
-  private _iosAudioUnlocked = false
-  private _iosUnlockPromise: Promise<void> | null = null
-
-  /** Kick off iOS audio unlock synchronously (must be in user gesture callstack) */
-  private startIOSAudioUnlock(): void {
-    if (this._iosAudioUnlocked || this._iosUnlockPromise) return
-    const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) ||
-      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
-    if (!isIOS) { this._iosAudioUnlocked = true; return }
-    // Tiny 1-sample silent WAV
-    const silentWav = 'data:audio/wav;base64,UklGRiYAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQIAAAAAAA=='
-    const audio = new Audio(silentWav)
-    audio.volume = 0.01
-    audio.setAttribute('playsinline', '')
-    // Start play synchronously in gesture — store the promise for awaiting later
-    this._iosUnlockPromise = audio.play().then(() => {
-      this._iosAudioUnlocked = true
-      this._iosUnlockPromise = null
-    }).catch(() => {
-      this._iosUnlockPromise = null
-    })
-  }
-
-  /** Must be called synchronously inside a user gesture handler.
-   *  Kicks off context creation + resume + iOS audio unlock in the same callstack.
-   *  Returns a promise that resolves when everything is ready. */
-  unlockAndPrepare(): Promise<void> {
-    try {
-      // All of these must start synchronously within the gesture:
-      // iOS silent audio: fire-and-forget (just needs to START in gesture, don't await)
-      this.startIOSAudioUnlock()
-      const ctx = this.getContext()
-      const resumeP = ctx.state !== 'running'
-        ? ctx.resume().catch(() => {})
-        : Promise.resolve()
-      // Only wait for ctx.resume + pending decodes (not the iOS audio element)
-      return resumeP.then(() => this.flushPendingDecodes()).catch((e) => {
-        console.warn('[audioEngine] unlockAndPrepare error:', e)
-      })
-    } catch (e) {
-      console.warn('[audioEngine] unlockAndPrepare sync error:', e)
-      return Promise.resolve()
-    }
-  }
-
-  async unlock(): Promise<void> {
-    return this.unlockAndPrepare()
-  }
-
-  /** Synchronous unlock — resumes context without awaiting (fire-and-forget) */
-  unlockSync(): void {
-    void this.unlockAndPrepare()
-  }
-
-  /** Return the AudioContext if already created, or null */
-  getContextIfReady(): AudioContext | null {
-    return this.ctx
   }
 
   private acquireGain(): GainNode {
@@ -840,6 +628,67 @@ export class AudioEngine {
         console.warn('Failed to decode pending sample', id, e)
       }
     }
+  }
+
+  private getBusDestination(busId: BusId): GainNode {
+    this.getContext()
+    return this.busNodes.get(busId)!.gain
+  }
+
+  // iOS silent switch workaround: playing a tiny <audio> element promotes the
+  // audio session from "ambient" (muted by silent switch) to "playback".
+  private _iosAudioUnlocked = false
+  private _iosUnlockPromise: Promise<void> | null = null
+
+  /** Kick off iOS audio unlock synchronously (must be in user gesture callstack) */
+  private startIOSAudioUnlock(): void {
+    if (this._iosAudioUnlocked || this._iosUnlockPromise) return
+    const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+    if (!isIOS) { this._iosAudioUnlocked = true; return }
+    // Tiny 1-sample silent WAV
+    const silentWav = 'data:audio/wav;base64,UklGRiYAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQIAAAAAAA=='
+    const audio = new Audio(silentWav)
+    audio.volume = 0.01
+    audio.setAttribute('playsinline', '')
+    // Start play synchronously in gesture — store the promise for awaiting later
+    this._iosUnlockPromise = audio.play().then(() => {
+      this._iosAudioUnlocked = true
+      this._iosUnlockPromise = null
+    }).catch(() => {
+      this._iosUnlockPromise = null
+    })
+  }
+
+  /** Must be called synchronously inside a user gesture handler.
+   *  Kicks off context creation + resume + iOS audio unlock in the same callstack.
+   *  Returns a promise that resolves when everything is ready. */
+  unlockAndPrepare(): Promise<void> {
+    try {
+      // All of these must start synchronously within the gesture:
+      // iOS silent audio: fire-and-forget (just needs to START in gesture, don't await)
+      this.startIOSAudioUnlock()
+      const ctx = this.getContext()
+      const resumeP = ctx.state !== 'running'
+        ? ctx.resume().catch(() => {})
+        : Promise.resolve()
+      // Only wait for ctx.resume + pending decodes (not the iOS audio element)
+      return resumeP.then(() => this.flushPendingDecodes()).catch((e) => {
+        console.warn('[audioEngine] unlockAndPrepare error:', e)
+      })
+    } catch (e) {
+      console.warn('[audioEngine] unlockAndPrepare sync error:', e)
+      return Promise.resolve()
+    }
+  }
+
+  async unlock(): Promise<void> {
+    return this.unlockAndPrepare()
+  }
+
+  /** Synchronous unlock — resumes context without awaiting (fire-and-forget) */
+  unlockSync(): void {
+    void this.unlockAndPrepare()
   }
 
   async registerSample(sample: SampleAsset): Promise<void> {
@@ -968,12 +817,6 @@ export class AudioEngine {
     velocity: number,
     options?: { forceDuration?: number; hold?: boolean; atTimeSec?: number; semitoneOffset?: number; bpm?: number },
   ): void {
-    // --- Synth source: use additive synthesis instead of samples ---
-    if (pad.settings.source === 'synth' && pad.settings.synthParams) {
-      this.playSynthPad(pad, velocity, options)
-      return
-    }
-
     // --- Stacked mode: trigger ALL layers simultaneously ---
     if (pad.settings.multiMode === 'stacked' && pad.settings.layers && pad.settings.layers.length > 0) {
       this.evictIfNeeded()
@@ -1062,16 +905,6 @@ export class AudioEngine {
       gainNode.connect(panNode)
     }
 
-    // --- Sample pad filter envelope ---
-    const fEnv = settings.filterEnvelope
-    const hasFilterEnv = filterNodes.length > 0 && fEnv && fEnv.depth > 0
-    let filterBaseFreqHz = 0
-    let filterReleaseSec = 0
-    if (hasFilterEnv) {
-      filterBaseFreqHz = settings.filterFreq ?? 1000
-      filterReleaseSec = fEnv.release
-    }
-
     const duration = sourceBuffer.duration
     const startOffset = Math.max(0, Math.min(duration, settings.trim.start * duration))
     const endOffset = Math.max(startOffset, Math.min(duration, settings.trim.end * duration))
@@ -1090,16 +923,6 @@ export class AudioEngine {
       hold,
     )
 
-    // --- Filter envelope ---
-    scheduleFilterEnvelope(
-      filterNodes,
-      startTimeSec,
-      settings,
-      playbackDuration,
-      options?.forceDuration,
-      hold,
-    )
-
     source.start(startTimeSec, startOffset, envResult.sourceStopSec)
 
     const voice: ActiveVoice = {
@@ -1112,8 +935,6 @@ export class AudioEngine {
       chokeGroup,
       disposed: false,
       release: settings.envelope.release,
-      filterBaseFreq: hasFilterEnv ? filterBaseFreqHz : undefined,
-      filterRelease: hasFilterEnv ? filterReleaseSec : undefined,
     }
     this.activeVoices.push(voice)
 
@@ -1121,155 +942,6 @@ export class AudioEngine {
       window.setTimeout(() => {
         this.disposeVoice(voice)
       }, Math.ceil(delayMs + envResult.sourceStopSec * 1000) + 120)
-    }
-  }
-
-  /** Play a synth pad (additive or VA) */
-  private playSynthPad(
-    pad: Pad,
-    velocity: number,
-    options?: { forceDuration?: number; hold?: boolean; atTimeSec?: number; semitoneOffset?: number; bpm?: number },
-  ): void {
-    const ctx = this.getContext()
-    const settings = pad.settings
-    const synthParams = settings.synthParams!
-    const isVA = synthParams.synthMode === 'va'
-
-    // Lazy-load VA worklet if needed
-    if (isVA && !this.vaWorkletReady) {
-      this.ensureVAWorklet()
-    }
-
-    const busDestination = this.getBusDestination(settings.bus ?? 'A')
-    const startTime = options?.atTimeSec ?? (ctx.currentTime + 0.01)
-    const bpm = options?.bpm ?? 120
-    const hold = options?.hold ?? ((settings.mode === 'adsr' || settings.mode === 'ahr') && options?.forceDuration == null)
-
-    // --- Mono mode voice stealing ---
-    const polyMode = synthParams.polyMode ?? 'poly'
-    if (polyMode === 'mono') {
-      const existing = this.monoVoices.get(pad.id)
-      if (existing) {
-        // Stop existing voice with very fast release
-        stopSynthVoice(ctx, existing.nodes, 0.005)
-        window.setTimeout(() => disposeSynthVoice(existing.nodes), 20)
-        this.monoVoices.delete(pad.id)
-      }
-    }
-
-    // --- Glide frequency ---
-    const va = synthParams.va
-    const glide = va?.glide ?? 0
-
-    // Choke group
-    const chokeGroup = settings.chokeGroup ?? 0
-    if (chokeGroup > 0) {
-      const chokeTime = options?.atTimeSec ?? ctx.currentTime
-      const chokeDelayMs = Math.max(0, (chokeTime - ctx.currentTime) * 1000) + 15
-      const toChoke = this.activeVoices.filter((v) => v.chokeGroup === chokeGroup)
-      for (const v of toChoke) {
-        try { v.gain.gain.setValueAtTime(v.gain.gain.value, chokeTime); v.gain.gain.linearRampToValueAtTime(0, chokeTime + 0.005) } catch { /* */ }
-        try { v.source.stop(chokeTime + 0.01) } catch { /* */ }
-        window.setTimeout(() => this.disposeVoice(v), chokeDelayMs)
-      }
-      const toChokeSynth = this.activeSynthVoices.filter((v) => v.chokeGroup === chokeGroup)
-      for (const sv of toChokeSynth) {
-        window.setTimeout(() => {
-          stopSynthVoice(ctx, sv.nodes, 0.005)
-          sv.disposed = true
-          window.setTimeout(() => disposeSynthVoice(sv.nodes), 20)
-        }, Math.max(0, (chokeTime - ctx.currentTime) * 1000))
-      }
-      this.activeSynthVoices = this.activeSynthVoices.filter((v) => !toChokeSynth.includes(v))
-    }
-
-    const synthVoice = createSynthVoice(
-      ctx, synthParams, settings, velocity, startTime, bpm,
-      options?.forceDuration, options?.semitoneOffset,
-    )
-
-    // --- Glide: ramp worklet frequencies from last note ---
-    if (glide > 0 && polyMode === 'mono' && synthVoice.vaWorklet) {
-      const existing = this.monoVoices.get(pad.id)
-      if (existing) {
-        const wParams = synthVoice.vaWorklet.parameters as Map<string, AudioParam>
-        const osc1Freq = wParams.get('osc1Freq')
-        const osc2Freq = wParams.get('osc2Freq')
-        if (osc1Freq && osc2Freq) {
-          const lastFreq = existing.lastFreq
-          const targetFreq1 = osc1Freq.value
-          const targetFreq2 = osc2Freq.value
-          osc1Freq.cancelScheduledValues(startTime)
-          osc2Freq.cancelScheduledValues(startTime)
-          osc1Freq.setValueAtTime(lastFreq, startTime)
-          osc2Freq.setValueAtTime(lastFreq, startTime)
-          osc1Freq.linearRampToValueAtTime(targetFreq1, startTime + glide)
-          osc2Freq.linearRampToValueAtTime(targetFreq2, startTime + glide)
-        }
-      }
-    }
-
-    // Connect output: filter → pan → pad effects → bus, or voiceGain → pan → pad effects → bus
-    const output = synthVoice.filters.length > 0 ? synthVoice.filters[synthVoice.filters.length - 1] : synthVoice.voiceGain
-    const synthPanNode = ctx.createStereoPanner()
-    const synthPanVal = settings.pan ?? 0
-    synthPanNode.pan.value = settings.randomPan ? (Math.random() * 2 - 1) * synthPanVal : synthPanVal
-    output.connect(synthPanNode)
-    const padEffects = settings.padEffects
-    if (padEffects && padEffects.some((s) => s.type !== 'off' && s.enabled)) {
-      const dest = this.getPadEffectInput(pad.id, settings.bus ?? 'A', padEffects)
-      synthPanNode.connect(dest)
-    } else {
-      synthPanNode.connect(busDestination)
-    }
-
-    const release = settings.envelope.release
-    const attack = settings.envelope.attack
-    const decay = settings.envelope.decay
-
-    // Track active voice
-    const activeEntry: ActiveSynthVoice = {
-      nodes: synthVoice,
-      startedAt: Date.now(),
-      hold,
-      padId: pad.id,
-      chokeGroup,
-      disposed: false,
-      release,
-    }
-    this.activeSynthVoices.push(activeEntry)
-
-    // Track mono voice for glide
-    if (polyMode === 'mono') {
-      const baseNote = synthParams.baseNote + settings.semitones + (options?.semitoneOffset ?? 0)
-      const fineShift = (settings.fineCents ?? 0) / 100
-      const baseFreq = 440 * Math.pow(2, (baseNote + fineShift - 69) / 12)
-      this.monoVoices.set(pad.id, { nodes: synthVoice, lastFreq: baseFreq })
-    }
-
-    // Auto-dispose for non-hold modes
-    if (!hold || options?.forceDuration != null) {
-      let durationMs: number
-      if (options?.forceDuration != null) {
-        durationMs = options.forceDuration * 1000 + release * 1000
-      } else if (settings.mode === 'adsr') {
-        durationMs = (attack + decay + release) * 1000
-      } else if (settings.mode === 'ahr') {
-        const holdTime = settings.envelope.hold ?? 0
-        durationMs = (attack + holdTime + release) * 1000
-      } else {
-        // one-shot
-        durationMs = (attack + decay) * 1000
-      }
-      window.setTimeout(() => {
-        if (activeEntry.disposed) return
-        activeEntry.disposed = true
-        disposeSynthVoice(synthVoice)
-        this.activeSynthVoices = this.activeSynthVoices.filter((v) => v !== activeEntry)
-        if (this.monoVoices.get(pad.id)?.nodes === synthVoice) {
-          this.monoVoices.delete(pad.id)
-        }
-      }, durationMs + 150)
     }
   }
 
@@ -1315,16 +987,6 @@ export class AudioEngine {
       gainNode.connect(panNodeS)
     }
 
-    // --- Sample pad filter envelope (stacked voice) ---
-    const fEnvS = settings.filterEnvelope
-    const hasFilterEnvS = filterNodes.length > 0 && fEnvS && fEnvS.depth > 0
-    let filterBaseS = 0
-    let filterReleaseS = 0
-    if (hasFilterEnvS) {
-      filterBaseS = settings.filterFreq ?? 1000
-      filterReleaseS = fEnvS.release
-    }
-
     const duration = sourceBuffer.duration
     const startOffset = Math.max(0, Math.min(duration, settings.trim.start * duration))
     const endOffset = Math.max(startOffset, Math.min(duration, settings.trim.end * duration))
@@ -1336,16 +998,6 @@ export class AudioEngine {
       gainNode.gain,
       startTimeSec,
       linearGain,
-      settings,
-      playbackDuration,
-      options?.forceDuration,
-      holdS,
-    )
-
-    // --- Filter envelope ---
-    scheduleFilterEnvelope(
-      filterNodes,
-      startTimeSec,
       settings,
       playbackDuration,
       options?.forceDuration,
@@ -1364,8 +1016,6 @@ export class AudioEngine {
       chokeGroup,
       disposed: false,
       release: settings.envelope.release,
-      filterBaseFreq: hasFilterEnvS ? filterBaseS : undefined,
-      filterRelease: hasFilterEnvS ? filterReleaseS : undefined,
     }
     this.activeVoices.push(voice)
 
@@ -1437,14 +1087,6 @@ export class AudioEngine {
       voice.gain.gain.cancelScheduledValues(now)
       voice.gain.gain.setValueAtTime(voice.gain.gain.value, now)
       voice.gain.gain.linearRampToValueAtTime(0, now + releaseSec)
-      // Filter envelope release for gate hold
-      if (voice.filterBaseFreq != null && voice.filterRelease != null) {
-        for (const f of voice.filters) {
-          f.frequency.cancelScheduledValues(now)
-          f.frequency.setValueAtTime(f.frequency.value, now)
-          f.frequency.linearRampToValueAtTime(voice.filterBaseFreq, now + voice.filterRelease)
-        }
-      }
       try { voice.source.stop(now + releaseSec + 0.01) } catch { /* already stopped */ }
       // Recycle nodes after release completes
       window.setTimeout(() => {
@@ -1455,22 +1097,6 @@ export class AudioEngine {
       }, Math.ceil((releaseSec + 0.02) * 1000))
     })
     this.activeVoices = this.activeVoices.filter((voice) => !holdVoices.includes(voice))
-
-    // Release held synth voices
-    const holdSynths = this.activeSynthVoices.filter((v) => v.padId === padId && v.hold)
-    for (const sv of holdSynths) {
-      const ctx = this.getContext()
-      stopSynthVoice(ctx, sv.nodes, sv.release)
-      const cleanupMs = Math.ceil((sv.release + 0.1) * 1000)
-      window.setTimeout(() => {
-        if (sv.disposed) return
-        sv.disposed = true
-        disposeSynthVoice(sv.nodes)
-        const mono = this.monoVoices.get(padId)
-        if (mono?.nodes === sv.nodes) this.monoVoices.delete(padId)
-      }, cleanupMs)
-    }
-    this.activeSynthVoices = this.activeSynthVoices.filter((v) => !holdSynths.includes(v))
   }
 
   private disposeVoice(voice: ActiveVoice): void {
@@ -1486,22 +1112,7 @@ export class AudioEngine {
 
   private evictIfNeeded(): void {
     const ctx = this.ctx
-    // Evict synth voices first (oldest non-hold)
-    while (this.activeVoices.length + this.activeSynthVoices.length >= this.polyphony && this.activeSynthVoices.length > 0) {
-      const idx = this.activeSynthVoices.findIndex((v) => !v.hold)
-      const candidateIdx = idx !== -1 ? idx : 0
-      const sv = this.activeSynthVoices[candidateIdx]
-      if (!sv) break
-      if (ctx) stopSynthVoice(ctx, sv.nodes, 0.005)
-      sv.disposed = true
-      window.setTimeout(() => disposeSynthVoice(sv.nodes), 20)
-      // Clean up mono tracking
-      for (const [padId, mono] of this.monoVoices) {
-        if (mono.nodes === sv.nodes) this.monoVoices.delete(padId)
-      }
-      this.activeSynthVoices.splice(candidateIdx, 1)
-    }
-    while (this.activeVoices.length + this.activeSynthVoices.length >= this.polyphony) {
+    while (this.activeVoices.length >= this.polyphony) {
       const idx = this.activeVoices.findIndex((voice) => !voice.hold)
       const candidateIdx = idx !== -1 ? idx : 0
       const candidate = this.activeVoices[candidateIdx]
@@ -1526,81 +1137,6 @@ export class AudioEngine {
       candidate.filters.forEach((f) => this.releaseFilter(f))
       this.activeVoices.splice(candidateIdx, 1)
     }
-  }
-
-  /** Compute a structural key for pad effect slots (determines when to rebuild vs update params) */
-  private padEffectStructuralKey(slots: EffectSlot[]): string {
-    return slots.map((s) => `${s.type}:${s.enabled}:${s.type === 'reverb' ? s.params.decay : ''}`).join('|')
-  }
-
-  /** Get or create a per-pad effect chain for synth pads. Returns the chain input node to connect voices to. */
-  getPadEffectInput(padId: string, busId: BusId, slots: EffectSlot[]): AudioNode {
-    const ctx = this.getContext()
-    const busDestination = this.getBusDestination(busId)
-    const key = this.padEffectStructuralKey(slots)
-
-    const existing = this.padEffectChains.get(padId)
-    if (existing && existing.structuralKey === key && existing.busId === busId) {
-      return existing.chain.input
-    }
-
-    // Tear down old chain
-    if (existing) {
-      for (const n of existing.chain.allNodes) { try { n.disconnect() } catch { /* */ } }
-    }
-
-    // If all slots are off/disabled, skip chain and connect directly
-    const anyActive = slots.some((s) => s.type !== 'off' && s.enabled)
-    if (!anyActive) {
-      this.padEffectChains.delete(padId)
-      // Return bus destination directly — caller will connect to this
-      return busDestination
-    }
-
-    const chain = buildEffectChain(ctx, slots)
-    chain.output.connect(busDestination)
-
-    this.padEffectChains.set(padId, { chain, busId, structuralKey: key })
-    return chain.input
-  }
-
-  /** Update pad effect params in-place (no graph rebuild). */
-  updatePadEffectParams(padId: string, slots: EffectSlot[]): void {
-    const existing = this.padEffectChains.get(padId)
-    if (!existing) return
-    const ctx = this.ctx
-    if (!ctx) return
-    for (let i = 0; i < slots.length; i++) {
-      const slot = slots[i]
-      const node = existing.chain.slotNodes[i]
-      if (node && slot.type !== 'off' && slot.enabled) {
-        updateEffectNodeParams(node, slot, ctx)
-      }
-    }
-  }
-
-  /** Rebuild a pad effect chain (structural change: type/enabled changed). */
-  rebuildPadEffectChain(padId: string, busId: BusId, slots: EffectSlot[]): void {
-    // getPadEffectInput handles rebuild logic
-    this.getPadEffectInput(padId, busId, slots)
-    // Reconnect active synth voices for this pad
-    const ctx = this.ctx
-    if (!ctx) return
-    for (const sv of this.activeSynthVoices) {
-      if (sv.padId !== padId || sv.disposed) continue
-      const output = sv.nodes.filters.length > 0 ? sv.nodes.filters[sv.nodes.filters.length - 1] : sv.nodes.voiceGain
-      try { output.disconnect() } catch { /* */ }
-      const dest = this.padEffectChains.get(padId)?.chain.input ?? this.getBusDestination(busId)
-      output.connect(dest)
-    }
-  }
-
-  /** Clean up pad effect chain when pad is no longer playing. */
-  disposePadEffectChain(padId: string): void {
-    const existing = this.padEffectChains.get(padId)
-    if (!existing) return
-    for (const n of existing.chain.allNodes) { try { n.disconnect() } catch { /* */ } }
-    this.padEffectChains.delete(padId)
   }
 
   /** Update filter params on all active voices for a pad (live knob changes). */
@@ -1628,26 +1164,6 @@ export class AudioEngine {
         voice.filters[1].Q.setTargetAtTime(q, now, TAU)
       } else {
         for (const f of voice.filters) {
-          f.type = resolved!.biquadType
-          f.frequency.setTargetAtTime(freq, now, TAU)
-          f.Q.setTargetAtTime(q, now, TAU)
-        }
-      }
-    }
-
-    // Synth voices
-    for (const sv of this.activeSynthVoices) {
-      if (sv.padId !== padId || sv.disposed) continue
-      if (!resolved && !isLphp) continue
-      if (isLphp && sv.nodes.filters.length >= 2) {
-        sv.nodes.filters[0].type = 'highpass'
-        sv.nodes.filters[0].frequency.setTargetAtTime(freq, now, TAU)
-        sv.nodes.filters[0].Q.setTargetAtTime(q, now, TAU)
-        sv.nodes.filters[1].type = 'lowpass'
-        sv.nodes.filters[1].frequency.setTargetAtTime(freq2 ?? 20000, now, TAU)
-        sv.nodes.filters[1].Q.setTargetAtTime(q, now, TAU)
-      } else {
-        for (const f of sv.nodes.filters) {
           f.type = resolved!.biquadType
           f.frequency.setTargetAtTime(freq, now, TAU)
           f.Q.setTargetAtTime(q, now, TAU)
@@ -1684,6 +1200,6 @@ export class AudioEngine {
 }
 
 // Export shared helpers for audioExport.ts
-export { buildEffectChain, getSCWorkletUrl, getVAOscWorkletUrl, type EffectChainNode }
+export { buildEffectChain, getSCWorkletUrl, type EffectChainNode }
 
 export const audioEngine = new AudioEngine()

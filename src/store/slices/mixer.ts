@@ -1,6 +1,4 @@
 import type { BusId, EffectSlot, EffectType, MixBus } from '../../types'
-import { audioEngine } from '../../lib/audioEngine'
-import { createDefaultEffectSlot } from '../../lib/utils'
 import { getDefaultEffectParams } from '../helpers'
 import { BANK_COUNT } from '../../lib/constants'
 import type { StoreContext } from '../context'
@@ -124,48 +122,6 @@ export const createMixerActions = (ctx: StoreContext) => ({
         return { ...b, effects }
       }) as [MixBus, MixBus, MixBus, MixBus],
     })
-  },
-
-  setPadEffectType: (padId: string, slotIndex: number, effectType: EffectType) => {
-    const s = ctx.get()
-    if (!s.project) return
-    const pad = s.project.pads.find((p) => p.id === padId)
-    if (!pad) return
-    const effects = [...(pad.settings.padEffects ?? [createDefaultEffectSlot(), createDefaultEffectSlot()])] as [EffectSlot, EffectSlot]
-    effects[slotIndex] = { ...effects[slotIndex], type: effectType, enabled: effectType !== 'off', params: effectType === 'off' ? {} : getDefaultEffectParams(effectType) }
-    ctx.get().saveProjectLight({
-      ...s.project,
-      pads: s.project.pads.map((p) => p.id === padId ? { ...p, settings: { ...p.settings, padEffects: effects } } : p),
-    })
-    audioEngine.rebuildPadEffectChain(padId, pad.settings.bus ?? 'A', effects)
-  },
-
-  setPadEffectEnabled: (padId: string, slotIndex: number, enabled: boolean) => {
-    const s = ctx.get()
-    if (!s.project) return
-    const pad = s.project.pads.find((p) => p.id === padId)
-    if (!pad) return
-    const effects = [...(pad.settings.padEffects ?? [createDefaultEffectSlot(), createDefaultEffectSlot()])] as [EffectSlot, EffectSlot]
-    effects[slotIndex] = { ...effects[slotIndex], enabled }
-    ctx.get().saveProjectLight({
-      ...s.project,
-      pads: s.project.pads.map((p) => p.id === padId ? { ...p, settings: { ...p.settings, padEffects: effects } } : p),
-    })
-    audioEngine.rebuildPadEffectChain(padId, pad.settings.bus ?? 'A', effects)
-  },
-
-  setPadEffectParam: (padId: string, slotIndex: number, paramName: string, value: number) => {
-    const s = ctx.get()
-    if (!s.project) return
-    const pad = s.project.pads.find((p) => p.id === padId)
-    if (!pad) return
-    const effects = [...(pad.settings.padEffects ?? [createDefaultEffectSlot(), createDefaultEffectSlot()])] as [EffectSlot, EffectSlot]
-    effects[slotIndex] = { ...effects[slotIndex], params: { ...effects[slotIndex].params, [paramName]: value } }
-    ctx.get().saveProjectLight({
-      ...s.project,
-      pads: s.project.pads.map((p) => p.id === padId ? { ...p, settings: { ...p.settings, padEffects: effects } } : p),
-    })
-    audioEngine.updatePadEffectParams(padId, effects)
   },
 
   setMasterGain: (gain: number) => {

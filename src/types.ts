@@ -1,7 +1,5 @@
 export type PadMode = 'one-shot' | 'adsr' | 'ahr'
 
-export type PadSource = 'sample' | 'synth'
-
 export type BusId = 'A' | 'B' | 'C' | 'D'
 export const BUS_IDS: BusId[] = ['A', 'B', 'C', 'D']
 
@@ -76,72 +74,13 @@ export interface MidiOutConfig {
   velocity: number         // 1–127, or -1 to inherit trigger velocity
 }
 
-export type LfoWaveform = 'sine' | 'ramp-up' | 'ramp-down' | 'square'
-export type LfoRateMode = 'free' | 'sync'
-export type LfoTriggerMode = 'free' | 'trigger'
-
-export interface LfoSettings {
-  waveform: LfoWaveform
-  rateMode: LfoRateMode
-  rateHz: number           // free-running Hz (0.1–30)
-  rateSyncDiv: number      // tempo-sync divisions: 1=1/1, 2=1/2, 4=1/4, 8=1/8, 16=1/16
-  pitchDepth: number       // 0–1 (pitch modulation amount, 0=off)
-  filterDepth: number      // 0–1 (filter cutoff modulation amount, 0=off)
-  gainDepth: number        // 0–1 (gain/tremolo modulation amount, 0=off)
-  pwDepth?: number         // 0–1 (PWM modulation depth, VA mode only)
-  triggerMode?: LfoTriggerMode // 'free' (continuous) or 'trigger' (retrigger on note)
-}
-
-export interface FilterEnvelopeSettings {
-  attack: number           // seconds
-  decay: number            // seconds
-  sustain: number          // 0–1 (fraction of depth)
-  release: number          // seconds
-  depth: number            // semitones of filter cutoff modulation (0–96)
-}
-
-export type SynthMode = 'additive' | 'va'
-export type VAOscWaveform = 'saw' | 'square' | 'triangle' | 'sine'
-
-export interface VAOscillatorParams {
-  waveform: VAOscWaveform
-  pulseWidth: number      // 0.1–0.9 (square wave duty cycle, ignored for other waveforms)
-  semitones: number       // coarse detune from base note (-24 to +24)
-  fineCents: number       // fine detune (-100 to +100)
-  level: number           // 0–1 (oscillator level)
-}
-
-export interface VASynthParams {
-  osc1: VAOscillatorParams
-  osc2: VAOscillatorParams
-  oscSync: boolean        // hard-sync OSC2 to OSC1 phase reset
-  oscMix: number          // -1 (full OSC1) to +1 (full OSC2), 0 = equal
-  glide: number           // portamento time in seconds (0 = off)
-}
-
-export interface SynthParams {
-  /** Synthesis mode: 'additive' (16 sine harmonics) or 'va' (virtual analog 2-osc) */
-  synthMode?: SynthMode
-  /** 16 harmonic amplitudes (0–1), index 0 = fundamental */
-  harmonics: number[]
-  /** Base frequency as MIDI note (default 60 = C4) */
-  baseNote: number
-  /** Filter envelope (modulates filter cutoff) */
-  filterEnvelope: FilterEnvelopeSettings
-  /** LFO */
-  lfo: LfoSettings
-  /** VA-specific parameters (only used when synthMode === 'va') */
-  va?: VASynthParams
-  /** Polyphony mode: 'mono' = 1 voice (legato + glide), 'poly' = standard */
-  polyMode?: 'mono' | 'poly'
-}
-
 export interface PadSettings {
-  source: PadSource
   sampleId: string | null
   gain: number
   semitones: number
   fineCents: number
+  /** MIDI note for the sample's original pitch. Piano roll centers around this. Default 60 (C4). */
+  baseNote?: number
   mode: PadMode
   trim: TrimSettings
   envelope: EnvelopeSettings
@@ -151,21 +90,11 @@ export interface PadSettings {
   filterFreq: number  // Hz, 20–20000
   filterFreq2?: number // Hz, second cutoff for 'lphp' filter (HP frequency)
   filterQ: number     // 0.1–20
-  filterKeyTrack?: number // -100 to +100, 0 = off, 100 = full tracking (filter opens on higher notes)
   bus: BusId          // mix bus routing
   chokeGroup: number  // 0 = none, 1–8 = choke group
   pan?: number        // -1 (left) to 1 (right), undefined = 0 (center)
   randomPan?: boolean // when true, pan value controls random pan width
   midiOut?: MidiOutConfig  // optional MIDI out config (undefined = disabled)
-  synthParams?: SynthParams // only used when source === 'synth'
-  /** Per-synth-pad MIDI input channel for chromatic note input (1–16, undefined = disabled) */
-  synthMidiChannel?: number
-  /** Per-synth-pad MIDI input device ID (undefined = any device) */
-  synthMidiDevice?: string
-  /** Filter envelope for sample pads (undefined = no filter envelope modulation) */
-  filterEnvelope?: FilterEnvelopeSettings
-  /** Per-pad effect slots (used for synth pads, 2 slots) */
-  padEffects?: [EffectSlot, EffectSlot]
   /** Per-pad mute (undefined/false = not muted) */
   mute?: boolean
 }
@@ -234,7 +163,7 @@ export interface SequenceEvent {
   velocity: number
   gate: number
   semitones?: number
-  /** MIDI note number for piano roll events (synth pads). When set, overrides pad base note. */
+  /** MIDI note number for piano roll events. When set, overrides pad base note. */
   note?: number
 }
 
@@ -271,32 +200,10 @@ export interface Project {
   updatedAt: number
 }
 
-export interface SynthPatch {
-  id: string
-  name: string
-  createdAt: number
-  params: SynthParams
-  /** Pad settings snapshot: mode, envelope, filter, bus, choke, gain, semitones, fineCents */
-  padSettings: {
-    mode: PadMode
-    envelope: EnvelopeSettings
-    filterType: FilterType
-    filterFreq: number
-    filterQ: number
-    gain: number
-    semitones: number
-    fineCents: number
-    synthMode?: SynthMode
-    polyMode?: 'mono' | 'poly'
-    glide?: number
-  }
-}
-
 export interface PackageManifest {
   schemaVersion: number
   exportedAt: number
   project: Project
   usedSampleIds: string[]
   sampleMeta?: { id: string; name: string; chopPoints?: number[]; autosampleRunId?: string; autosampleRunLabel?: string; autosamplePadIndex?: number; autosampleTrim?: TrimSettings; autosampleBus?: BusId; autosampleChokeGroup?: number; autosampleMpc?: boolean; autosamplePreset?: boolean; autosampleLcdk?: boolean; autosampleImportedPadSettings?: ImportedPadSettings; autosampleMpcLayerIndex?: number; autosampleMpcVelocityMax?: number }[]
-  synthPatches?: SynthPatch[]
 }

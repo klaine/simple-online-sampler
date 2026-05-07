@@ -15,7 +15,7 @@ function getGroupHeight(group: SequencerBankGroup, expandedPads: Set<string>): n
   let h = BANK_HEADER_HEIGHT
   for (const pad of group.pads) {
     h += LANE_HEIGHT
-    if (pad.settings.source === 'synth' && expandedPads.has(pad.id)) {
+    if (expandedPads.has(pad.id)) {
       h += PIANO_ROLL_HEIGHT
     }
   }
@@ -127,7 +127,7 @@ export const VirtualizedSequencerLanes = memo(function VirtualizedSequencerLanes
     for (let i = 0; i < bankGroups.length; i++) {
       const group = bankGroups[i]
       const hasExpanded = group.pads.some(
-        (p) => p.settings.source === 'synth' && expandedPianoRollPads.has(p.id),
+        (p) => expandedPianoRollPads.has(p.id),
       )
       if (hasExpanded) {
         actualStart = Math.min(actualStart, i)
@@ -177,8 +177,7 @@ export const VirtualizedSequencerLanes = memo(function VirtualizedSequencerLanes
             const selectedLane = selectedPadId === pad.id
             const padExactMap = eventsByPadAndStep.get(pad.id)
             const padSpanMap = spanningByPadAndStep.get(pad.id)
-            const isSynth = pad.settings.source === 'synth'
-            const isPianoRollExpanded = isSynth && expandedPianoRollPads.has(pad.id)
+        const isPianoRollExpanded = expandedPianoRollPads.has(pad.id)
             return (
               <div key={pad.id} className={isPianoRollExpanded ? 'sequencer-lane-group' : undefined}>
                 <div
@@ -193,7 +192,6 @@ export const VirtualizedSequencerLanes = memo(function VirtualizedSequencerLanes
                       void triggerPad(pad, 0.9)
                     }}
                   >
-                    {isSynth && <span className="lane-synth-badge">~</span>}
                     {pad.slot + 1} - {pad.name}
                   </button>
                   <button
@@ -202,16 +200,12 @@ export const VirtualizedSequencerLanes = memo(function VirtualizedSequencerLanes
                     onClick={() => toggleLaneMute(pad.id)}
                   >M</button>
                   <button type="button" className="lane-action" onClick={() => void clearLane(pad.id)}>C</button>
-                  {isSynth ? (
-                    <button
-                      type="button"
-                      className={`lane-action ${isPianoRollExpanded ? 'active' : ''}`}
-                      onClick={() => togglePianoRollExpanded(pad.id)}
-                      title={isPianoRollExpanded ? 'Collapse piano roll' : 'Expand piano roll'}
-                    >&#x266B;</button>
-                  ) : (
-                    <button type="button" className="lane-action" onClick={() => void clearLane(pad.id)} title="Delete lane events">D</button>
-                  )}
+                  <button
+                    type="button"
+                    className={`lane-action ${isPianoRollExpanded ? 'active' : ''}`}
+                    onClick={() => togglePianoRollExpanded(pad.id)}
+                    title={isPianoRollExpanded ? 'Collapse piano roll' : 'Expand piano roll'}
+                  >&#x266B;</button>
                   {stepIndices.map((step) => {
                     const exactEvent = padExactMap?.get(step)
                     const spanningEvent = padSpanMap?.get(step)
@@ -234,7 +228,7 @@ export const VirtualizedSequencerLanes = memo(function VirtualizedSequencerLanes
                 {isPianoRollExpanded && (
                   <PianoRollLane
                     padId={pad.id}
-                    baseNote={pad.settings.synthParams?.baseNote ?? 60}
+                    baseNote={pad.settings.baseNote ?? 60}
                     octaveOffset={pianoRollOctaveOffset[pad.id] ?? 0}
                     lengthSteps={visibleSequence.lengthSteps}
                     events={eventsByPad.get(pad.id) ?? []}

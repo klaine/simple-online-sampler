@@ -10,7 +10,6 @@ import type {
   Project,
   SampleAsset,
   SequenceEvent,
-  SynthPatch,
 } from '../types'
 
 interface ImportPreview {
@@ -40,7 +39,7 @@ const dedupeSampleByHash = async (sample: SampleAsset): Promise<SampleAsset> => 
   return sample
 }
 
-export const exportProjectPackage = async (project: Project, allSamples?: SampleAsset[], synthPatches?: SynthPatch[]): Promise<Blob> => {
+export const exportProjectPackage = async (project: Project, allSamples?: SampleAsset[]): Promise<Blob> => {
   const JSZip = (await import('jszip')).default
   const zip = new JSZip()
 
@@ -105,7 +104,6 @@ export const exportProjectPackage = async (project: Project, allSamples?: Sample
       autosampleMpcLayerIndex: s.autosampleMpcLayerIndex,
       autosampleMpcVelocityMax: s.autosampleMpcVelocityMax,
     })),
-    synthPatches: synthPatches ?? [],
   }
 
   zip.file('manifest.json', JSON.stringify(manifest, null, 2))
@@ -323,7 +321,7 @@ export const importProjectPackage = async (
   payload: Blob,
   mode: ImportMode,
   activeProject: Project,
-): Promise<{ project: Project; preview: ImportPreview; synthPatches?: SynthPatch[] }> => {
+): Promise<{ project: Project; preview: ImportPreview }> => {
   const JSZip = (await import('jszip')).default
   const zip = await JSZip.loadAsync(payload)
   const manifestRaw = await zip.file('manifest.json')?.async('string')
@@ -367,7 +365,7 @@ export const importProjectPackage = async (
       patternId: seqIdMap.get(entry.patternId) ?? entry.patternId,
     }))
     await db.putProject(fresh)
-    return { project: fresh, preview, synthPatches: manifest.synthPatches }
+    return { project: fresh, preview }
   }
 
   const merged = cloneProject(activeProject)
@@ -475,7 +473,7 @@ export const importProjectPackage = async (
   await db.putProject(finalized)
 
   void targetMap
-  return { project: finalized, preview, synthPatches: manifest.synthPatches }
+  return { project: finalized, preview }
 }
 
 export const readProjectFromPackage = async (payload: Blob): Promise<Project> => {

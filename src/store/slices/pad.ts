@@ -386,8 +386,8 @@ export const createPadActions = (ctx: StoreContext) => ({
     if (!s.project) return
     const pad = s.project.pads.find((p) => p.id === padId)
     if (!pad) return
-    if (pad.settings.sampleId || pad.settings.source === 'synth') {
-      if (!(await showConfirm(`Reset pad "${pad.name}" to defaults? This will clear its sample/synth and sequencer events.`))) return
+    if (pad.settings.sampleId) {
+      if (!(await showConfirm(`Reset pad "${pad.name}" to defaults? This will clear its sample and sequencer events.`))) return
     }
     const updatedPads = s.project.pads.map((p) => {
       if (p.id !== padId) return p
@@ -395,7 +395,6 @@ export const createPadActions = (ctx: StoreContext) => ({
         ...p,
         name: `${midiToName(p.midiNote)} Pad`,
         settings: {
-          source: 'sample' as const,
           sampleId: null,
           gain: 1,
           semitones: 0,
@@ -426,9 +425,9 @@ export const createPadActions = (ctx: StoreContext) => ({
     const s = ctx.get()
     if (!s.project) return
     const bankPads = s.project.pads.filter((p) => p.bank === bank)
-    const hasContent = bankPads.some((p) => p.settings.sampleId || p.settings.source === 'synth')
+    const hasContent = bankPads.some((p) => p.settings.sampleId)
     if (hasContent) {
-      if (!(await showConfirm(`Reset all 16 pads in Bank ${bank + 1} to defaults? This will clear all samples/synths and sequencer events.`))) return
+      if (!(await showConfirm(`Reset all 16 pads in Bank ${bank + 1} to defaults? This will clear all samples and sequencer events.`))) return
     }
     const bankPadIds = new Set(bankPads.map((p) => p.id))
     const updatedPads = s.project.pads.map((p) => {
@@ -437,7 +436,6 @@ export const createPadActions = (ctx: StoreContext) => ({
         ...p,
         name: `${midiToName(p.midiNote)} Pad`,
         settings: {
-          source: 'sample' as const,
           sampleId: null,
           gain: 1,
           semitones: 0,

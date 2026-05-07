@@ -4,7 +4,7 @@ import {
   START_MIDI_NOTE,
   TOTAL_PADS,
 } from './constants'
-import type { BusId, EffectSlot, MasterBus, MixBus, Pad, SequencePattern, SynthParams, VASynthParams } from '../types'
+import type { BusId, EffectSlot, MasterBus, MixBus, Pad, SequencePattern } from '../types'
 import { BUS_IDS } from '../types'
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
@@ -27,23 +27,6 @@ export const noteForPad = (bank: number, slot: number): number => {
   return START_MIDI_NOTE + bank * PADS_PER_BANK + slot
 }
 
-export const createDefaultVAParams = (): VASynthParams => ({
-  osc1: { waveform: 'saw', pulseWidth: 0.5, semitones: 0, fineCents: 0, level: 0.8 },
-  osc2: { waveform: 'square', pulseWidth: 0.5, semitones: 0, fineCents: 0, level: 0.6 },
-  oscSync: false,
-  oscMix: 0,
-  glide: 0,
-})
-
-export const createDefaultSynthParams = (): SynthParams => ({
-  synthMode: 'additive',
-  harmonics: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-  baseNote: 60,
-  filterEnvelope: { attack: 0.01, decay: 0.3, sustain: 0.4, release: 0.3, depth: 48 },
-  lfo: { waveform: 'sine', rateMode: 'free', rateHz: 4, rateSyncDiv: 4, pitchDepth: 0, filterDepth: 0, gainDepth: 0, pwDepth: 0, triggerMode: 'free' },
-  polyMode: 'poly',
-})
-
 export const createDefaultPads = (): Pad[] => {
   const pads: Pad[] = []
   for (let index = 0; index < TOTAL_PADS; index += 1) {
@@ -57,7 +40,6 @@ export const createDefaultPads = (): Pad[] => {
       midiNote,
       name: `${midiToName(midiNote)} Pad`,
       settings: {
-        source: 'sample',
         sampleId: null,
         gain: 1,
         semitones: 0,
@@ -85,11 +67,6 @@ export const createDefaultEffectSlot = (): EffectSlot => ({
   enabled: false,
   params: {},
 })
-
-export const createDefaultPadEffects = (): [EffectSlot, EffectSlot] => [
-  createDefaultEffectSlot(),
-  createDefaultEffectSlot(),
-]
 
 export const createDefaultMixBus = (busId: BusId): MixBus => ({
   id: busId,

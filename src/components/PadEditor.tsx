@@ -1,5 +1,5 @@
 import { useRef, useEffect, useCallback, type RefObject } from 'react'
-import type { FilterType, MultiSampleMode, Pad, PadSettings, PadSource, BusId, SampleLayer, FilterEnvelopeSettings } from '../types'
+import type { FilterType, MultiSampleMode, Pad, PadSettings, BusId, SampleLayer } from '../types'
 import { BUS_IDS } from '../types'
 import {
   useStore,
@@ -9,9 +9,7 @@ import {
 } from '../store'
 import { KnobControl } from './KnobControl'
 import { EnvelopeSection } from './EnvelopeSection'
-import { SynthHarmonicsEditor, SynthLfoEditor, SynthModeSelector, SynthVAEditor, SynthBaseNoteEditor } from './SynthEditor'
-import { EffectSlotUI } from './Mixer'
-import { midiToName, createDefaultSynthParams } from '../lib/utils'
+import { midiToName } from '../lib/utils'
 import { audioEngine } from '../lib/audioEngine'
 
 interface PadEditorProps {
@@ -202,13 +200,9 @@ export function PadEditor({ waveformRef, waveformCanvasRef, dragTargetRef }: Pad
     updateLayerSettings,
     selectLayer,
     updatePadMidiOut,
-    setPadEffectType,
-    setPadEffectEnabled,
-    setPadEffectParam,
   } = useStore.getState()
 
   const midiOutputs = useStore((s) => s.midiOutputs)
-  const midiInputs = useStore((s) => s.midiInputs)
 
   const eff = selectedPad ? effectiveSettings(selectedPad, selectedLayer) : null
 
@@ -239,23 +233,6 @@ export function PadEditor({ waveformRef, waveformCanvasRef, dragTargetRef }: Pad
                 Reset Pad
               </button>
               <label>
-                Source
-                <select
-                  value={selectedPad.settings.source ?? 'sample'}
-                  onChange={(e) => {
-                    const source = e.target.value as PadSource
-                    const update: Partial<PadSettings> = { source }
-                    if (source === 'synth' && !selectedPad.settings.synthParams) {
-                      update.synthParams = createDefaultSynthParams()
-                    }
-                    void updatePadSettings(update)
-                  }}
-                >
-                  <option value="sample">Sample</option>
-                  <option value="synth">Synth</option>
-                </select>
-              </label>
-              <label>
                 Mode
                 <select
                   value={selectedPad.settings.mode}
@@ -285,7 +262,6 @@ export function PadEditor({ waveformRef, waveformCanvasRef, dragTargetRef }: Pad
                   {[1, 2, 3, 4, 5, 6, 7, 8].map((g) => <option key={g} value={g}>{g}</option>)}
                 </select>
               </label>
-              {(selectedPad.settings.source ?? 'sample') !== 'synth' && (
               <>
               <label className="file-input-styled">
                 Assign Sample File
@@ -318,12 +294,10 @@ export function PadEditor({ waveformRef, waveformCanvasRef, dragTargetRef }: Pad
                 </button>
               )}
               </>
-              )}
             </div>
           )}
 
           {/* --- Waveform + collapsed knobs row (shared waveform block) --- */}
-          {(selectedPad.settings.source ?? 'sample') !== 'synth' && (
           <div className={collapsed ? 'collapsed-waveform-row' : 'waveform-block'}>
             {!collapsed && (
               <div className="waveform-head">
@@ -368,8 +342,7 @@ export function PadEditor({ waveformRef, waveformCanvasRef, dragTargetRef }: Pad
                 <KnobControl label="Semi" value={eff!.semitones ?? 0} min={-24} max={24} step={1} precision={0} onChange={(v) => void updatePadSettings({ semitones: Math.round(v) })} />
               </div>
             )}
-          </div>
-          )}
+            </div>
           {!collapsed && (
             <>
               {selectedLayerId && <span className="editing-layer-badge">Editing Layer</span>}
@@ -392,7 +365,6 @@ export function PadEditor({ waveformRef, waveformCanvasRef, dragTargetRef }: Pad
                 </div>
               </div>
 
-              {(selectedPad.settings.source ?? 'sample') !== 'synth' && (
               <div className="envelope-sections-row">
                 {/* AMP envelope (MC-909 style) */}
                 <EnvelopeSection
@@ -421,34 +393,6 @@ export function PadEditor({ waveformRef, waveformCanvasRef, dragTargetRef }: Pad
                 {/* FILTER section (MC-909 style) */}
                 <div className="envelope-section">
                   <div className="envelope-section-header">FILTER</div>
-                  {eff!.filterType !== 'off' && (() => {
-                    const defaultFEnv: FilterEnvelopeSettings = { attack: 0.01, decay: 0.3, sustain: 0.4, release: 0.3, depth: 0 }
-                    const fEnv = selectedPad.settings.filterEnvelope ?? defaultFEnv
-                    const updateFEnv = (partial: Partial<FilterEnvelopeSettings>) => {
-                      const cur = selectedPad.settings.filterEnvelope ?? defaultFEnv
-                      void updatePadSettings({ filterEnvelope: { ...cur, ...partial } })
-                    }
-                    return (
-                      <EnvelopeSection
-                        title=""
-                        levelLabel="Dep"
-                        levelValue={fEnv.depth}
-                        levelMin={0}
-                        levelMax={96}
-                        levelStep={1}
-                        onLevelChange={(v) => updateFEnv({ depth: v })}
-                        formatLevel={(v) => `${Math.round(v)}st`}
-                        attack={fEnv.attack}
-                        decay={fEnv.decay}
-                        sustain={fEnv.sustain}
-                        release={fEnv.release}
-                        onAttackChange={(v) => updateFEnv({ attack: v })}
-                        onDecayChange={(v) => updateFEnv({ decay: v })}
-                        onSustainChange={(v) => updateFEnv({ sustain: v })}
-                        onReleaseChange={(v) => updateFEnv({ release: v })}
-                      />
-                    )
-                  })()}
                   <div className="filter-controls-row">
                     <label>
                       Type
@@ -476,160 +420,8 @@ export function PadEditor({ waveformRef, waveformCanvasRef, dragTargetRef }: Pad
                   </div>
                 </div>
               </div>
-              )}
 
-              {/* --- Synth: Mode selector (shown for both modes) --- */}
-              {(selectedPad.settings.source ?? 'sample') === 'synth' && <SynthModeSelector />}
-
-              {/* --- Synth: Additive — Harmonics + Base Note --- */}
-              {(selectedPad.settings.source ?? 'sample') === 'synth' && <SynthHarmonicsEditor />}
-
-              {/* --- Synth: VA — Oscillator controls */}
-              {(selectedPad.settings.source ?? 'sample') === 'synth' && <SynthVAEditor />}
-
-              {/* --- Synth: Base Note (VA mode only, shown outside VA editor) --- */}
-              {(selectedPad.settings.source ?? 'sample') === 'synth' && (selectedPad.settings.synthParams?.synthMode ?? 'additive') === 'va' && <SynthBaseNoteEditor />}
-
-              {/* --- Synth: Envelope sections (AMP + FILTER) --- */}
-              {(selectedPad.settings.source ?? 'sample') === 'synth' && (
-              <div className="envelope-sections-row">
-                <EnvelopeSection
-                  title="AMP"
-                  levelLabel="Level"
-                  levelValue={eff!.gain}
-                  levelMin={0}
-                  levelMax={2}
-                  levelStep={0.01}
-                  onLevelChange={(v) => void updatePadSettings({ gain: v })}
-                  formatLevel={(v) => `${Math.round(v * 100)}%`}
-                  attack={eff!.envelope.attack}
-                  decay={eff!.envelope.decay}
-                  sustain={eff!.envelope.sustain ?? 0}
-                  release={eff!.envelope.release}
-                  hold={eff!.envelope.hold ?? 0}
-                  onAttackChange={(v) => void updatePadSettings({ envelope: { ...eff!.envelope, attack: v } })}
-                  onDecayChange={(v) => void updatePadSettings({ envelope: { ...eff!.envelope, decay: v } })}
-                  onSustainChange={(v) => void updatePadSettings({ envelope: { ...eff!.envelope, sustain: v } })}
-                  onReleaseChange={(v) => void updatePadSettings({ envelope: { ...eff!.envelope, release: v } })}
-                  onHoldChange={(v) => void updatePadSettings({ envelope: { ...eff!.envelope, hold: v } })}
-                  adsrDisabled={selectedPad.settings.mode === 'one-shot'}
-                  mode={selectedPad.settings.mode === 'ahr' ? 'ahr' : 'adsr'}
-                />
-                <div className="envelope-section">
-                  <div className="envelope-section-header">FILTER</div>
-                  {eff!.filterType !== 'off' && (() => {
-                    const fEnv = (selectedPad.settings.synthParams ?? createDefaultSynthParams()).filterEnvelope
-                    const updateFEnv = (partial: Partial<FilterEnvelopeSettings>) => {
-                      const synth = selectedPad.settings.synthParams ?? createDefaultSynthParams()
-                      void updatePadSettings({ synthParams: { ...synth, filterEnvelope: { ...synth.filterEnvelope, ...partial } } })
-                    }
-                    return (
-                      <EnvelopeSection
-                        title=""
-                        levelLabel="Dep"
-                        levelValue={fEnv.depth}
-                        levelMin={0}
-                        levelMax={96}
-                        levelStep={1}
-                        onLevelChange={(v) => updateFEnv({ depth: v })}
-                        formatLevel={(v) => `${Math.round(v)}st`}
-                        attack={fEnv.attack}
-                        decay={fEnv.decay}
-                        sustain={fEnv.sustain}
-                        release={fEnv.release}
-                        onAttackChange={(v) => updateFEnv({ attack: v })}
-                        onDecayChange={(v) => updateFEnv({ decay: v })}
-                        onSustainChange={(v) => updateFEnv({ sustain: v })}
-                        onReleaseChange={(v) => updateFEnv({ release: v })}
-                      />
-                    )
-                  })()}
-                  <div className="filter-controls-row">
-                    <label>
-                      Type
-                      <select
-                        value={eff!.filterType}
-                        onChange={(e) => void updatePadSettings({ filterType: e.target.value as FilterType })}
-                      >
-                        <option value="off">Off</option>
-                        <option value="lp12">High Cut 12dB</option>
-                        <option value="lp24">High Cut 24dB</option>
-                        <option value="highpass">Low Cut</option>
-                        <option value="bandpass">Band Pass</option>
-                        <option value="lphp">Low Cut + High Cut</option>
-                      </select>
-                    </label>
-                    {eff!.filterType !== 'off' && (
-                      <>
-                        <KnobControl label={eff!.filterType === 'lphp' ? 'Low Cut' : 'Freq'} value={eff!.filterFreq} min={20} max={20000} step={1} precision={0} freqScale onChange={(v) => void updatePadSettings({ filterFreq: Math.round(v) })} />
-                        {eff!.filterType === 'lphp' && (
-                          <KnobControl label="High Cut" value={eff!.filterFreq2 ?? 20000} min={20} max={20000} step={1} precision={0} freqScale onChange={(v) => void updatePadSettings({ filterFreq2: Math.round(v) })} />
-                        )}
-                        <KnobControl label="Q" value={eff!.filterQ} min={0.1} max={20} step={0.1} onChange={(v) => void updatePadSettings({ filterQ: v })} />
-                        <KnobControl label="Key" value={eff!.filterKeyTrack ?? 0} min={-100} max={100} step={1} precision={0} onChange={(v) => void updatePadSettings({ filterKeyTrack: Math.round(v) })} />
-                      </>
-                    )}
-                  </div>
-                </div>
-              </div>
-              )}
-
-              {/* --- Synth: LFO + Export --- */}
-              {(selectedPad.settings.source ?? 'sample') === 'synth' && <SynthLfoEditor />}
-
-              {/* --- Per-pad effect slots (synth pads) --- */}
-              {(selectedPad.settings.source ?? 'sample') === 'synth' && (
-                <div className="pad-effects-section">
-                  <strong>Pad Effects</strong>
-                  {(selectedPad.settings.padEffects ?? [
-                    { id: 'tmp0', type: 'off' as const, enabled: false, params: {} },
-                    { id: 'tmp1', type: 'off' as const, enabled: false, params: {} },
-                  ]).map((slot, i) => (
-                    <EffectSlotUI
-                      key={slot.id}
-                      slot={slot}
-                      onTypeChange={(type) => setPadEffectType(selectedPad.id, i, type)}
-                      onEnabledChange={(enabled) => setPadEffectEnabled(selectedPad.id, i, enabled)}
-                      onParamChange={(name, value) => setPadEffectParam(selectedPad.id, i, name, value)}
-                    />
-                  ))}
-                </div>
-              )}
-
-              {/* --- Synth MIDI Input section --- */}
-              {(selectedPad.settings.source ?? 'sample') === 'synth' && (
-                <div className="synth-midi-section">
-                  <strong>Synth MIDI Input</strong>
-                  <div className="synth-midi-controls">
-                    <label>
-                      Device
-                      <select
-                        value={selectedPad.settings.synthMidiDevice ?? ''}
-                        onChange={(e) => updatePadSettings({ synthMidiDevice: e.target.value || undefined })}
-                      >
-                        <option value="">Any device</option>
-                        {midiInputs.map((d) => (
-                          <option key={d.id} value={d.id}>{d.name}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      Channel
-                      <select
-                        value={selectedPad.settings.synthMidiChannel ?? ''}
-                        onChange={(e) => updatePadSettings({ synthMidiChannel: e.target.value ? Number(e.target.value) : undefined })}
-                      >
-                        <option value="">Off</option>
-                        {Array.from({ length: 16 }, (_, i) => (
-                          <option key={i + 1} value={i + 1}>Ch {i + 1}</option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-                </div>
-              )}
-
-              {(selectedPad.settings.source ?? 'sample') !== 'synth' && (<>
+              <>
               <div className="multisample-section">
                 <div className="multisample-head">
                   <strong>Multi-Sample</strong>
@@ -716,7 +508,8 @@ export function PadEditor({ waveformRef, waveformCanvasRef, dragTargetRef }: Pad
               {selectedPad.settings.multiMode === 'stacked' && selectedPad.settings.layers.length > 0 && (
                 <StackedTimeline layers={selectedPad.settings.layers} padSettings={selectedPad.settings} sampleMap={sampleMap} />
               )}
-              </>)}
+              </>
+
 
               {/* --- MIDI Out section --- */}
               <div className="midi-out-section">

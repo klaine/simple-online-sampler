@@ -36,7 +36,6 @@ import { createSampleGroupActions } from './slices/sampleGroups'
 import { createChopSpreadDragActions } from './slices/chopSpreadDrag'
 import { createRecordingActions } from './slices/recording'
 import { createMidiOutActions } from './slices/midiOut'
-import { createSynthPatchActions } from './slices/synthPatches'
 import { createAudioMonitorActions } from './slices/audioMonitor'
 
 export const useStore = create<AppState>()(
@@ -103,9 +102,6 @@ export const useStore = create<AppState>()(
               if (l.sampleId) usedIds.add(l.sampleId)
             }
           }
-          if (pad.settings.source !== 'synth') {
-            audioEngine.disposePadEffectChain(pad.id)
-          }
         }
         audioEngine.pruneUnusedBuffers(usedIds)
       }, 2000)
@@ -126,7 +122,6 @@ export const useStore = create<AppState>()(
     const chopSpreadDragActions = createChopSpreadDragActions(ctx)
     const recordingActions = createRecordingActions(ctx)
     const midiOutActions = createMidiOutActions(ctx)
-    const synthPatchActions = createSynthPatchActions(ctx)
     const audioMonitorActions = createAudioMonitorActions(ctx)
 
     return {
@@ -183,15 +178,6 @@ export const useStore = create<AppState>()(
       seqFollowPlayback: true,
       seqExpandedBanks: new Set<number>(),
       seqCollapsedBanks: new Set<number>(),
-      layoutMode: (() => {
-        const stored = localStorage.getItem('layoutMode')
-        if (stored === 'classic' || stored === 'wide' || stored === 'performance') return stored
-        // migrate old altLayout key
-        const old = localStorage.getItem('altLayout')
-        if (old === 'false') return 'classic'
-        if (old === 'true') return 'wide'
-        return 'performance'
-      })(),
       performanceTab: (localStorage.getItem('performanceTab') as 'library' | 'padEditor' | 'sequencer' | 'mixer' | 'settings') || 'sequencer',
       showSongChain: false,
       padEditorCollapsed: false,
@@ -223,14 +209,6 @@ export const useStore = create<AppState>()(
       favoriteSampleIds: new Set(),
       libraryWavePeaks: {},
       previewSampleId: null,
-
-      synthPatches: (() => {
-        try {
-          const raw = localStorage.getItem('synthPatches')
-          if (raw) return JSON.parse(raw)
-        } catch { /* ignore */ }
-        return []
-      })(),
 
       expandedPianoRollPads: new Set<string>(),
       pianoRollOctaveOffset: {},
@@ -543,7 +521,6 @@ export const useStore = create<AppState>()(
       ...chopSpreadDragActions,
       ...recordingActions,
       ...midiOutActions,
-      ...synthPatchActions,
       ...audioMonitorActions,
     }
   }),

@@ -371,7 +371,7 @@ function flashDrumPad(padId: string): void {
   // Restore after 100ms
   _flashTimers.set(note, setTimeout(() => {
     _flashTimers.delete(note)
-    const hasContent = pad.settings.sampleId || pad.settings.source === 'synth'
+    const hasContent = !!pad.settings.sampleId
     setLed(note, ...(hasContent ? COLOR_PAD_ASSIGNED : COLOR_PAD_EMPTY))
   }, 100))
 }
@@ -474,7 +474,7 @@ function repaintDrumGrid(): void {
   for (let slot = 0; slot < PADS_PER_BANK; slot++) {
     const pad = pads.find((p) => p.bank === _activeBank && p.slot === slot)
     const note = drumPadToNote(slot)
-    const hasContent = pad && (pad.settings.sampleId || pad.settings.source === 'synth')
+    const hasContent = pad && !!pad.settings.sampleId
     setLed(note, ...(hasContent ? COLOR_PAD_ASSIGNED : COLOR_PAD_EMPTY))
   }
 }

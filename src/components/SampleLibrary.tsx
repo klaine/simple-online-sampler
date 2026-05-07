@@ -5,9 +5,8 @@ import {
   selectFilteredSamples,
   showConfirm,
 } from '../store'
-import type { BusId, SampleAsset, SynthPatch } from '../types'
+import type { BusId, SampleAsset } from '../types'
 import { BANK_COUNT, PADS_PER_BANK } from '../lib/constants'
-import { uid } from '../lib/utils'
 import { looksLikeDrumKit, mapToStandardKit } from '../lib/drumKitMap'
 import { makeTouchDragHandlers } from '../lib/touchDrag'
 
@@ -292,7 +291,6 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
   const filteredSamples = useStore(selectFilteredSamples)
   const selectedPad = useStore(selectSelectedPad)
   const chromaticSpreadSampleId = useStore((s) => s.chromaticSpreadSampleId)
-  const synthPatches = useStore((s) => s.synthPatches)
 
   const [dropActive, setDropActive] = useState(false)
   const [expandedChops, setExpandedChops] = useState<Set<string>>(() => _expandedChops)
@@ -322,12 +320,8 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
     updateAutosampleGroupSettings,
     deleteAutosampleGroup,
     exportAutosampleGroupZip,
-    deleteSynthPatch,
-    applySynthPatchToPad,
-    addToast,
   } = useStore.getState()
 
-  const patchImportRef = useRef<HTMLInputElement>(null)
   const sampleImportRef = useRef<HTMLInputElement>(null)
   const folderImportRef = useRef<HTMLInputElement>(null)
 
@@ -349,17 +343,6 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
     return () => clearInterval(interval)
   }, [])
 
-  const handleExportPatch = useCallback((patch: SynthPatch) => {
-    const json = JSON.stringify(patch, null, 2)
-    const blob = new Blob([json], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${patch.name.replace(/[^a-zA-Z0-9_-]/g, '_')}.ospatch`
-    a.click()
-    URL.revokeObjectURL(url)
-  }, [])
-
   const handleToggleSelect = useCallback((sampleId: string) => {
     setSelectedSampleIds((prev) => {
       const next = new Set(prev)
@@ -369,35 +352,10 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
     })
   }, [])
 
-  const handleImportPatch = useCallback((files: FileList | null) => {
-    if (!files) return
-    Array.from(files).forEach((file) => {
-      if (!file.name.endsWith('.ospatch')) {
-        addToast(`Skipped "${file.name}" — not an .ospatch file`, 'error')
-        return
-      }
-      const reader = new FileReader()
-      reader.onload = () => {
-        try {
-          const data = JSON.parse(reader.result as string) as SynthPatch
-          if (!data.params || !data.padSettings || !data.name) throw new Error('Invalid patch format')
-          // Save as a new patch (new id/timestamp via saveSynthPatch would duplicate — just push directly)
-          const patch: SynthPatch = { ...data, id: uid(), createdAt: Date.now() }
-          useStore.setState((s) => ({ synthPatches: [...s.synthPatches, patch] }))
-          // persist
-          try { localStorage.setItem('synthPatches', JSON.stringify(useStore.getState().synthPatches)) } catch { /* ignore */ }
-          addToast(`Imported patch "${patch.name}"`, 'success')
-        } catch {
-          addToast(`Failed to import "${file.name}"`, 'error')
-        }
-      }
-      reader.readAsText(file)
-    })
-  }, [])
+
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
-    // Accept external files or internal pad drags (for synth patch saving)
-    if (e.dataTransfer.types.includes('Files') || e.dataTransfer.types.includes('application/x-online-sampler-pad-id')) {
+    if (e.dataTransfer.types.includes('Files')) {
       e.preventDefault()
       e.dataTransfer.dropEffect = 'copy'
       setDropActive(true)
@@ -414,18 +372,6 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     setDropActive(false)
-
-    // Check for pad drag (synth pad -> save as patch)
-    const padId = e.dataTransfer.getData('application/x-online-sampler-pad-id')
-    if (padId) {
-      const { project, saveSynthPatch: savePatch } = useStore.getState()
-      if (!project) return
-      const pad = project.pads.find((p) => p.id === padId)
-      if (!pad || pad.settings.source !== 'synth') return
-      const name = pad.name?.trim() || `Synth Patch ${project.pads.indexOf(pad) + 1}`
-      savePatch(name, pad)
-      return
-    }
 
     const files = Array.from(e.dataTransfer.files)
     const items = Array.from(e.dataTransfer.items)
@@ -786,55 +732,6 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
               return <SampleRow key={item.sample.id} {...makeSampleRowProps(item.sample)} />
             })}
           </div>
-          {/* Synth Patches */}
-          {synthPatches.length > 0 && (
-            <div className="synth-patches-section">
-              <div className="synth-patches-header">
-                <strong>Synth Patches</strong>
-              </div>
-              <div className="synth-patches-list">
-                {synthPatches.map((patch) => (
-                  <div
-                    key={patch.id}
-                    className="synth-patch-row"
-                    draggable
-                    onDragStart={(e) => {
-                      e.dataTransfer.effectAllowed = 'copy'
-                      e.dataTransfer.setData('application/x-online-sampler-synth-patch', JSON.stringify(patch))
-                    }}
-                  >
-                    <span className="synth-patch-name" title={patch.name}>~ {patch.name}</span>
-                    <div className="synth-patch-actions">
-                      <button
-                        type="button"
-                        title="Assign to selected pad"
-                        disabled={!selectedPad}
-                        onClick={() => {
-                          if (selectedPad) applySynthPatchToPad(patch, selectedPad.id)
-                        }}
-                      >
-                        +
-                      </button>
-                      <button
-                        type="button"
-                        title="Export .ospatch"
-                        onClick={() => handleExportPatch(patch)}
-                      >
-                        ⬇
-                      </button>
-                      <button
-                        type="button"
-                        title="Delete patch"
-                        onClick={() => void deleteSynthPatch(patch.id)}
-                      >
-                        ×
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
           <div className="record-controls">
             <input
               ref={sampleImportRef}
@@ -848,14 +745,6 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
                 }
                 e.target.value = ''
               }}
-            />
-            <input
-              ref={patchImportRef}
-              type="file"
-              accept="*/*"
-              multiple
-              style={{ display: 'none' }}
-              onChange={(e) => { handleImportPatch(e.target.files); e.target.value = '' }}
             />
             <button type="button" onClick={() => sampleImportRef.current?.click()}>Import Samples</button>
             <input
@@ -873,7 +762,6 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
               }}
             />
             <button type="button" onClick={() => folderImportRef.current?.click()}>Import Folder</button>
-            <button type="button" onClick={() => patchImportRef.current?.click()} title="Import .ospatch file">Import Patch</button>
             <button type="button" onClick={() => openRecordDialog()}>Record</button>
             <button type="button" onClick={() => openAutosampleDialog()} title="Automatically sample external MIDI gear">Auto-Sample</button>
             <button type="button" className="remove-unassigned-btn" onClick={() => void removeUnassignedSamples()}>Remove Unassigned</button>

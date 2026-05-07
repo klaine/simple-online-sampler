@@ -1,7 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
 import './App.css'
 import { audioEngine } from './lib/audioEngine'
-import { useResizableColumns } from './lib/useResizableColumns'
 import { db } from './lib/db'
 import { buildMidiForSequence } from './lib/midiExport'
 import { renderProjectAudioWav } from './lib/audioExport'
@@ -12,7 +11,6 @@ import {
   importProjectPackage,
   readProjectFromPackage,
 } from './lib/packageIO'
-import { PADS_PER_BANK } from './lib/constants'
 import type { SampleAsset, Pad, Project } from './types'
 import {
   useStore,
@@ -174,9 +172,7 @@ function App() {
   const audioMonitorDeviceId = useStore((s) => s.audioMonitorDeviceId)
   const audioMonitorBusId = useStore((s) => s.audioMonitorBusId)
   const audioOutputDeviceId = useStore((s) => s.audioOutputDeviceId)
-  const layoutMode = useStore((s) => s.layoutMode)
   const performanceTab = useStore((s) => s.performanceTab)
-  const altLayout = layoutMode === 'wide'
 
   // --- Phone detection (pointer: coarse + phone-sized viewport) ---
   // iPads also have pointer: coarse, so we explicitly exclude them
@@ -194,61 +190,7 @@ function App() {
     }
   }, [])
 
-  const {
-    leftWidth, rightWidth, leftCollapsed, rightCollapsed,
-    toggleLeft, toggleRight, leftDividerProps, rightDividerProps,
-  } = useResizableColumns(altLayout)
-
-  // --- Sequencer / Mixer horizontal split ---
-  const SEQ_SPLIT_KEY = 'layout-seq-mixer-split'
-  const DEFAULT_SEQ_RATIO = 0.6
-  const [seqMixerRatio, setSeqMixerRatio] = useState<number>(() => {
-    try {
-      const v = localStorage.getItem(SEQ_SPLIT_KEY)
-      if (v) { const n = parseFloat(v); if (n >= 0.2 && n <= 0.85) return n }
-    } catch { /* ignore */ }
-    return DEFAULT_SEQ_RATIO
-  })
-  const seqMixerRatioRef = useRef(seqMixerRatio)
-  seqMixerRatioRef.current = seqMixerRatio
-  useEffect(() => { try { localStorage.setItem(SEQ_SPLIT_KEY, String(seqMixerRatio)) } catch { /* ignore */ } }, [seqMixerRatio])
-  const hDivDragging = useRef(false)
-  const hDivStartY = useRef(0)
-  const hDivStartRatio = useRef(0)
-  const hDivContainerRef = useRef<HTMLDivElement | null>(null)
-  const hDivRafId = useRef(0)
-
-  const onHDivPointerMove = useCallback((e: PointerEvent) => {
-    const dy = e.clientY - hDivStartY.current
-    cancelAnimationFrame(hDivRafId.current)
-    hDivRafId.current = requestAnimationFrame(() => {
-      const container = hDivContainerRef.current
-      if (!container) return
-      const h = container.clientHeight
-      if (h <= 0) return
-      const newRatio = Math.min(0.85, Math.max(0.2, hDivStartRatio.current + dy / h))
-      setSeqMixerRatio(newRatio)
-    })
-  }, [])
-
-  const onHDivPointerUp = useCallback(() => {
-    hDivDragging.current = false
-    document.body.style.cursor = ''
-    document.body.style.userSelect = ''
-    window.removeEventListener('pointermove', onHDivPointerMove)
-    window.removeEventListener('pointerup', onHDivPointerUp)
-  }, [onHDivPointerMove])
-
-  const onHDivPointerDown = useCallback((e: React.PointerEvent) => {
-    e.preventDefault()
-    hDivDragging.current = true
-    hDivStartY.current = e.clientY
-    hDivStartRatio.current = seqMixerRatioRef.current
-    document.body.style.cursor = 'row-resize'
-    document.body.style.userSelect = 'none'
-    window.addEventListener('pointermove', onHDivPointerMove)
-    window.addEventListener('pointerup', onHDivPointerUp)
-  }, [onHDivPointerMove, onHDivPointerUp])
+  // --- Sequencer / Mixer horizontal split (unused in performance mode) ---
 
   // --- Performance layout left/right split ---
   const PERF_SPLIT_KEY = 'layout-perf-split'
@@ -330,20 +272,6 @@ function App() {
     void hydrate()
   }, [])
 
-  // --- Auto-detect performance layout for landscape mobile ---
-  useEffect(() => {
-    // Only auto-detect if user hasn't explicitly set a layout mode
-    if (localStorage.getItem('layoutMode')) return
-    const isIPad = /iPad/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
-    if (isIPad) return // iPads use desktop performance layout, not phone layout
-    const isTouch = matchMedia('(pointer: coarse)').matches
-    const isLandscape = window.innerWidth > window.innerHeight
-    const isSmall = window.innerWidth <= 1099
-    if (isTouch && isLandscape && isSmall) {
-      useStore.setState({ layoutMode: 'performance' })
-    }
-  }, [])
-
   // --- Flush pending save on unmount ---
   useEffect(() => {
     return () => flushPendingProjectSave()
@@ -374,58 +302,6 @@ function App() {
 
       const currentProject = useStore.getState().project
       if (!currentProject) return
-
-      // --- Per-synth-pad chromatic MIDI routing ---
-      // Check if any synth pad is configured to receive on this channel
-      if (command === 0x90 && velocity > 0) {
-        for (const p of currentProject.pads) {
-          if (
-            p.settings.source === 'synth' &&
-            p.settings.synthParams &&
-            p.settings.synthMidiChannel === channel &&
-            (!p.settings.synthMidiDevice || p.settings.synthMidiDevice === (message.currentTarget as MIDIInput | null)?.id)
-          ) {
-            if (isMidiEcho(status & 0x0f, note)) return
-            const baseNote = p.settings.synthParams.baseNote + (p.settings.semitones ?? 0)
-            const semitoneOffset = note - baseNote
-            audioEngine.playPad(p, velocity / 127, {
-              semitoneOffset,
-              hold: p.settings.mode === 'adsr',
-              bpm: currentProject.bpm,
-            })
-            requestAnimationFrame(() => {
-              useStore.getState().flashSequencedPadHit(p.id)
-            })
-            // Feed capture buffer
-            useStore.getState().feedCaptureBuffer(p.id, velocity, 'on', note)
-            // Record as piano roll event if sequencer is recording
-            const recState = useStore.getState()
-            if (recState.isPlaying && recState.seqRecordArmed) {
-              recState.recordPadHit(p.id, velocity, note)
-            }
-            return
-          }
-        }
-      }
-      if ((command === 0x80 || (command === 0x90 && velocity === 0))) {
-        for (const p of currentProject.pads) {
-          if (
-            p.settings.source === 'synth' &&
-            p.settings.synthMidiChannel === channel &&
-            (!p.settings.synthMidiDevice || p.settings.synthMidiDevice === (message.currentTarget as MIDIInput | null)?.id)
-          ) {
-            audioEngine.releasePad(p.id)
-            // Feed capture buffer
-            useStore.getState().feedCaptureBuffer(p.id, 0, 'off', note)
-            // Update gate length for recording
-            const recState = useStore.getState()
-            if (recState.isPlaying && recState.seqRecordArmed) {
-              recState.recordPadRelease(p.id, note)
-            }
-            return
-          }
-        }
-      }
 
       // --- Global pad MIDI channel filter ---
       const padMidiCh = useStore.getState().padMidiChannel
@@ -547,22 +423,6 @@ function App() {
               st.triggerPad(pad, velocity)
             }
           },
-          triggerChromatic: (pad, velocity, semitoneOffset) => {
-            audioEngine.unlockSync()
-            const st = useStore.getState()
-            const baseNote = (pad.settings.synthParams?.baseNote ?? 60) + (pad.settings.semitones ?? 0)
-            const midiNote = baseNote + semitoneOffset
-            audioEngine.playPad(pad, velocity, {
-              semitoneOffset,
-              hold: pad.settings.mode === 'adsr',
-              bpm: st.project?.bpm ?? 120,
-            })
-            st.feedCaptureBuffer(pad.id, Math.round(velocity * 127), 'on', midiNote)
-            // Record if armed
-            if (st.isPlaying && st.seqRecordArmed) {
-              st.recordPadHit(pad.id, Math.round(velocity * 127), midiNote)
-            }
-          },
           releasePad: (padId) => {
             const st = useStore.getState()
             if (st.padHoldRecordingPadId === padId) {
@@ -571,19 +431,6 @@ function App() {
               audioEngine.releasePad(padId)
               st.feedCaptureBuffer(padId, 0, 'off')
               releaseMidiNote(padId)
-            }
-          },
-          releaseChromatic: (padId, semitoneOffset) => {
-            const st = useStore.getState()
-            const pad = st.project?.pads.find((p) => p.id === padId)
-            if (!pad) return
-            audioEngine.releasePad(padId)
-            st.feedCaptureBuffer(padId, 0, 'off')
-            // Record gate length if recording
-            if (st.isPlaying && st.seqRecordArmed) {
-              const baseNote = (pad.settings.synthParams?.baseNote ?? 60) + (pad.settings.semitones ?? 0)
-              const midiNote = baseNote + semitoneOffset
-              st.recordPadRelease(padId, midiNote)
             }
           },
           toggleStep: (step, padId) => { void useStore.getState().toggleStep(step, padId) },
@@ -615,6 +462,13 @@ function App() {
             useStore.setState({ activeSequenceId: s.project.sequences[nextIdx].id })
           },
           subscribeStore: (listener) => useStore.subscribe(listener),
+          triggerChromatic: (pad, velocity, semitoneOffset) => {
+            audioEngine.unlockSync()
+            void audioEngine.playPad(pad, velocity / 127, { semitoneOffset })
+          },
+          releaseChromatic: (padId, _semitoneOffset) => {
+            audioEngine.releasePad(padId)
+          },
         })
       }
     }
@@ -1148,24 +1002,19 @@ function App() {
         const selectedPadForCk = ckState.selectedPadId
           ? ckState.project?.pads.find((p) => p.id === ckState.selectedPadId)
           : null
-        const isSynthPad = selectedPadForCk?.settings.source === 'synth' && selectedPadForCk?.settings.synthParams
+        // Octave shift: use - and = (minus/equals) for octave down/up
+        if (event.code === 'Minus' && !event.metaKey && !event.ctrlKey) {
+          event.preventDefault()
+          useStore.setState((s) => ({ computerKeyboardOctave: Math.max(-1, s.computerKeyboardOctave - 1) }))
+          return
+        }
+        if (event.code === 'Equal' && !event.metaKey && !event.ctrlKey) {
+          event.preventDefault()
+          useStore.setState((s) => ({ computerKeyboardOctave: Math.min(8, s.computerKeyboardOctave + 1) }))
+          return
+        }
 
-        if (isSynthPad) {
-          // Octave shift: Z down, X up (only when not already mapped to notes — we repurpose these)
-          // Actually Z and X ARE in the note map. Use Comma/Period instead... No, the plan says Z/X.
-          // Conflict: Z=C note. Solution: use dedicated octave keys outside the note map.
-          // Let's use - and = (minus/equals) for octave down/up to avoid conflicts.
-          if (event.code === 'Minus' && !event.metaKey && !event.ctrlKey) {
-            event.preventDefault()
-            useStore.setState((s) => ({ computerKeyboardOctave: Math.max(-1, s.computerKeyboardOctave - 1) }))
-            return
-          }
-          if (event.code === 'Equal' && !event.metaKey && !event.ctrlKey) {
-            event.preventDefault()
-            useStore.setState((s) => ({ computerKeyboardOctave: Math.min(8, s.computerKeyboardOctave + 1) }))
-            return
-          }
-
+        if (selectedPadForCk) {
           const noteOffset = COMPUTER_KEY_NOTE_MAP[event.code]
           if (noteOffset != null && !event.metaKey && !event.ctrlKey && !event.altKey) {
             event.preventDefault()
@@ -1174,21 +1023,21 @@ function App() {
             const midiNote = ckState.computerKeyboardOctave * 12 + 12 + noteOffset // C3 = MIDI 48 when octave=3
             _activeComputerKeys.set(event.code, midiNote)
 
-            const baseNote = selectedPadForCk!.settings.synthParams!.baseNote + (selectedPadForCk!.settings.semitones ?? 0)
+            const baseNote = (selectedPadForCk.settings.baseNote ?? 60) + (selectedPadForCk.settings.semitones ?? 0)
             const semitoneOffset = midiNote - baseNote
 
-            audioEngine.playPad(selectedPadForCk!, 0.85, {
+            audioEngine.playPad(selectedPadForCk, 0.85, {
               semitoneOffset,
-              hold: selectedPadForCk!.settings.mode === 'adsr',
+              hold: selectedPadForCk.settings.mode === 'adsr',
               bpm: ckState.project?.bpm ?? 120,
             })
 
             // Feed capture buffer
-            useStore.getState().feedCaptureBuffer(selectedPadForCk!.id, 108, 'on', midiNote)
+            useStore.getState().feedCaptureBuffer(selectedPadForCk.id, 108, 'on', midiNote)
 
             // If sequencer is recording, record the note as a piano roll event
             if (ckState.isPlaying && ckState.seqRecordArmed) {
-              ckState.recordPadHit(selectedPadForCk!.id, 108, midiNote)
+              ckState.recordPadHit(selectedPadForCk.id, 108, midiNote)
             }
 
             return
@@ -1322,7 +1171,7 @@ function App() {
           audioEngine.releasePad(pad.id)
           useStore.getState().feedCaptureBuffer(pad.id, 0, 'off', midiNote)
           // Update gate length for recording
-          if (s.isPlaying && s.seqRecordArmed && pad.settings.source === 'synth') {
+          if (s.isPlaying && s.seqRecordArmed) {
             s.recordPadRelease(pad.id, midiNote)
           }
         }
@@ -1350,8 +1199,8 @@ function App() {
 
   const exportPack = useCallback(async () => {
     if (!project) return
-    const { samples, synthPatches } = useStore.getState()
-    const blob = await exportProjectPackage(project, samples, synthPatches)
+    const { samples } = useStore.getState()
+    const blob = await exportProjectPackage(project, samples)
     await downloadOrShare(blob, `${project.name.replace(/\s+/g, '-')}.ospack`)
   }, [project])
 
@@ -1452,11 +1301,6 @@ function App() {
       projectNameDraft: normalized.name,
       previewText: `Imported: ${result.preview.overlaps} overlap, ${result.preview.additions} additions, ${result.preview.unchanged} unchanged`,
       showImportDialog: false,
-    }
-    // Restore synth patches if present in package
-    if (result.synthPatches && result.synthPatches.length > 0) {
-      stateUpdate.synthPatches = result.synthPatches
-      try { localStorage.setItem('synthPatches', JSON.stringify(result.synthPatches)) } catch { /* ignore */ }
     }
     useStore.setState(stateUpdate)
     // Sync audio engine and rebuild playback snapshot
@@ -1597,7 +1441,7 @@ function App() {
   }
 
   return (
-    <main className={`app${altLayout ? ' app-alt-layout' : ''}${layoutMode === 'performance' ? ' app-perf-layout' : ''}`}>
+    <main className="app app-perf-layout">
       <TopBar isPhone={isMobile} />
 
       {showExportDialog && (
@@ -1643,8 +1487,7 @@ function App() {
         </section>
       )}
 
-      {layoutMode === 'performance' ? (
-        isMobile ? (
+      {isMobile ? (
           <section className="perf-mobile-layout">
             <div className="perf-mobile-content" {...perfDropHandlers}>
               {activeTabPanel}
@@ -1667,82 +1510,7 @@ function App() {
               <PadGrid />
             </div>
           </section>
-        )
-      ) : (
-      <section className={`studio-layout${altLayout ? ' studio-layout-alt' : ''}`}>
-        <div className="studio-col studio-col-left" style={{ width: leftWidth, flexShrink: 0 }}>
-          {leftCollapsed ? (
-            <div className="studio-collapse-strip" onClick={toggleLeft} title="Expand Library">
-              <span className="collapse-strip-label">Library</span>
-              <button type="button" className="collapse-strip-btn" aria-label="Expand Library">&#x25B8;</button>
-            </div>
-          ) : (
-            <SampleLibrary onCollapse={toggleLeft} />
-          )}
-        </div>
-        <div className="studio-divider" {...leftDividerProps}>
-          <div className="divider-grip" />
-        </div>
-
-        {altLayout ? (
-          <div className="studio-col studio-col-main" ref={hDivContainerRef} style={{ flex: 1, minWidth: 0 }}>
-            <div className="seq-mixer-pane" style={{ flex: seqMixerRatio }}>
-              <Sequencer />
-            </div>
-            <div className="seq-mixer-divider" onPointerDown={onHDivPointerDown}>
-              <div className="divider-grip-h" />
-            </div>
-            <div className="seq-mixer-pane alt-bottom-row" style={{ flex: 1 - seqMixerRatio }}>
-              <Mixer />
-              <PadEditor
-                waveformRef={waveformRef}
-                waveformCanvasRef={waveformCanvasRef}
-                dragTargetRef={dragTargetRef}
-              />
-              <PadGrid />
-            </div>
-          </div>
-        ) : (<>
-          <div className="studio-col studio-col-center" style={{ flex: 1, minWidth: 0 }}>
-            <PadEditor
-              waveformRef={waveformRef}
-              waveformCanvasRef={waveformCanvasRef}
-              dragTargetRef={dragTargetRef}
-            />
-            <PadGrid />
-          </div>
-
-          <div className="studio-divider" {...rightDividerProps}>
-            <div className="divider-grip" />
-          </div>
-          <div className="studio-col studio-col-right" ref={hDivContainerRef} style={{ width: rightWidth, flexShrink: 0 }}>
-            {rightCollapsed ? (
-              <div className="studio-collapse-strip" onClick={toggleRight} title="Expand Sequencer & Mixer">
-                <span className="collapse-strip-label">Seq</span>
-                <button type="button" className="collapse-strip-btn" aria-label="Expand">&#x25C2;</button>
-              </div>
-            ) : (<>
-              <div className="seq-mixer-pane" style={{ flex: seqMixerRatio }}>
-                <Sequencer />
-              </div>
-              <div className="seq-mixer-divider" onPointerDown={onHDivPointerDown}>
-                <div className="divider-grip-h" />
-              </div>
-              <div className="seq-mixer-pane" style={{ flex: 1 - seqMixerRatio }}>
-                <Mixer />
-              </div>
-            </>)}
-          </div>
-        </>)}
-      </section>
-      )}
-
-      {layoutMode !== 'performance' && (
-      <footer className="footer">
-        <span>8 banks x {PADS_PER_BANK} pads (C1 start)</span>
-        <span>Drag files to pads, trim from waveform handles, sequence and export.</span>
-      </footer>
-      )}
+        )}
 
       <Toasts />
       {showRecordDialog && <RecordDialog />}

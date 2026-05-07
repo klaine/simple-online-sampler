@@ -216,7 +216,7 @@ export const selectSequencerBankGroups = memoize<AppState, SequencerBankGroup[]>
     const groups: SequencerBankGroup[] = []
     for (let bank = 0; bank < BANK_COUNT; bank++) {
       const bankPads = s.project.pads.filter((p) => p.bank === bank).sort((a, b) => a.slot - b.slot)
-      const hasPadContent = bankPads.some((p) => p.settings.sampleId || p.settings.source === 'synth' || p.settings.midiOut?.enabled)
+      const hasPadContent = bankPads.some((p) => p.settings.sampleId || p.settings.midiOut?.enabled)
       if (!hasPadContent) continue
       const hasEvents = bankPads.some((p) => activePadIds.has(p.id))
 

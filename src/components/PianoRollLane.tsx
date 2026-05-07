@@ -4,7 +4,7 @@ import type { SequenceEvent } from '../types'
 
 interface PianoRollLaneProps {
   padId: string
-  baseNote: number   // synth base note (MIDI)
+  baseNote: number   // MIDI note for sample's original pitch (default 60 = C4)
   octaveOffset: number
   lengthSteps: number
   events: SequenceEvent[]

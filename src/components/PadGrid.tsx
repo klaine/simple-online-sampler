@@ -255,7 +255,7 @@ export function PadGrid() {
               tabIndex={0}
               data-pad-id={pad.id}
               className={`pad ${selected ? 'selected' : ''} ${isSequencedHit ? 'sequenced-hit' : ''} ${pad.id === padHoldRecordingPadId ? 'hold-recording' : ''} ${pad.settings.mute ? 'muted-pad' : ''}`}
-              draggable={!!pad.settings.sampleId || pad.settings.source === 'synth'}
+              draggable={!!pad.settings.sampleId}
               onDragStart={(e) => {
                 e.dataTransfer.effectAllowed = 'copyMove'
                 e.dataTransfer.setData('application/x-online-sampler-pad-id', pad.id)
@@ -386,7 +386,6 @@ export function PadGrid() {
                         settings: {
                           ...p.settings,
                           sampleId: veloSamples[0].id,
-                          source: 'sample' as const,
                           layers,
                           multiMode: 'velocity' as const,
                           trim: { start: 0, end: 1 },
@@ -497,7 +496,6 @@ export function PadGrid() {
                           settings: {
                             ...p.settings,
                             sampleId: primarySample.id,
-                            source: 'sample' as const,
                             layers,
                             multiMode: 'velocity' as const,
                             trim: { start: 0, end: 1 },  // per-layer trim overrides via SampleLayer.trim
@@ -512,7 +510,6 @@ export function PadGrid() {
                           settings: {
                             ...p.settings,
                             sampleId: primarySample.id,
-                            source: 'sample' as const,
                             layers: [],
                             multiMode: 'single' as const,
                             trim: primarySample.autosampleTrim ?? { start: 0, end: 1 },
@@ -565,18 +562,6 @@ export function PadGrid() {
                     }
                     return
                   }
-                }
-
-                // Check for synth patch drag from library
-                const synthPatchJson = e.dataTransfer.getData('application/x-online-sampler-synth-patch')
-                if (synthPatchJson) {
-                  try {
-                    const patch = JSON.parse(synthPatchJson) as import('../types').SynthPatch
-                    useStore.setState({ selectedPadId: pad.id })
-                    useStore.getState().applySynthPatchToPad(patch, pad.id)
-                    addToast(`Applied patch "${patch.name}" to pad`, 'success')
-                  } catch { /* ignore parse error */ }
-                  return
                 }
 
                 // Check for file drag — detect MPC .pgm among dropped files
@@ -756,8 +741,8 @@ export function PadGrid() {
               <span>{pad.slot + 1}</span>
               <strong>{pad.name}</strong>
               <small>{midiToName(pad.midiNote)}</small>
-              <em>{pad.settings.source === 'synth' ? '~ Synth' : sample ? sample.name : 'Drop sample'}</em>
-              {!pad.settings.sampleId && pad.settings.source !== 'synth' && (
+              <em>{sample ? sample.name : 'Drop sample'}</em>
+              {!pad.settings.sampleId && (
                 <button
                   type="button"
                   className="pad-record-btn"
@@ -771,7 +756,7 @@ export function PadGrid() {
                   ●
                 </button>
               )}
-              {(pad.settings.sampleId || pad.settings.source === 'synth') && (
+              {(pad.settings.sampleId) && (
                 <button
                   type="button"
                   className={`pad-mute-btn${pad.settings.mute ? ' muted' : ''}`}
@@ -812,13 +797,13 @@ export function PadGrid() {
               <strong>{promptSource.name}</strong> → <strong>{promptTarget.name}</strong>
               {' '}(Bank {promptTarget.bank + 1}, Pad {promptTarget.slot + 1})
             </p>
-            {(promptTarget.settings.sampleId || promptTarget.settings.source === 'synth') && (
+            {(promptTarget.settings.sampleId) && (
               <p className="pad-drag-warning">Target pad <strong>{promptTarget.name}</strong> has content — Move/Copy will replace it</p>
             )}
             <div className="pad-drag-buttons">
               <button type="button" onClick={() => void executePadMove(padDragPrompt.sourcePadId, padDragPrompt.targetPadId)}>Move</button>
               <button type="button" onClick={() => void executePadCopy(padDragPrompt.sourcePadId, padDragPrompt.targetPadId)}>Copy</button>
-              {(promptTarget.settings.sampleId || promptTarget.settings.source === 'synth') && (
+              {(promptTarget.settings.sampleId) && (
                 <button type="button" onClick={() => void executePadSwap(padDragPrompt.sourcePadId, padDragPrompt.targetPadId)}>Swap</button>
               )}
               <button type="button" onClick={cancelPadDragPrompt}>Cancel</button>

@@ -196,10 +196,8 @@ export const createTransportActions = (ctx: StoreContext) => ({
 
           // For piano roll events with absolute note, compute semitone offset from pad base
           let effectiveSemitoneOffset = event.semitoneOffset
-          if (event.note != null && pad.settings.source === 'synth' && pad.settings.synthParams) {
-            effectiveSemitoneOffset = event.note - (pad.settings.synthParams.baseNote + (pad.settings.semitones ?? 0))
-          } else if (event.note != null && pad.settings.source === 'sample') {
-            effectiveSemitoneOffset = event.note - (60 + (pad.settings.semitones ?? 0))
+          if (event.note != null) {
+            effectiveSemitoneOffset = event.note - ((pad.settings.baseNote ?? 60) + (pad.settings.semitones ?? 0))
           }
 
           ctx.get().flashSequencedPadHit(pad.id)
