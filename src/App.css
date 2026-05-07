@@ -2436,7 +2436,7 @@ select.tb-led-value {
   flex-direction: column;
   align-self: stretch;
   overflow-y: hidden;
-  overflow-x: visible;
+  min-width: 0;
 }
 
 .perf-left > .sequencer > .sequencer-matrix-wrap {
@@ -2454,6 +2454,7 @@ select.tb-led-value {
 
 .perf-left > .sequencer > .sequencer-top {
   gap: 0.15rem;
+  min-width: 0;
 }
 
 .perf-left > .sequencer .sequencer-controls-row {
