@@ -179,14 +179,13 @@ function App() {
   const altLayout = layoutMode === 'wide'
 
   // --- Phone detection (pointer: coarse + phone-sized viewport) ---
-  // iPads also have pointer: coarse, so we exclude them by requiring
-  // at least one dimension to be < 768px (phones are < 768 in one axis
-  // in both orientations; iPads are >= 768 in both axes).
+  // iPads also have pointer: coarse, so we explicitly exclude them
+  const isIPad = /iPad/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
   const PHONE_MQ = '(pointer: coarse) and (max-width: 767px), (pointer: coarse) and (max-height: 767px)'
-  const [isMobile, setIsMobile] = useState(() => matchMedia(PHONE_MQ).matches)
+  const [isMobile, setIsMobile] = useState(() => isIPad ? false : matchMedia(PHONE_MQ).matches)
   useEffect(() => {
     const mql = matchMedia(PHONE_MQ)
-    const onChange = () => setIsMobile(mql.matches)
+    const onChange = () => setIsMobile(isIPad ? false : mql.matches)
     if ('addEventListener' in mql) mql.addEventListener('change', onChange)
     else (mql as unknown as { addListener: (cb: () => void) => void }).addListener(onChange)
     return () => {
@@ -331,28 +330,12 @@ function App() {
     void hydrate()
   }, [])
 
-  // --- Eagerly unlock AudioContext on first user gesture (iOS requires this) ---
-  useEffect(() => {
-    const onGesture = () => {
-      void audioEngine.unlock()
-      document.removeEventListener('touchstart', onGesture, true)
-      document.removeEventListener('mousedown', onGesture, true)
-      document.removeEventListener('keydown', onGesture, true)
-    }
-    document.addEventListener('touchstart', onGesture, true)
-    document.addEventListener('mousedown', onGesture, true)
-    document.addEventListener('keydown', onGesture, true)
-    return () => {
-      document.removeEventListener('touchstart', onGesture, true)
-      document.removeEventListener('mousedown', onGesture, true)
-      document.removeEventListener('keydown', onGesture, true)
-    }
-  }, [])
-
   // --- Auto-detect performance layout for landscape mobile ---
   useEffect(() => {
     // Only auto-detect if user hasn't explicitly set a layout mode
     if (localStorage.getItem('layoutMode')) return
+    const isIPad = /iPad/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+    if (isIPad) return // iPads use desktop performance layout, not phone layout
     const isTouch = matchMedia('(pointer: coarse)').matches
     const isLandscape = window.innerWidth > window.innerHeight
     const isSmall = window.innerWidth <= 1099
