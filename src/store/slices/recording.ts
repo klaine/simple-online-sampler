@@ -245,6 +245,10 @@ export const createRecordingActions = (ctx: StoreContext) => ({
       const playingSeq = s.project.sequences.find((seq) => seq.id === playingPatternId)
       patternLength = playingSeq?.lengthSteps ?? 16
     } else {
+      // Age out stale captureFirstNoteTimeMs if it fell outside the window
+      if (mutableRefs.captureFirstNoteTimeMs !== null && mutableRefs.captureFirstNoteTimeMs < cutoff) {
+        mutableRefs.captureFirstNoteTimeMs = null
+      }
       const t0 = mutableRefs.captureFirstNoteTimeMs ?? events[0].timestamp
       const noteOns = events.filter((e) => e.type === 'on')
       if (noteOns.length === 0) {
