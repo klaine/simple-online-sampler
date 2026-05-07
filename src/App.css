@@ -890,6 +890,7 @@ select.tb-led-value {
   padding-bottom: 2px;
   position: relative;
   min-width: 0;
+  max-width: 100%;
 }
 
 .pattern-strip::-webkit-scrollbar {
@@ -2437,6 +2438,7 @@ select.tb-led-value {
   align-self: stretch;
   overflow-y: hidden;
   min-width: 0;
+  width: 100%;
 }
 
 .perf-left > .sequencer > .sequencer-matrix-wrap {
@@ -2455,6 +2457,7 @@ select.tb-led-value {
 .perf-left > .sequencer > .sequencer-top {
   gap: 0.15rem;
   min-width: 0;
+  width: 100%;
 }
 
 .perf-left > .sequencer .sequencer-controls-row {
