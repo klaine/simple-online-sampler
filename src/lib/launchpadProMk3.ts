@@ -36,6 +36,7 @@ const COLOR_STEP_OFF: [number, number, number] = [8, 8, 8]            // dim gra
 const COLOR_CHROMATIC_WHITE: [number, number, number] = [30, 30, 40]  // dim blueish white (natural notes)
 const COLOR_CHROMATIC_BLACK: [number, number, number] = [10, 10, 50]  // dim blue (accidentals)
 const COLOR_CHROMATIC_ACTIVE: [number, number, number] = [80, 80, 127] // bright blue (hit flash)
+const COLOR_CHROMATIC_ROOT: [number, number, number] = [127, 20, 20]  // bright red (root note)
 
 // --- Launchpad Pro MK3 Programmer Mode button addresses ---
 // Bottom row below grid (left to right): notes 1-8
@@ -51,6 +52,8 @@ const LEFT_COL_RECORD = 10
 const LEFT_COL_PLAY = 20
 const LEFT_COL_DUPLICATE = 50
 const LEFT_COL_SHIFT = 90
+const LEFT_COL_CLICK = 80
+const LEFT_COL_UNDO = 70
 
 // Colors for functional buttons
 const COLOR_RECORD_OFF: [number, number, number] = [20, 0, 0]
@@ -178,6 +181,8 @@ let _duplicateLengthCb: ((mode: 'double' | 'half') => void) | null = null
 
 let _activeBank = 0  // 0-7
 let _shiftHeld = false
+let _chromaticShift = 0  // semitone offset for chromatic grid (shifted by ±4 per CC80/CC70 press)
+let _getSelectedPadId: (() => string | null) | null = null
 // Track flash state for pads
 const _flashTimers = new Map<number, ReturnType<typeof setTimeout>>()
 // Track active chromatic notes for release
@@ -230,6 +235,7 @@ export function connect(
     getIsPlaying: () => boolean
     getIsRecordArmed: () => boolean
     getActiveBank: () => number
+    getSelectedPadId: () => string | null
     triggerPad: (pad: Pad, velocity: number) => void
     triggerChromatic: (pad: Pad, velocity: number, semitoneOffset: number) => void
     releasePad: (padId: string) => void
@@ -261,6 +267,7 @@ export function connect(
   _toggleRecordCb = opts.toggleRecord
   _setBankCb = opts.setBank
   _duplicateLengthCb = opts.duplicateLength
+  _getSelectedPadId = opts.getSelectedPadId
 
   // Enter Programmer mode — send to ALL outputs
   for (const out of _allOutputs) {
@@ -314,6 +321,7 @@ export function disconnect(): void {
   _lastTriggeredPadId = null
   _activeChromaticNotes.clear()
   _shiftHeld = false
+  _chromaticShift = 0
   _duplicateLengthCb = null
 }
 
@@ -372,7 +380,12 @@ function flashChromaticPad(offset: number): void {
 
   _flashTimers.set(note, setTimeout(() => {
     _flashTimers.delete(note)
-    setLed(note, ...(isBlackKey(offset) ? COLOR_CHROMATIC_BLACK : COLOR_CHROMATIC_WHITE))
+    const absoluteOffset = offset + _chromaticShift
+    if (absoluteOffset === 0) {
+      setLed(note, ...COLOR_CHROMATIC_ROOT)
+    } else {
+      setLed(note, ...(isBlackKey(absoluteOffset) ? COLOR_CHROMATIC_BLACK : COLOR_CHROMATIC_WHITE))
+    }
   }, 100))
 }
 
@@ -436,6 +449,8 @@ function clearAll(): void {
   setLedCC(LEFT_COL_RECORD, PAL_OFF)
   setLedCC(LEFT_COL_PLAY, PAL_OFF)
   setLedCC(LEFT_COL_DUPLICATE, PAL_OFF)
+  setLedCC(LEFT_COL_CLICK, PAL_OFF)
+  setLedCC(LEFT_COL_UNDO, PAL_OFF)
 }
 
 function repaintDrumGrid(): void {
@@ -454,8 +469,13 @@ function repaintChromaticGrid(): void {
   if (!_connected) return
 
   for (let offset = 0; offset < 16; offset++) {
+    const absoluteOffset = offset + _chromaticShift
     const note = chromaticOffsetToNote(offset)
-    setLed(note, ...(isBlackKey(offset) ? COLOR_CHROMATIC_BLACK : COLOR_CHROMATIC_WHITE))
+    if (absoluteOffset === 0) {
+      setLed(note, ...COLOR_CHROMATIC_ROOT)
+    } else {
+      setLed(note, ...(isBlackKey(absoluteOffset) ? COLOR_CHROMATIC_BLACK : COLOR_CHROMATIC_WHITE))
+    }
   }
 }
 
@@ -524,6 +544,18 @@ function handleMidiMessage(event: MIDIMessageEvent): void {
         _duplicateLengthCb?.(_shiftHeld ? 'half' : 'double')
         return
       }
+      if (note === LEFT_COL_CLICK) {
+        _chromaticShift = Math.min(48, _chromaticShift + 4)
+        repaintChromaticGrid()
+        repaintFunctionButtons()
+        return
+      }
+      if (note === LEFT_COL_UNDO) {
+        _chromaticShift = Math.max(-48, _chromaticShift - 4)
+        repaintChromaticGrid()
+        repaintFunctionButtons()
+        return
+      }
       // Bottom narrow row CCs for bank switching (all 8)
       if (BOTTOM_NARROW_CCS.includes(note)) {
         const bank = BOTTOM_NARROW_CCS.indexOf(note)
@@ -549,9 +581,11 @@ function handleMidiMessage(event: MIDIMessageEvent): void {
     }
     // Chromatic pad release
     const chromaticOffset = noteToChromaticOffset(note)
-    if (chromaticOffset !== null && _releaseChromaticCb && _lastTriggeredPadId) {
+    const chromaticPadId = _getSelectedPadId?.() ?? _lastTriggeredPadId
+    if (chromaticOffset !== null && _releaseChromaticCb && chromaticPadId) {
+      const storedShift = _activeChromaticNotes.get(note) ?? _chromaticShift
       _activeChromaticNotes.delete(note)
-      _releaseChromaticCb(_lastTriggeredPadId, chromaticOffset)
+      _releaseChromaticCb(chromaticPadId, chromaticOffset + storedShift)
       return
     }
     return
@@ -592,11 +626,13 @@ function handleMidiMessage(event: MIDIMessageEvent): void {
 
   // --- Chromatic pad press (rows 1-4, cols 5-8) ---
   const chromaticOffset = noteToChromaticOffset(note)
-  if (chromaticOffset !== null && _lastTriggeredPadId && _triggerChromaticCb) {
-    const pad = getPadById(_lastTriggeredPadId)
+  const chromaticPadId = _getSelectedPadId?.() ?? _lastTriggeredPadId
+  if (chromaticOffset !== null && chromaticPadId && _triggerChromaticCb) {
+    const pad = getPadById(chromaticPadId)
     if (pad) {
-      _activeChromaticNotes.set(note, chromaticOffset)
-      _triggerChromaticCb(pad, velocity / 127, chromaticOffset)
+      const shiftedOffset = chromaticOffset + _chromaticShift
+      _activeChromaticNotes.set(note, _chromaticShift)
+      _triggerChromaticCb(pad, velocity / 127, shiftedOffset)
       flashChromaticPad(chromaticOffset)
     }
     return
@@ -624,6 +660,14 @@ function repaintFunctionButtons(): void {
 
   // Duplicate button — dim blueish white to show it's active
   setLedCC(LEFT_COL_DUPLICATE, rgbToPalette(...COLOR_DUPLICATE_DIM))
+
+  // Click (CC80) — octave up indicator
+  const canShiftUp = _chromaticShift < 48
+  setLedCC(LEFT_COL_CLICK, canShiftUp ? rgbToPalette(20, 20, 40) : PAL_DIM_GRAY)
+
+  // Undo (CC70) — octave down indicator
+  const canShiftDown = _chromaticShift > -48
+  setLedCC(LEFT_COL_UNDO, canShiftDown ? rgbToPalette(20, 20, 40) : PAL_DIM_GRAY)
 
   // Bank buttons — bottom row (note-addressed) and narrow CCs
   for (let i = 0; i < 8; i++) {

@@ -537,6 +537,7 @@ function App() {
           getIsPlaying: () => useStore.getState().isPlaying,
           getIsRecordArmed: () => useStore.getState().seqRecordArmed,
           getActiveBank: () => useStore.getState().activeBank ?? 0,
+          getSelectedPadId: () => useStore.getState().selectedPadId,
           triggerPad: (pad, velocity) => {
             audioEngine.unlockSync()
             const st = useStore.getState()
@@ -556,6 +557,7 @@ function App() {
               hold: pad.settings.mode === 'adsr',
               bpm: st.project?.bpm ?? 120,
             })
+            st.feedCaptureBuffer(pad.id, Math.round(velocity * 127), 'on', midiNote)
             // Record if armed
             if (st.isPlaying && st.seqRecordArmed) {
               st.recordPadHit(pad.id, Math.round(velocity * 127), midiNote)

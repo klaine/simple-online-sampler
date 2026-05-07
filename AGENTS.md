@@ -340,11 +340,14 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 ### Launchpad Pro MK3 (Programmer Mode)
 - Enabled via "LP Pro MK3 Mode" checkbox in TopBar when device is detected; enters Programmer Mode via SysEx on connect
 - **Grid layout**: bottom 4 rows = drum pads (left 4×4) + chromatic play (right 4×4); top rows = sequencer steps (16-step or 32-step depending on pattern length)
-- **Left column** (top → bottom): Click(CC 80), Undo(70), Delete(60), Quantise(50), **Duplicate(40)**, Double(30), Play(20), Record(10)
+- **Chromatic play** (bottom-right 4×4): plays the selected pad (or last-triggered pad if none selected) at different semitone offsets. 16 semitone offsets arranged left-to-right, bottom-to-top (offsets 0–15). Black keys dim blue, white keys dim blueish white. **Root note** (offset 0) highlighted in red. Shift range adjustable via Click/Undo buttons.
+- **Click button (CC 80)**: shifts chromatic grid up by +4 semitones (one row), clamped at +48
+- **Undo button (CC 70)**: shifts chromatic grid down by -4 semitones (one row), clamped at -48
+- **Left column** (top → bottom): **Click(CC 80)**=chromatic shift up, **Undo(70)**=chromatic shift down, Delete(60), Quantise(50), **Duplicate(40)**, Double(30), Play(20), Record(10)
 - **Duplicate button (CC 40)**: doubles active pattern length up to 64 steps (copies events to second half)
 - **Shift + Duplicate (CC 90 + CC 40)**: halves active pattern length (truncates out-of-range events)
 - **Bottom row**: notes 1–8 and narrow CCs 101–108 switch between 8 banks
-- LED feedback: drum pads show assignment state, sequencer steps show event state, active bank highlighted in orange
+- LED feedback: drum pads show assignment state, sequencer steps show event state, active bank highlighted in orange, Click/Undo buttons dim when shiftable, chromatic root in red
 
 ### Autosampler
 - `AutosampleDialog.tsx` — Full autosample workflow: MIDI out → audio capture → auto-trim → normalize → pad assignment
