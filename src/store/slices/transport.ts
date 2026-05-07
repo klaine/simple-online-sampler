@@ -24,7 +24,6 @@ export const createTransportActions = (ctx: StoreContext) => ({
       d.playingPatternId = null
       d.playingChainIndex = null
       d.playingChainRepeat = 1
-      d.seqRecordArmed = false
     })
 
     mutableRefs.seqRecordCleared.clear()
