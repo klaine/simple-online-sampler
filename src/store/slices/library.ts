@@ -3,10 +3,11 @@ import { db } from '../../lib/db'
 import { midiToName, uid } from '../../lib/utils'
 import { encodeWavFromChannels } from '../../lib/wavEncode'
 import { PADS_PER_BANK } from '../../lib/constants'
-import type { SampleAsset, BusId } from '../../types'
+import type { SampleAsset, BusId, TrimSettings } from '../../types'
 import { showConfirm } from '../confirmDialog'
 import { parseMpcPgm, matchMpcSamplesToFiles } from '../../lib/mpcImport'
 import { parseLcdk, matchLcdkSamplesToFiles } from '../../lib/lcdkImport'
+import { parseBatteryMonolith, extractWavFromMonolith, detectVelocityLayers } from '../../lib/batteryMonolithImport'
 import { importFileAsSample } from '../importHelpers'
 import type { StoreContext } from '../context'
 
@@ -595,6 +596,70 @@ export const createLibraryActions = (ctx: StoreContext) => ({
       return
     }
 
+    // --- Battery 4 monolith .nbkt import ---
+    const nbktFiles = files.filter((f) => f.name.match(/\.nbkt$/i))
+    if (nbktFiles.length > 0) {
+      const kitNames: string[] = []
+      for (const nbktFile of nbktFiles) {
+        try {
+          const buf = await nbktFile.arrayBuffer()
+          const result = parseBatteryMonolith(buf)
+          if (!result || result.entries.length === 0) {
+            ctx.get().addToast(`No samples found in "${nbktFile.name}" — patch-only .nbkt files are not supported`, 'info')
+            continue
+          }
+          const runId = uid()
+          const runLabel = result.label
+          const velocityGroups = detectVelocityLayers(result.entries)
+          let kitAdded = 0
+          let padIndexCounter = 0
+          for (const [, group] of velocityGroups) {
+            const { entries: groupEntries, velocityRanges } = group
+            const hasLayers = groupEntries.length > 1
+            for (let li = 0; li < groupEntries.length; li++) {
+              const entry = groupEntries[li]
+              const wavBlob = extractWavFromMonolith(buf, entry)
+              const audioFile = new File([wavBlob], entry.filename, { type: 'audio/wav' })
+              const sample = await importFileAsSample(audioFile, ctx.get, ctx.set)
+              const updated: SampleAsset = {
+                ...sample,
+                autosampleRunId: runId,
+                autosampleRunLabel: runLabel,
+                autosampleBattery: true,
+                autosamplePadIndex: padIndexCounter,
+                ...(hasLayers
+                  ? {
+                      autosampleMpcLayerIndex: li,
+                      autosampleMpcVelocityMax: velocityRanges[li][1],
+                    }
+                  : {}),
+              }
+              await db.putSample(updated)
+              ctx.set((s) => {
+                const idx = s.samples.findIndex((x) => x.id === updated.id)
+                if (idx >= 0) s.samples[idx] = updated
+                s.sampleMap.set(updated.id, updated)
+              })
+              kitAdded++
+            }
+            padIndexCounter++
+          }
+          if (kitAdded > 0) {
+            kitNames.push(runLabel)
+            added += kitAdded
+          }
+        } catch (e) {
+          console.warn('Failed to parse Battery monolith', nbktFile.name, e)
+          ctx.get().addToast(`Failed to import "${nbktFile.name}"`, 'error')
+        }
+      }
+      if (kitNames.length > 0) {
+        ctx.get().addToast(`Imported ${kitNames.length} Battery kit${kitNames.length > 1 ? 's' : ''}: ${kitNames.join(', ')}`)
+      }
+      if (added > 0) return
+      return
+    }
+
     // Normal file import loop (when no pgm files in drop)
     if (pgmFiles.length === 0) {
     for (const file of files) {
@@ -604,7 +669,7 @@ export const createLibraryActions = (ctx: StoreContext) => ({
           const JSZip = (await import('jszip')).default
           const zip = await JSZip.loadAsync(await file.arrayBuffer())
           const metaFile = zip.file('metadata.json')
-          const meta = metaFile ? JSON.parse(await metaFile.async('text')) as { label?: string; samples?: { name: string; autosampleTrim?: { start: number; end: number } | null; autosampleBus?: BusId | null; autosampleChokeGroup?: number | null; autosamplePadIndex?: number | null; autosampleMpc?: boolean }[] } : null
+          const meta = metaFile ? JSON.parse(await metaFile.async('text')) as { label?: string; samples?: { name: string; autosampleTrim?: TrimSettings | null; autosampleBus?: BusId | null; autosampleChokeGroup?: number | null; autosamplePadIndex?: number | null; autosampleMpc?: boolean; autosampleBattery?: boolean; autosampleLcdk?: boolean; autosamplePreset?: boolean }[] } : null
           const runId = uid()
           const runLabel = meta?.label || file.name.replace(/\.zip$/i, '')
           const metaMap = new Map((meta?.samples || []).map((m) => [m.name, m]))
@@ -615,7 +680,7 @@ export const createLibraryActions = (ctx: StoreContext) => ({
             const audioFile = new File([blob], entry.name, { type: 'audio/wav' })
             const sample = await importFileAsSample(audioFile, ctx.get, ctx.set)
             const m = metaMap.get(entry.name)
-            const updated: SampleAsset = { ...sample, autosampleRunId: runId, autosampleRunLabel: runLabel, autosampleTrim: m?.autosampleTrim ?? undefined, autosampleBus: m?.autosampleBus ?? undefined, autosampleChokeGroup: m?.autosampleChokeGroup ?? undefined, autosamplePadIndex: m?.autosamplePadIndex ?? undefined, autosampleMpc: m?.autosampleMpc || undefined }
+            const updated: SampleAsset = { ...sample, autosampleRunId: runId, autosampleRunLabel: runLabel, autosampleTrim: m?.autosampleTrim ?? undefined, autosampleBus: m?.autosampleBus ?? undefined, autosampleChokeGroup: m?.autosampleChokeGroup ?? undefined, autosamplePadIndex: m?.autosamplePadIndex ?? undefined, autosampleMpc: m?.autosampleMpc || undefined, autosampleBattery: m?.autosampleBattery || undefined }
             await db.putSample(updated)
             ctx.set((s) => {
               const idx = s.samples.findIndex((x) => x.id === updated.id)

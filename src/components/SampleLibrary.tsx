@@ -230,7 +230,7 @@ const SampleRow = memo(function SampleRow({
 type VeloSubgroup = { baseName: string; samples: SampleAsset[] }
 type LibItem = { type: 'single'; sample: SampleAsset } | { type: 'group'; key: string; label: string; samples: SampleAsset[]; veloSubgroups: VeloSubgroup[] }
 
-const veloRegex = /^(.+?)_v(\d+)(\.[^.]+)$/
+const veloRegex = /^(.+?)(?:_v| V)(\d+)(\.[^.]+)$/
 
 const buildVeloSubgroups = (samples: SampleAsset[]): VeloSubgroup[] => {
   const subgroupMap = new Map<string, VeloSubgroup>()
@@ -595,6 +595,7 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
                 const isMpcGroup = item.samples.some((s) => s.autosampleMpc === true)
                 const isPresetGroup = item.samples.some((s) => s.autosamplePreset === true)
                 const isLcdkGroup = item.samples.some((s) => s.autosampleLcdk === true)
+                const isBatteryGroup = item.samples.some((s) => s.autosampleBattery === true)
                 return (
                   <div key={`grp-${item.key}`} className="sample-group">
                     <div
@@ -619,6 +620,7 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
                         {isMpcGroup && <span className="sample-group-badge">MPC</span>}
                         {isPresetGroup && <span className="sample-group-badge">Preset</span>}
                         {isLcdkGroup && <span className="sample-group-badge">LCDK</span>}
+                        {isBatteryGroup && <span className="sample-group-badge">Battery</span>}
                         {item.label}
                       </span>
                       <div className="sample-group-actions">
@@ -736,7 +738,7 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
             <input
               ref={sampleImportRef}
               type="file"
-              accept="audio/*,.wav,.mp3,.ogg,.flac,.aif,.aiff,.zip"
+              accept="audio/*,.wav,.mp3,.ogg,.flac,.aif,.aiff,.zip,.nbkt"
               multiple
               style={{ display: 'none' }}
               onChange={(e) => {

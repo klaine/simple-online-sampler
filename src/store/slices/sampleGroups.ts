@@ -37,6 +37,7 @@ export const createSampleGroupActions = (ctx: StoreContext) => ({
         s.autosampleMpc = undefined
         s.autosamplePreset = undefined
         s.autosampleLcdk = undefined
+        s.autosampleBattery = undefined
       }
     })
     const sample = ctx.get().samples.find((s) => s.id === sampleId)
@@ -84,8 +85,8 @@ export const createSampleGroupActions = (ctx: StoreContext) => ({
         noteGroups.push(group)
       }
     } else {
-      // Standard velocity detection by _vNN filename suffix
-      const veloRegex = /^(.+?)_v(\d+)(\.[^.]+)$/
+      // Standard velocity detection by _vNN or " VNN" filename suffix
+      const veloRegex = /^(.+?)(?:_v| V)(\d+)(\.[^.]+)$/
       const noteGroupMap = new Map<string, typeof noteGroups[0]>()
 
       for (const sample of groupSamples) {
@@ -504,6 +505,7 @@ export const createSampleGroupActions = (ctx: StoreContext) => ({
         autosampleChokeGroup: s.autosampleChokeGroup ?? null,
         autosamplePadIndex: s.autosamplePadIndex ?? null,
         autosampleMpc: s.autosampleMpc ?? false,
+        autosampleBattery: s.autosampleBattery ?? false,
       })),
     }
     zip.file('metadata.json', JSON.stringify(metadata, null, 2))

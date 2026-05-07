@@ -17,6 +17,7 @@ import {
   PATTERN_COLORS,
 } from '../store'
 import { VirtualizedSequencerLanes } from './VirtualizedSequencerLanes'
+import { Timeline } from './Timeline'
 import { makeTouchDragHandlers } from '../lib/touchDrag'
 
 function ColorPicker({ color, onChange }: { color: string; onChange: (c: string) => void }) {
@@ -85,6 +86,7 @@ export function Sequencer() {
   const showSequencerTools = useStore((s) => s.showSequencerTools)
   const sequenceLengthDraft = useStore((s) => s.sequenceLengthDraft)
   const patternRenameId = useStore((s) => s.patternRenameId)
+  const [showTimeline, setShowTimeline] = useState(() => localStorage.getItem('timelineVisible') === 'true')
   const patternRenameDraft = useStore((s) => s.patternRenameDraft)
   const selectedChainEntryId = useStore((s) => s.selectedChainEntryId)
   const copiedChainPatternId = useStore((s) => s.copiedChainPatternId)
@@ -282,6 +284,17 @@ export function Sequencer() {
           </label>
           <span className="seq-controls-spacer" />
           <button type="button" className="seq-action-btn" onClick={() => void addSequence()}>+ Pattern</button>
+          <button
+            type="button"
+            className={`timeline-toggle${showTimeline ? ' active' : ''}`}
+            onClick={() => {
+              const next = !showTimeline
+              setShowTimeline(next)
+              localStorage.setItem('timelineVisible', String(next))
+            }}
+          >
+            Song
+          </button>
           <button type="button" className="seq-action-btn" onClick={() => useStore.setState((s) => ({ showSequencerTools: !s.showSequencerTools }))}>
             Tools
           </button>
@@ -618,6 +631,7 @@ export function Sequencer() {
         {bankGroups.every((g) => g.collapsed || g.pads.length === 0) && <p className="sequencer-status">No visible lanes. Expand a bank or disable "Hide Empty Lanes".</p>}
       </div>
       {showGateResizeTip && <p className="gate-tip">Tip: drag note edges to resize gate note length.</p>}
+      <Timeline show={showTimeline} />
     </section>
   )
 }
