@@ -64,7 +64,7 @@ export function createVASynthVoice(
       processorOptions: {},
     })
   } catch {
-    // Fallback: create a silent gain node so the graph still works
+    // Fallback: worklet not yet registered — use native OscillatorNodes
   }
 
   // Set static config via port
@@ -77,13 +77,48 @@ export function createVASynthVoice(
     })
   }
 
+  // --- Fallback: create native OscillatorNodes if worklet unavailable ---
+  const oscillators: OscillatorNode[] = []
+  const harmonicGains: GainNode[] = []
+  if (!vaWorklet) {
+    const oscTypes: OscillatorType[] = ['sawtooth', 'square', 'triangle', 'sine']
+    const type1 = oscTypes[waveTypeNum(va.osc1.waveform)] ?? 'sawtooth'
+    const type2 = oscTypes[waveTypeNum(va.osc2.waveform)] ?? 'square'
+
+    const osc1 = ctx.createOscillator()
+    osc1.type = type1
+    osc1.frequency.setValueAtTime(osc1Freq, startTime)
+    oscillators.push(osc1)
+
+    const osc2 = ctx.createOscillator()
+    osc2.type = type2
+    osc2.frequency.setValueAtTime(osc2Freq, startTime)
+    oscillators.push(osc2)
+
+    const mix2 = (va.oscMix + 1) / 2
+    const mix1 = 1 - mix2
+    const g1 = ctx.createGain()
+    g1.gain.value = va.osc1.level * mix1
+    osc1.connect(g1)
+    harmonicGains.push(g1)
+
+    const g2 = ctx.createGain()
+    g2.gain.value = va.osc2.level * mix2
+    osc2.connect(g2)
+    harmonicGains.push(g2)
+  }
+
   // --- Voice gain (amplitude envelope) ---
   const voiceGain = ctx.createGain()
   voiceGain.gain.setValueAtTime(0, startTime)
 
-  // Connect worklet → voice gain
+  // Connect worklet → voice gain, or native oscillators → voice gain
   if (vaWorklet) {
     vaWorklet.connect(voiceGain)
+  } else {
+    for (const hg of harmonicGains) {
+      hg.connect(voiceGain)
+    }
   }
 
   // --- Set worklet AudioParams ---
@@ -183,6 +218,8 @@ export function createVASynthVoice(
     lp.frequency.value = settings.filterFreq2 ?? 20000
     lp.Q.value = settings.filterQ ?? 0.7
     filters.push(lp)
+    hp.connect(lp)
+    voiceGain.connect(hp)
   } else if (resolvedFt) {
     const keyTrack = (settings.filterKeyTrack ?? 0) / 100
     const keyTrackSemitones = (semitoneOffset ?? 0) * keyTrack
@@ -293,17 +330,24 @@ export function createVASynthVoice(
 
     const isInverted = lfoSettings.waveform === 'ramp-down'
 
-    // Pitch modulation (on worklet's osc1Freq + osc2Freq AudioParams)
-    if ((lfoSettings.pitchDepth ?? 0) > 0 && vaWorklet) {
+    // Pitch modulation (on worklet's osc1Freq + osc2Freq AudioParams, or native oscillators)
+    if ((lfoSettings.pitchDepth ?? 0) > 0) {
       const g = ctx.createGain()
       const depthCents = lfoSettings.pitchDepth * 200
       g.gain.value = isInverted ? -depthCents : depthCents
       lfo.connect(g)
-      const wParams = vaWorklet.parameters as Map<string, AudioParam>
-      const osc1FreqParam = wParams.get('osc1Freq')
-      const osc2FreqParam = wParams.get('osc2Freq')
-      if (osc1FreqParam) g.connect(osc1FreqParam)
-      if (osc2FreqParam) g.connect(osc2FreqParam)
+      if (vaWorklet) {
+        const wParams = vaWorklet.parameters as Map<string, AudioParam>
+        const osc1FreqParam = wParams.get('osc1Freq')
+        const osc2FreqParam = wParams.get('osc2Freq')
+        if (osc1FreqParam) g.connect(osc1FreqParam)
+        if (osc2FreqParam) g.connect(osc2FreqParam)
+      } else {
+        // Connect to native oscillator detune params
+        for (const osc of oscillators) {
+          g.connect(osc.detune)
+        }
+      }
       lfoGain = g
     }
 
@@ -353,14 +397,26 @@ export function createVASynthVoice(
     stopTime = startTime + attack + decay + 0.05
   }
 
-  if (stopTime != null && vaWorklet && ctx instanceof AudioContext) {
-    // Schedule param ramps to zero at stop time
-    // (worklet keeps running, but gain ramp silences it)
+  // Start native oscillators (fallback path)
+  for (const osc of oscillators) {
+    osc.start(startTime)
+    if (stopTime != null) {
+      osc.stop(stopTime)
+    }
   }
 
+  // Start LFO
+  if (lfo) {
+    if (stopTime != null) {
+      try { lfo.stop(stopTime) } catch { /* */ }
+    }
+  }
+
+  // Note: worklet doesn't need start/stop — it runs continuously while connected to graph
+
   return {
-    oscillators: [],
-    harmonicGains: [],
+    oscillators,
+    harmonicGains,
     voiceGain,
     filters,
     lfo,

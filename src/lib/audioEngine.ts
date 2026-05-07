@@ -119,6 +119,13 @@ const VA_OSC_WORKLET_JS = `
       this.osc1Wave = 0;
       this.osc2Wave = 0;
       this.syncEnabled = false;
+      this.port.onmessage = (e) => {
+        if (e.data.type === 'config') {
+          this.osc1Wave = e.data.osc1Wave;
+          this.osc2Wave = e.data.osc2Wave;
+          this.syncEnabled = e.data.syncEnabled;
+        }
+      };
     }
     static get parameterDescriptors() {
       return [
@@ -568,6 +575,8 @@ export class AudioEngine {
 
       // Register sidechain worklet (async, non-blocking)
       void this.registerWorklet()
+      // Register VA oscillator worklet (async, non-blocking)
+      void this.registerVAWorklet()
     }
     return this.ctx
   }

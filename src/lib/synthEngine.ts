@@ -209,6 +209,8 @@ export function createSynthVoice(
     lp.frequency.value = settings.filterFreq2 ?? 20000
     lp.Q.value = settings.filterQ ?? 0.7
     filters.push(lp)
+    hp.connect(lp)
+    voiceGain.connect(hp)
   } else if (resolvedFt) {
     // Apply key tracking: offset filter freq by semitoneOffset scaled by keyTrack amount
     const keyTrack = (settings.filterKeyTrack ?? 0) / 100
