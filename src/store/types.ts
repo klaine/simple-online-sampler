@@ -357,7 +357,7 @@ export interface AppState {
 
   groupSamples: (sampleIds: string[], label?: string) => void
   ungroupSample: (sampleId: string) => void
-  assignGroupToPads: (runId: string, startBank?: number) => Promise<void>
+  assignGroupToPads: (runId: string, startBank?: number, skipPatternPrompt?: boolean) => Promise<void>
   importPatternsForGroup: (patternsJson: string, padIndexToId?: Map<number, string>, groupLabel?: string) => Promise<void>
   importPatternsForGroupByRunId: (runId: string) => Promise<void>
   renameAutosampleGroup: (runId: string, newLabel: string) => void

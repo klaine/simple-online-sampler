@@ -45,7 +45,7 @@ export const createProjectActions = (ctx: StoreContext) => ({
       if (allSamples.length === 0) {
         const loaded = await loadPresetKits(ctx.get, ctx.set)
         for (const { runId, bank } of loaded) {
-          await ctx.get().assignGroupToPads(runId, bank)
+          await ctx.get().assignGroupToPads(runId, bank, true)
         }
       }
       await ctx.get().refreshProjectList()

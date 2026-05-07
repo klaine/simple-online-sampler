@@ -43,7 +43,7 @@ export const createSampleGroupActions = (ctx: StoreContext) => ({
     if (sample) void db.putSample(sample)
   },
 
-  assignGroupToPads: async (runId: string, startBank?: number) => {
+  assignGroupToPads: async (runId: string, startBank?: number, skipPatternPrompt?: boolean) => {
     const s = ctx.get()
     if (!s.project) return
     const groupSamples = s.samples.filter((sam) => sam.autosampleRunId === runId)
@@ -271,14 +271,28 @@ export const createSampleGroupActions = (ctx: StoreContext) => ({
     // --- Import sequencer patterns from LCDK/imported kit data ---
     const patternSource = groupSamples.find((sam) => sam.autosamplePatterns)
     if (patternSource?.autosamplePatterns) {
-      // Build padIndex → padId map (based on assignment order)
-      const padIndexToId = new Map<number, string>()
-      let assignIdx = 0
-      for (const [padId] of assignMap) {
-        padIndexToId.set(assignIdx, padId)
-        assignIdx++
+      let importPatterns = true
+      if (!skipPatternPrompt) {
+        try {
+          const patterns = JSON.parse(patternSource.autosamplePatterns) as Array<{ index: number; steps: Array<unknown> }>
+          const count = patterns.length
+          if (count > 0) {
+            importPatterns = await showConfirm(
+              `This kit includes ${count} sequencer pattern${count !== 1 ? 's' : ''}. Import them?`,
+            )
+          }
+        } catch { /* if parse fails, skip import */ importPatterns = false }
       }
-      await ctx.get().importPatternsForGroup(patternSource.autosamplePatterns, padIndexToId, patternSource.autosampleRunLabel)
+      if (importPatterns) {
+        // Build padIndex → padId map (based on assignment order)
+        const padIndexToId = new Map<number, string>()
+        let assignIdx = 0
+        for (const [padId] of assignMap) {
+          padIndexToId.set(assignIdx, padId)
+          assignIdx++
+        }
+        await ctx.get().importPatternsForGroup(patternSource.autosamplePatterns, padIndexToId, patternSource.autosampleRunLabel)
+      }
     }
   },
 

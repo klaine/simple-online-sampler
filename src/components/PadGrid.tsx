@@ -5,6 +5,7 @@ import { parseMpcPgm, matchMpcSamplesToFiles } from '../lib/mpcImport'
 import { parseLcdk, matchLcdkSamplesToFiles } from '../lib/lcdkImport'
 import { db } from '../lib/db'
 import { BANK_COUNT } from '../lib/constants'
+import { showConfirm } from '../store/confirmDialog'
 import type { SampleAsset, SampleLayer } from '../types'
 import { midiToName, uid } from '../lib/utils'
 import {
@@ -537,6 +538,31 @@ export function PadGrid() {
                     const updated = useStore.getState().samples.filter((x) => x.autosampleRunId === groupId)
                     for (const sample of updated) void db.putSample(sample)
                     addToast(`Assigned ${noteGroups.length} note${noteGroups.length !== 1 ? 's' : ''} to pads`, 'success')
+
+                    // Import sequencer patterns if included (LCDK kits)
+                    const patternSrc = groupSamples.find((s) => s.autosamplePatterns)
+                    if (patternSrc?.autosamplePatterns) {
+                      void (async () => {
+                        try {
+                          const patterns = JSON.parse(patternSrc.autosamplePatterns!) as Array<{ index: number; steps: Array<unknown> }>
+                          const count = patterns.length
+                          if (count > 0) {
+                            const confirmed = await showConfirm(
+                              `This kit includes ${count} sequencer pattern${count !== 1 ? 's' : ''}. Import them?`,
+                            )
+                            if (confirmed) {
+                              const padIdxToId = new Map<number, string>()
+                              let idx = 0
+                              for (const [padId] of assignMap) {
+                                padIdxToId.set(idx, padId)
+                                idx++
+                              }
+                              await useStore.getState().importPatternsForGroup(patternSrc.autosamplePatterns!, padIdxToId, patternSrc.autosampleRunLabel)
+                            }
+                          }
+                        } catch { /* ignore parse errors */ }
+                      })()
+                    }
                     return
                   }
                 }
