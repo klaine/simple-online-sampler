@@ -347,7 +347,8 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - **Duplicate button (CC 40)**: doubles active pattern length up to 64 steps (copies events to second half)
 - **Shift + Duplicate (CC 90 + CC 40)**: halves active pattern length (truncates out-of-range events)
 - **Bottom row**: notes 1–8 and narrow CCs 101–108 switch between 8 banks
-- LED feedback: drum pads show assignment state, sequencer steps show event state, active bank highlighted in orange, Click/Undo buttons dim when shiftable, chromatic root in red
+- **Arrow left (CC 91)** / **arrow right (CC 92)**: switch to previous/next pattern (wraps around)
+- LED feedback: drum pads show assignment state, sequencer steps show event state, active bank highlighted in orange, Click/Undo buttons dim when shiftable, arrow buttons dim when navigable, chromatic root in red
 
 ### Autosampler
 - `AutosampleDialog.tsx` — Full autosample workflow: MIDI out → audio capture → auto-trim → normalize → pad assignment

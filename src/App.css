@@ -889,6 +889,7 @@ select.tb-led-value {
   scrollbar-color: rgba(255, 255, 255, 0.08) transparent;
   padding-bottom: 2px;
   position: relative;
+  min-width: 0;
 }
 
 .pattern-strip::-webkit-scrollbar {
@@ -2435,6 +2436,7 @@ select.tb-led-value {
   flex-direction: column;
   align-self: stretch;
   overflow-y: hidden;
+  overflow-x: visible;
 }
 
 .perf-left > .sequencer > .sequencer-matrix-wrap {

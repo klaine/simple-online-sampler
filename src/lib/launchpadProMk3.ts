@@ -54,6 +54,8 @@ const LEFT_COL_DUPLICATE = 50
 const LEFT_COL_SHIFT = 90
 const LEFT_COL_CLICK = 80
 const LEFT_COL_UNDO = 70
+const LEFT_COL_ARROW_LEFT = 91
+const LEFT_COL_ARROW_RIGHT = 92
 
 // Colors for functional buttons
 const COLOR_RECORD_OFF: [number, number, number] = [20, 20, 20]
@@ -180,6 +182,7 @@ let _setBankCb: ((bank: number) => void) | null = null
 let _getIsPlaying: (() => boolean) | null = null
 let _getIsRecordArmed: (() => boolean) | null = null
 let _duplicateLengthCb: ((mode: 'double' | 'half') => void) | null = null
+let _switchPatternCb: ((direction: -1 | 1) => void) | null = null
 
 let _activeBank = 0  // 0-7
 let _shiftHeld = false
@@ -248,6 +251,7 @@ export function connect(
     toggleRecord: () => void
     setBank: (bank: number) => void
     duplicateLength: (mode: 'double' | 'half') => void
+    switchPattern: (direction: -1 | 1) => void
     subscribeStore: (listener: () => void) => () => void
   },
 ): void {
@@ -269,6 +273,7 @@ export function connect(
   _toggleRecordCb = opts.toggleRecord
   _setBankCb = opts.setBank
   _duplicateLengthCb = opts.duplicateLength
+  _switchPatternCb = opts.switchPattern
   _getSelectedPadId = opts.getSelectedPadId
 
   // Enter Programmer mode — send to ALL outputs
@@ -325,6 +330,7 @@ export function disconnect(): void {
   _shiftHeld = false
   _chromaticShift = 0
   _duplicateLengthCb = null
+  _switchPatternCb = null
 }
 
 /** Called externally when a pad is triggered (from UI, MIDI, or sequencer) */
@@ -456,6 +462,8 @@ function clearAll(): void {
   setLedCC(LEFT_COL_DUPLICATE, PAL_OFF)
   setLedCC(LEFT_COL_CLICK, PAL_OFF)
   setLedCC(LEFT_COL_UNDO, PAL_OFF)
+  setLedCC(LEFT_COL_ARROW_LEFT, PAL_OFF)
+  setLedCC(LEFT_COL_ARROW_RIGHT, PAL_OFF)
 }
 
 function repaintDrumGrid(): void {
@@ -559,6 +567,14 @@ function handleMidiMessage(event: MIDIMessageEvent): void {
         _chromaticShift = Math.max(-48, _chromaticShift - 4)
         repaintChromaticGrid()
         repaintFunctionButtons()
+        return
+      }
+      if (note === LEFT_COL_ARROW_LEFT) {
+        _switchPatternCb?.(-1)
+        return
+      }
+      if (note === LEFT_COL_ARROW_RIGHT) {
+        _switchPatternCb?.(1)
         return
       }
       // Bottom narrow row CCs for bank switching (all 8)
@@ -673,6 +689,10 @@ function repaintFunctionButtons(): void {
   // Undo (CC70) — octave down indicator
   const canShiftDown = _chromaticShift > -48
   setLedCC(LEFT_COL_UNDO, canShiftDown ? rgbToPalette(20, 20, 40) : PAL_DIM_GRAY)
+
+  // Arrow buttons (CC91 left, CC92 right) — pattern navigation
+  setLedCC(LEFT_COL_ARROW_LEFT, rgbToPalette(...COLOR_DUPLICATE_DIM))
+  setLedCC(LEFT_COL_ARROW_RIGHT, rgbToPalette(...COLOR_DUPLICATE_DIM))
 
   // Bank buttons — bottom row (note-addressed) and narrow CCs
   for (let i = 0; i < 8; i++) {

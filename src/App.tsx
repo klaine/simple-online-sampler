@@ -605,6 +605,15 @@ function App() {
           duplicateLength: (mode) => {
             void useStore.getState().duplicatePatternLength(mode)
           },
+          switchPattern: (direction) => {
+            const s = useStore.getState()
+            if (!s.project || s.project.sequences.length <= 1) return
+            const currentId = s.activeSequenceId
+            const idx = s.project.sequences.findIndex((seq) => seq.id === currentId)
+            if (idx === -1) return
+            const nextIdx = (idx + direction + s.project.sequences.length) % s.project.sequences.length
+            useStore.setState({ activeSequenceId: s.project.sequences[nextIdx].id })
+          },
           subscribeStore: (listener) => useStore.subscribe(listener),
         })
       }
