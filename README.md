@@ -7,21 +7,20 @@ A browser-based sampler/sequencer built with React, TypeScript, and the Web Audi
 ### Sampler
 - **128 pads** across 8 banks (16 pads per bank)
 - **Velocity-sensitive pads** — vertical click/touch position maps to velocity
-- **3 layout modes** — Classic (3-column), Wide (sequencer on top), Performance (pads + tabbed panels, auto-detected on landscape mobile)
+- **Performance layout** — pads + tabbed panels (library, pad editor, sequencer, mixer, projects, settings); responsive layout for phones
 - **Touch support** for mobile/tablet pad triggering, touch drag-and-drop for samples and patterns to song chain
 - **Multisample** support: round-robin, random, velocity-layer, and stacked modes
-- **Per-pad settings**: gain, pitch (semitones + fine cents), playback mode (one-shot/ADSR), trim, MC-909 style AMP envelope (vertical faders, ADSR curve visualization), filter (LP/HP/BP) with filter envelope (ADSR+depth, both sample and synth pads), per-pad pan (with random pan mode), mix bus routing, choke groups (1–8), normalize, crop
-- **Additive synth engine** — each pad can be sample-based or synth-based (16 sine-wave harmonics with filter envelope and LFO)
-- **Synth patches** — save, load, export/import (.ospatch), drag between library and pads
+- **Per-pad settings**: gain, pitch (semitones + fine cents), playback mode (one-shot/ADSR/AHR), trim, MC-909 style AMP envelope (vertical faders, ADSR/AHR curve visualization), filter (LP12/LP24/HP/BP/LPHP) with per-knob exponential frequency mapping, per-pad pan (with random pan mode), mix bus routing, choke groups (1–8), normalize, crop, base note, MIDI out
+- **Multi-pad batch editing** — Ctrl+click to toggle, Shift+click to range-select pads; batch-edit gain, mode, bus, choke, filter, pan, mute
 - **Pad naming** — editable pad names with reset to default
 - **Pad drag** — move, copy, or swap pads across banks (hover bank tabs to switch)
 - **Bank naming** — double-click bank buttons to rename
 - **Multi-file drop** — drop multiple audio files on a pad to assign sequentially
 - **Sample assign modes** — replace existing sample or add as multisample layer
 - **Record to pad** — record button on empty pads opens recording dialog targeted to that pad
-- **Waveform editor** with zoom, trim handles, and auto-scroll
-- **Sample library** with drag-and-drop import, search, sort, preview playback, chop, chromatic spread, collapsible sidebar
-- **Sample grouping** — select multiple samples and group them; remove individual samples from groups
+- **Waveform editor** with zoom, trim handles, and auto-scroll (gain-scaled display, layer-aware)
+- **Sample library** with drag-and-drop import, search, sort, preview playback, chop, chromatic spread, collapsible sidebar, projects section
+- **Sample grouping** — select multiple samples and group them; remove individual samples from groups; velocity subgroups with drag-to-pad as velocity layers
 - **Auto-grouping** — multi-file drops (library or pad grid) automatically group samples by common filename prefix
 - **Drag sample to pad** from the library sidebar
 - **Recording** directly in the browser (AudioWorklet-based, with normalize option)
@@ -29,19 +28,22 @@ A browser-based sampler/sequencer built with React, TypeScript, and the Web Audi
 
 ### Sequencer
 - **Step sequencer** with per-step velocity, gate length, and pitch offset
-- **Inline piano roll** for synth pads — 2-octave grid (click-to-toggle notes, Shift+drag velocity, drag note edges to adjust length), octave scroll, aligned with sequencer step columns
+- **Inline piano roll** for any pad — 2-octave grid (click-to-toggle notes, Shift+drag velocity, drag note edges to adjust length), octave scroll, aligned with sequencer step columns
 - **Configurable resolution** — 1/16 or 1/32 note steps per pattern
 - **Configurable step count** per pattern
 - **Gate note resize** — drag handles on gate-mode notes to adjust length
 - **Velocity editing** — Shift+drag on a lit step to adjust velocity
-- **Multiple patterns** with color coding and double-click rename
+- **Multiple patterns** with color coding and double-click rename, horizontal-scroll pattern strip
 - **Song chain** for arranging patterns with repeat counts, loop start/end markers, drag reorder, and copy/paste blocks
+- **Visual song arrangement timeline** — pattern blocks as colored bars, drag to reorder, right-click for delete/duplicate, synced playhead
 - **Playback scope** — play active pattern or full song chain
 - **Loop toggle** for transport looping
 - **Metronome** with volume control, accent on beat 1, and count-in (1/2/4 bars) before recording
 - **Live recording** with quantize, overdub, and replace modes
+- **Capture MIDI** — Ableton-style retrospective recording; always buffers incoming pad triggers, capture to new pattern on demand
 - **Lane tools**: fill, shift, random, clear, duplicate, mute per lane
-- **Undo/redo** for sequencer edits
+- **Undo/redo** for project-level edits (patterns, pads, mixer, transport)
+- **Multi-pad batch editing** — Ctrl+click/Shift+click to select pads, batch-edit shared settings
 - **Hide empty lanes** toggle (respects MIDI-out-only pads)
 - **Performance stats overlay** — FPS, tick count, late notes, max/P95 drift
 
@@ -59,11 +61,12 @@ A browser-based sampler/sequencer built with React, TypeScript, and the Web Audi
 - **MIDI input**: trigger pads from external controllers
 - **Pad MIDI channel**: global filter restricts which MIDI channel triggers pads
 - **Per-pad MIDI output**: configurable device, channel, note, velocity
-- **Per-synth MIDI input**: synth pads receive chromatic note input on their own MIDI channel/device
 - **Computer keyboard chromatic input**: Ableton-style 2-octave layout, toggle via TopBar button
 - **Sequencer MIDI out**: time-aligned with audio via Web MIDI timestamp scheduling + output latency compensation
 - **MIDI loop prevention** with 80ms echo suppression
 - **MIDI export** of patterns/song chain
+- **Launchpad Pro MK3** (Programmer Mode): drum pad grid, chromatic play grid with root note highlight and shift controls, step sequencer display, Duplicate button for pattern double/half, pattern navigation, LED feedback
+- **Capture MIDI**: always buffers incoming MIDI/note events; one-click capture to new pattern
 
 ### Autosampler
 - Automated sampling of external MIDI gear
@@ -78,10 +81,16 @@ A browser-based sampler/sequencer built with React, TypeScript, and the Web Audi
 - MIDI output and audio input device selections persisted across sessions
 - Export/import groups as ZIP with metadata
 
+### Import
+- **Battery 4 monolith** (`.nbkt`/`.nbk`): extracts embedded WAV samples, FastLZ-decompresses patch data for kit name, choke groups, velocity layers, and cell mapping; encrypted (factory) kits fall back to filename-based processing
+- **Loopcloud Drum** (`.lcdk`): pad mappings with volume/pan/filter/choke/transpose/attack/hold/release, sequencer pattern import, muted pads preserved
+- **MPC** (`.pgm`): per-pad choke group, pan, level, tuning, filter, envelope, play mode, velocity layers (up to 4), ordered pad assignment
+- **WAV metadata tags**: LIST/INFO chunks (INAM, IART, ICMT, etc.) parsed and displayed as inline chips; configurable per-tag-type visibility toggle
+- **Folder drop**: auto-detects drum kits by filename categorization, offers MPC-style 16-pad layout mapping
+- **ZIP import**: preserves group metadata (trim, bus, choke, pad index) via `metadata.json`
+
 ### Export & Import
 - **WAV export**: active pattern (with loop markers) or full song chain
-- **Synth WAV export**: render synth pad to WAV with loop points
-- **Synth patch export/import**: `.ospatch` JSON files
 - **MIDI export**: patterns with pitch transposition
 - **Standalone HTML** export
 - **Project import/export** as ZIP packages
@@ -128,8 +137,8 @@ Runs TypeScript type checking followed by Vite production build.
 | `T` | Tap tempo |
 | `1`–`8` | Switch pad bank |
 | `Escape` | Close dialog / panel |
-| `Cmd/Ctrl+Z` | Undo (sequencer) |
-| `Cmd/Ctrl+Shift+Z` / `Cmd/Ctrl+Y` | Redo (sequencer) |
+| `Cmd/Ctrl+Z` | Undo |
+| `Cmd/Ctrl+Shift+Z` / `Cmd/Ctrl+Y` | Redo |
 | `Cmd/Ctrl+D` | Duplicate pattern |
 | `Cmd/Ctrl+C` / `Cmd/Ctrl+V` | Copy / paste song chain block |
 | `Delete` / `Backspace` | Remove selected chain block |
@@ -138,12 +147,12 @@ Runs TypeScript type checking followed by Vite production build.
 | `Alt+Arrow Left/Right` | Nudge gate note edge |
 | `Alt+Shift+Arrow Left/Right` | Nudge opposite gate note edge |
 | Vertical drag on BPM/Swing | Adjust value by dragging up/down |
-| `Z`-`M` / `Q`-`U` (keyboard mode) | Play chromatic notes on selected synth pad |
+| `Z`-`M` / `Q`-`U` (keyboard mode) | Play chromatic notes on selected pad |
 | `-` / `=` (keyboard mode) | Shift computer keyboard octave down/up |
 
 ## Architecture
 
-Single-page app with all state in a Zustand store (~4600 lines). Audio runs on the Web Audio API with a worker-based transport clock for reliable timing. See [AGENTS.md](./AGENTS.md) for detailed architecture documentation.
+Single-page app with all state in a Zustand store assembled from slice factories. Audio runs on the Web Audio API with a worker-based transport clock for reliable timing. See [AGENTS.md](./AGENTS.md) for detailed architecture documentation.
 
 ### Key Design Decisions
 
