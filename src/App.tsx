@@ -803,7 +803,7 @@ function App() {
     const observer = new ResizeObserver(() => draw())
     observer.observe(canvas)
     return () => observer.disconnect()
-  }, [waveformPeaks, waveformZoom, padEditorCollapsed, effectiveGain])
+  }, [waveformPeaks, waveformZoom, padEditorCollapsed, effectiveGain, performanceTab])
 
   // --- Sync sequenceLengthDraft from visible sequence ---
   useEffect(() => {
