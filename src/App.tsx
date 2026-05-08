@@ -84,21 +84,22 @@ let _waveformChannelCache: { sampleId: string; channel: Float32Array } | null = 
 // Use Web Share API (with file support) when available, fall back to anchor.
 // ---------------------------------------------------------------------------
 async function downloadOrShare(blob: Blob, filename: string): Promise<void> {
-  const file = new File([blob], filename, { type: blob.type })
+  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+  
   if (
+    isMobile &&
     typeof navigator !== 'undefined' &&
     typeof navigator.canShare === 'function' &&
-    navigator.canShare({ files: [file] })
+    navigator.canShare({ files: [new File([blob], filename, { type: blob.type })] })
   ) {
     try {
-      await navigator.share({ files: [file] })
+      await navigator.share({ files: [new File([blob], filename, { type: blob.type })] })
       return
     } catch (err) {
-      // User cancelled share sheet (AbortError) — not an error worth toasting
       if (err instanceof Error && err.name === 'AbortError') return
-      // Other share errors: fall through to anchor fallback
     }
   }
+  
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
   anchor.href = url
