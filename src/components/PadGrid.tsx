@@ -18,6 +18,7 @@ import { MetadataTagChips } from './SampleLibrary'
 import { renderPadAudio } from '../lib/audioExport'
 
 let _padDragOutObjectUrl: string | null = null
+let _padDragOutBlob: Blob | null = null
 let _padDragOutPadId: string | null = null
 let _padDragOutTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -273,21 +274,26 @@ export function PadGrid() {
                 
                 // If we have a pre-rendered URL, attach it for drag-out
                 if (_padDragOutObjectUrl && _padDragOutPadId === pad.id) {
-                  const filename = `${project?.name.replace(/\s+/g, '_') || 'Sketch'}_${(bankNames?.[pad.bank] || `Bank${pad.bank + 1}`).replace(/\s+/g, '')}_${pad.name.replace(/\s+/g, '_')}.wav`
+                  const sanitizedPadName = pad.name.replace(/\.[^/.]+$/, "").replace(/\s+/g, '_')
+                  const filename = `${project?.name.replace(/\s+/g, '_') || 'Sketch'}_${(bankNames?.[pad.bank] || `Bank${pad.bank + 1}`).replace(/\s+/g, '')}_${sanitizedPadName}.wav`
+                  
+                  // For browsers that support File API in dataTransfer
+                  if (_padDragOutBlob) {
+                    const file = new File([_padDragOutBlob], filename, { type: 'audio/wav' })
+                    e.dataTransfer.items.add(file)
+                  }
+                  
+                  // For Chromium fallback
                   e.dataTransfer.setData('DownloadURL', `audio/wav:${filename}:${_padDragOutObjectUrl}`)
                   
-                  // For browsers that support File API in dataTransfer (Firefox)
-                  // Note: we can't easily recreate the File object from the URL here 
-                  // without the original blob. Let's see if we should store the blob too.
+                  e.dataTransfer.effectAllowed = 'copyMove'
                 }
               }}
-              onDragEnd={() => {
+onDragEnd={() => {
                 if (_padDragOutTimer) clearTimeout(_padDragOutTimer)
                 _padDragOutTimer = null
-                // We DON'T revoke immediately here because the browser needs the URL 
-                // to perform the actual download after the drop.
-                // We'll revoke it on the next mousedown or app unload.
                 _padDragOutPadId = null
+                _padDragOutBlob = null
               }}
               onMouseDown={(e) => {
                 if (Date.now() - _lastTouchTime < 500) return
@@ -308,6 +314,7 @@ export function PadGrid() {
                       _padDragOutPadId = pad.id
                       const blob = await renderPadAudio(project, pad, (audioEngine as any).buffers)
                       _padDragOutObjectUrl = URL.createObjectURL(blob)
+                      _padDragOutBlob = blob
                     }
                   }, 150)
                 }
