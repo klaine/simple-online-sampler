@@ -996,18 +996,26 @@ select.tb-led-value {
 
 /* Actions: hidden by default, shown on active chip or desktop hover */
 .pattern-actions {
-  display: none;
+  display: flex;
   align-items: center;
   gap: 0.1rem;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
 }
 
 .pattern-chip.active .pattern-actions {
-  display: flex;
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
 }
 
 @media (hover: hover) {
   .pattern-chip:hover .pattern-actions {
-    display: flex;
+    visibility: visible;
+    opacity: 1;
+    pointer-events: auto;
   }
 }
 
