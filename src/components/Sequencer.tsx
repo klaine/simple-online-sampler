@@ -21,6 +21,8 @@ import { Timeline } from './Timeline'
 import { makeTouchDragHandlers } from '../lib/touchDrag'
 import { buildMidiForSequenceSync, warmupMidiModule } from '../lib/midiExport'
 
+let _dragOutObjectUrl: string | null = null
+
 function ColorPicker({ color, onChange }: { color: string; onChange: (c: string) => void }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -364,6 +366,9 @@ export function Sequencer() {
                   const blob = new Blob([new Uint8Array(midiData)], { type: 'audio/midi' })
                   const file = new File([blob], `${sequence.name}.mid`, { type: 'audio/midi' })
                   e.dataTransfer.items.add(file)
+                  const url = URL.createObjectURL(blob)
+                  e.dataTransfer.setData('DownloadURL', `audio/midi:${sequence.name}.mid:${url}`)
+                  _dragOutObjectUrl = url
                   e.dataTransfer.effectAllowed = 'copyMove'
                 }
               }}
@@ -379,7 +384,7 @@ export function Sequencer() {
                 }
                 setDragOverPatternId(null)
               }}
-              onDragEnd={() => setDragOverPatternId(null)}
+              onDragEnd={() => { setDragOverPatternId(null); if (_dragOutObjectUrl) { URL.revokeObjectURL(_dragOutObjectUrl); _dragOutObjectUrl = null } }}
               onClick={() => useStore.setState({ activeSequenceId: sequence.id })}
               title="Drag to song chain · Drag out for MIDI file"
             >
