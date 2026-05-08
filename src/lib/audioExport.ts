@@ -3,6 +3,7 @@ import { BUS_IDS } from '../types'
 import { buildEffectChain, getSCWorkletUrl } from './audioEngine'
 import { encodeWav } from './wavEncode'
 import type { WavLoopPoints } from './wavEncode'
+import { audioBufferToChannels, encodeMp3 } from './mp3Encode'
 import {
   mergeLayerSettings,
   resolveLayer,
@@ -11,7 +12,8 @@ import {
   createPanNode,
 } from './voiceUtils'
 
-type ExportMode = 'pattern' | 'song'
+export type ExportMode = 'pattern' | 'song'
+export type ExportFormat = 'wav' | 'mp3'
 
 interface ScheduledEvent {
   pad: Pad
@@ -20,9 +22,10 @@ interface ScheduledEvent {
   stepDurationSec: number
 }
 
-interface RenderOptions {
+export interface RenderOptions {
   mode: ExportMode
   activeSequenceId: string
+  format?: ExportFormat
 }
 
 const DEFAULT_SAMPLE_RATE = 44_100
@@ -115,7 +118,7 @@ const buildScheduledEvents = (project: Project, options: RenderOptions): Schedul
   return scheduled
 }
 
-export const renderProjectAudioWav = async (
+export const renderProjectAudio = async (
   project: Project,
   samplesById: Map<string, SampleAsset>,
   options: RenderOptions,
@@ -380,15 +383,23 @@ export const renderProjectAudioWav = async (
       // Trim rendered buffer to exactly 2 cycles so the last note's release tail
       // doesn't ring out past the loop end (matches live looped playback behavior)
       if (loopEndFrame < rendered.length) {
-        const trimmed = new OfflineAudioContext(rendered.numberOfChannels, loopEndFrame, rendered.sampleRate)
-        // We just need to copy the channel data, not re-render
-        const trimmedBuf = trimmed.createBuffer(rendered.numberOfChannels, loopEndFrame, rendered.sampleRate)
+        const trimmedBuf = new AudioBuffer({
+          numberOfChannels: rendered.numberOfChannels,
+          length: loopEndFrame,
+          sampleRate: rendered.sampleRate,
+        })
         for (let ch = 0; ch < rendered.numberOfChannels; ch++) {
           trimmedBuf.copyToChannel(rendered.getChannelData(ch).subarray(0, loopEndFrame), ch)
         }
         finalBuffer = trimmedBuf
       }
     }
+  }
+
+  const format = options.format ?? 'wav'
+
+  if (format === 'mp3') {
+    return await encodeMp3(audioBufferToChannels(finalBuffer), finalBuffer.sampleRate)
   }
 
   return encodeWav(finalBuffer, loopPoints)

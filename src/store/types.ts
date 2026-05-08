@@ -383,7 +383,7 @@ export interface AppState {
   exportAllMidi: () => void
   exportPack: () => Promise<void>
   exportStandalonePage: () => Promise<void>
-  exportAudio: (mode: 'pattern' | 'song') => Promise<void>
+  exportAudio: (mode: 'pattern' | 'song', format?: 'wav' | 'mp3') => Promise<void>
   previewImport: () => Promise<void>
   runImport: () => Promise<void>
 

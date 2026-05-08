@@ -1,11 +1,13 @@
+import { useState } from 'react'
 import { useStore } from '../store'
+import type { ExportFormat } from '../lib/audioExport'
 
 interface ExportDialogProps {
   onExportMidi: () => void
   onExportPack: () => void
   onExportStandalone: () => void
-  onExportAudioPattern: () => void
-  onExportAudioSong: () => void
+  onExportAudioPattern: (format: ExportFormat) => void
+  onExportAudioSong: (format: ExportFormat) => void
   songChainEmpty: boolean
 }
 
@@ -18,6 +20,8 @@ export function ExportDialog({
   songChainEmpty,
 }: ExportDialogProps) {
   const isExporting = useStore((s) => s.isExporting)
+  const [patternFormat, setPatternFormat] = useState<ExportFormat>('wav')
+  const [songFormat, setSongFormat] = useState<ExportFormat>('wav')
   const close = () => { if (!isExporting) useStore.setState({ showExportDialog: false }) }
 
   return (
@@ -42,16 +46,36 @@ export function ExportDialog({
               <button type="button" onClick={() => { onExportStandalone(); close() }}>
                 Standalone HTML
               </button>
-              <button type="button" onClick={onExportAudioPattern}>
-                Audio: Active Pattern
-              </button>
-              <button
-                type="button"
-                onClick={onExportAudioSong}
-                disabled={songChainEmpty}
-              >
-                Audio: Song Chain
-              </button>
+              <div className="export-audio-row">
+                <button type="button" onClick={() => onExportAudioPattern(patternFormat)}>
+                  Audio: Active Pattern
+                </button>
+                <select
+                  className="export-format-select"
+                  value={patternFormat}
+                  onChange={(e) => setPatternFormat(e.target.value as ExportFormat)}
+                >
+                  <option value="wav">WAV</option>
+                  <option value="mp3">MP3 320k</option>
+                </select>
+              </div>
+              <div className="export-audio-row">
+                <button
+                  type="button"
+                  onClick={() => onExportAudioSong(songFormat)}
+                  disabled={songChainEmpty}
+                >
+                  Audio: Song Chain
+                </button>
+                <select
+                  className="export-format-select"
+                  value={songFormat}
+                  onChange={(e) => setSongFormat(e.target.value as ExportFormat)}
+                >
+                  <option value="wav">WAV</option>
+                  <option value="mp3">MP3 320k</option>
+                </select>
+              </div>
             </div>
           </>
         )}

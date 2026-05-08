@@ -3,7 +3,8 @@ import './App.css'
 import { audioEngine } from './lib/audioEngine'
 import { db } from './lib/db'
 import { buildMidiForSequence } from './lib/midiExport'
-import { renderProjectAudioWav } from './lib/audioExport'
+import { renderProjectAudio } from './lib/audioExport'
+import type { ExportFormat } from './lib/audioExport'
 import {
   buildImportConflictReport,
   exportProjectPackage,
@@ -1234,7 +1235,7 @@ function App() {
     await downloadOrShare(blob, `${project.name.replace(/\s+/g, '-')}.standalone.html`)
   }, [project])
 
-  const exportAudio = useCallback(async (mode: 'pattern' | 'song') => {
+  const exportAudio = useCallback(async (mode: 'pattern' | 'song', format: ExportFormat = 'wav') => {
     if (!project || !activeSequence) return
     if (mode === 'song' && project.songChain.length === 0) return
     useStore.setState({ isExporting: true })
@@ -1253,17 +1254,19 @@ function App() {
     )
     const samplesById = new Map(samplePairs.filter((e): e is [string, SampleAsset] => Boolean(e[1])))
     try {
-      const wav = await renderProjectAudioWav(project, samplesById, {
+      const blob = await renderProjectAudio(project, samplesById, {
         mode,
         activeSequenceId: activeSequence.id,
+        format,
       })
       const safeName = project.name.replace(/\s+/g, '-')
       const bpmTag = `${project.bpm}bpm`
+      const ext = format === 'mp3' ? 'mp3' : 'wav'
       const filename =
         mode === 'pattern'
-          ? `${safeName}-${bpmTag}-pattern-${activeSequence.name.replace(/\s+/g, '-')}-x2-loop.wav`
-          : `${safeName}-${bpmTag}-song-chain.wav`
-      await downloadOrShare(wav, filename)
+          ? `${safeName}-${bpmTag}-pattern-${activeSequence.name.replace(/\s+/g, '-')}-x2-loop.${ext}`
+          : `${safeName}-${bpmTag}-song-chain.${ext}`
+      await downloadOrShare(blob, filename)
       useStore.getState().addToast(`Exported ${filename}`, 'success')
       useStore.setState({ showExportDialog: false })
     } catch (error) {
@@ -1458,8 +1461,8 @@ function App() {
           onExportMidi={exportAllMidi}
           onExportPack={() => void exportPack()}
           onExportStandalone={() => void exportStandalonePage()}
-          onExportAudioPattern={() => void exportAudio('pattern')}
-          onExportAudioSong={() => void exportAudio('song')}
+          onExportAudioPattern={(format) => void exportAudio('pattern', format)}
+          onExportAudioSong={(format) => void exportAudio('song', format)}
           songChainEmpty={project.songChain.length === 0}
         />
       )}
