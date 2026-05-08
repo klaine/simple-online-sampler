@@ -2,7 +2,7 @@ import { useEffect, useRef, useCallback, useState } from 'react'
 import './App.css'
 import { audioEngine } from './lib/audioEngine'
 import { db } from './lib/db'
-import { buildMidiForSequence } from './lib/midiExport'
+import { buildMidiForSequence, buildMidiForSongChain } from './lib/midiExport'
 import { renderProjectAudio } from './lib/audioExport'
 import type { ExportFormat } from './lib/audioExport'
 import {
@@ -1207,6 +1207,15 @@ function App() {
     }
   }, [project])
 
+  const exportSongChainMidi = useCallback(async () => {
+    if (!project) return
+    if (project.songChain.length === 0) return
+    const bytes = await buildMidiForSongChain(project.sequences, project.pads, project.bpm, project.songChain, project.swing ?? 0)
+    const blob = new Blob([new Uint8Array(bytes)], { type: 'audio/midi' })
+    const safeName = project.name.replace(/\s+/g, '-')
+    await downloadOrShare(blob, `${safeName}-song-chain.mid`)
+  }, [project])
+
   const exportPack = useCallback(async () => {
     if (!project) return
     const { samples } = useStore.getState()
@@ -1459,6 +1468,7 @@ function App() {
       {showExportDialog && (
         <ExportDialog
           onExportMidi={exportAllMidi}
+          onExportSongChainMidi={() => void exportSongChainMidi()}
           onExportPack={() => void exportPack()}
           onExportStandalone={() => void exportStandalonePage()}
           onExportAudioPattern={(format) => void exportAudio('pattern', format)}

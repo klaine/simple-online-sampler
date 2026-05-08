@@ -4,6 +4,7 @@ import type { ExportFormat } from '../lib/audioExport'
 
 interface ExportDialogProps {
   onExportMidi: () => void
+  onExportSongChainMidi: () => void
   onExportPack: () => void
   onExportStandalone: () => void
   onExportAudioPattern: (format: ExportFormat) => void
@@ -13,6 +14,7 @@ interface ExportDialogProps {
 
 export function ExportDialog({
   onExportMidi,
+  onExportSongChainMidi,
   onExportPack,
   onExportStandalone,
   onExportAudioPattern,
@@ -39,6 +41,13 @@ export function ExportDialog({
             <div className="import-actions">
               <button type="button" onClick={() => { onExportMidi(); close() }}>
                 MIDI Files
+              </button>
+              <button
+                type="button"
+                onClick={() => { onExportSongChainMidi(); close() }}
+                disabled={songChainEmpty}
+              >
+                MIDI: Song Chain
               </button>
               <button type="button" onClick={() => { onExportPack(); close() }}>
                 Project Package
