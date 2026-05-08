@@ -4158,3 +4158,45 @@ select.tb-led-value {
   background: var(--accent);
   color: #111;
 }
+
+.timeline-context-menu {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.timeline-context-menu-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px;
+  min-width: 140px;
+}
+
+.timeline-context-btn {
+  background: var(--btn-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 0.75rem;
+  padding: 4px 10px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.timeline-context-btn:hover {
+  background: var(--accent);
+  color: #111;
+}
+
+.timeline-context-cancel:hover {
+  background: var(--btn-bg);
+  color: var(--text);
+}
