@@ -1,5 +1,6 @@
 import type { BusId, EffectSlot, Pad, PadSettings, Project, SampleAsset, SequenceEvent, SequencePattern } from '../types'
 import { BUS_IDS } from '../types'
+import { db } from './db'
 import { buildEffectChain, getSCWorkletUrl } from './audioEngine'
 import { encodeWav } from './wavEncode'
 import type { WavLoopPoints } from './wavEncode'
@@ -116,6 +117,177 @@ const buildScheduledEvents = (project: Project, options: RenderOptions): Schedul
   })
 
   return scheduled
+}
+
+export const renderPadAudio = async (
+  project: Project,
+  pad: Pad,
+  decodedBuffers?: Map<string, AudioBuffer>,
+): Promise<Blob> => {
+  // Build a synthetic single-note event
+  const syntheticEvent: SequenceEvent = {
+    id: 'synthetic-pad-export',
+    padId: pad.id,
+    step: 0,
+    velocity: 127,
+    gate: 64,
+  }
+
+  const scheduled: ScheduledEvent[] = [{
+    pad,
+    event: syntheticEvent,
+    atSec: 0,
+    stepDurationSec: stepDurationSec(project.bpm, 16),
+  }]
+
+  const sampleIds = collectAllSampleIds(pad)
+  const decodeContext = new AudioContext()
+  const decodedBySampleId = new Map<string, AudioBuffer>()
+  
+  try {
+    for (const sampleId of sampleIds) {
+      const cached = decodedBuffers?.get(sampleId)
+      if (cached) {
+        decodedBySampleId.set(sampleId, cached)
+        continue
+      }
+      const sample = await db.getSample(sampleId)
+      if (!sample) continue
+      const audioBuffer = await decodeContext.decodeAudioData(await sample.blob.arrayBuffer())
+      decodedBySampleId.set(sampleId, audioBuffer)
+    }
+  } finally {
+    await decodeContext.close()
+  }
+
+  exportRrCounters.clear()
+  let maxNoteEndSec = 0
+
+  const buildNoteEntry = (
+    entry: ScheduledEvent,
+    ms: PadSettings,
+    sourceBuffer: AudioBuffer,
+    atSecOverride?: number,
+  ) => {
+    const atSec = atSecOverride ?? entry.atSec
+    const trimStartSec = Math.max(0, Math.min(sourceBuffer.duration, ms.trim.start * sourceBuffer.duration))
+    const trimEndSec = Math.max(trimStartSec, Math.min(sourceBuffer.duration, ms.trim.end * sourceBuffer.duration))
+    
+    // Account for pitch shifting in duration calculation
+    const pitchRatio = Math.pow(2, ((ms.semitones ?? 0) + (ms.fineCents ?? 0) / 100) / 12)
+    const playbackDurationSec = Math.max(0.01, (trimEndSec - trimStartSec) / pitchRatio)
+    
+    const gate = Math.max(1, entry.event.gate)
+    const forceDurationSec = Math.max(MIN_FORCE_DURATION_SEC, gate * entry.stepDurationSec)
+    const releaseSec = Math.max(0, ms.envelope.release)
+
+    let noteDurationSec: number
+    let sourceStopSec: number
+
+    if (ms.mode === 'adsr') {
+      noteDurationSec = Math.min(playbackDurationSec, forceDurationSec)
+      sourceStopSec = Math.min(playbackDurationSec, noteDurationSec + releaseSec)
+    } else if (ms.mode === 'ahr') {
+      const holdSec = ms.envelope.hold ?? 0
+      const ahrDuration = ms.envelope.attack + holdSec + releaseSec
+      noteDurationSec = Math.min(playbackDurationSec, ahrDuration)
+      sourceStopSec = noteDurationSec
+    } else {
+      noteDurationSec = playbackDurationSec
+      sourceStopSec = playbackDurationSec
+    }
+
+    const noteEndSec = atSec + sourceStopSec
+    maxNoteEndSec = Math.max(maxNoteEndSec, noteEndSec)
+
+    return {
+      entry: { ...entry, atSec },
+      ms,
+      sourceBuffer,
+      trimStartSec,
+      playbackDurationSec,
+      noteDurationSec,
+      sourceStopSec,
+      busId: (ms.bus ?? 'A') as BusId,
+      chokeGroup: 0,
+    }
+  }
+
+  const notes = [{ pad, sampleId: pad.settings.sampleId! }].flatMap(() => {
+    if (pad.settings.multiMode === 'stacked' && pad.settings.layers?.length > 0) {
+      return pad.settings.layers.map(layer => {
+        const sourceBuffer = decodedBySampleId.get(layer.sampleId)
+        if (!sourceBuffer) return null
+        const ms = mergeLayerSettings(pad.settings, layer)
+        const offsetSec = (layer.stackOffsetMs ?? 0) / 1000
+        return buildNoteEntry(scheduled[0], ms, sourceBuffer, offsetSec)
+      }).filter(Boolean) as any[]
+    }
+    const resolved = resolveLayer(pad, 127, exportRrCounter)
+    if (!resolved) return []
+    const sourceBuffer = decodedBySampleId.get(resolved.sampleId)
+    if (!sourceBuffer) return []
+    const ms = mergeLayerSettings(pad.settings, resolved.layer)
+    return [buildNoteEntry(scheduled[0], ms, sourceBuffer)]
+  })
+
+  if (notes.length === 0) throw new Error('No audio to render')
+
+  const totalDurationSec = Math.max(0.1, maxNoteEndSec + 0.1)
+  const offline = new OfflineAudioContext(2, Math.ceil(totalDurationSec * DEFAULT_SAMPLE_RATE), DEFAULT_SAMPLE_RATE)
+
+  // Sidechain worklet (if needed by master)
+  const masterNeedsSC = project.masterBus?.effects.some(s => s.type === 'sidechain-compressor' && s.enabled)
+  if (masterNeedsSC && 'audioWorklet' in offline) {
+    try { await offline.audioWorklet.addModule(getSCWorkletUrl()) } catch {}
+  }
+
+  const masterGain = offline.createGain()
+  masterGain.gain.value = (project.masterBus?.gain ?? 1) * 0.9
+  const masterEffects = buildEffectChain(offline, project.masterBus?.effects ?? [])
+  masterGain.connect(masterEffects.input)
+  masterEffects.output.connect(offline.destination)
+
+  const busGainNodes = new Map<BusId, GainNode>()
+  for (const busId of BUS_IDS) {
+    const bus = project.mixBuses?.find((b) => b.id === busId)
+    const gainNode = offline.createGain()
+    gainNode.gain.value = bus?.gain ?? 1
+    const panNode = offline.createStereoPanner()
+    panNode.pan.value = bus?.pan ?? 0
+    gainNode.connect(panNode)
+    const busEffects = buildEffectChain(offline, bus?.effects ?? [])
+    panNode.connect(busEffects.input)
+    busEffects.output.connect(masterGain)
+    busGainNodes.set(busId, gainNode)
+  }
+
+  notes.forEach(({ entry, ms, sourceBuffer, trimStartSec, playbackDurationSec, noteDurationSec, busId }) => {
+    const source = offline.createBufferSource()
+    source.buffer = sourceBuffer
+    const semitoneShift = (ms.semitones ?? 0) + (entry.event.semitones ?? 0)
+    const fineShift = (ms.fineCents ?? 0) / 100
+    source.playbackRate.value = Math.pow(2, (semitoneShift + fineShift) / 12)
+    const gainNode = offline.createGain()
+    const baseGain = ms.gain * (entry.event.velocity / 127)
+    const noteStart = entry.atSec
+
+    scheduleAmplitudeEnvelope(gainNode.gain, noteStart, baseGain, ms, playbackDurationSec, noteDurationSec, false)
+    source.connect(gainNode)
+    const padPanNode = createPanNode(offline, ms)
+    const filterChain = createFilterChain(offline, ms)
+    if (filterChain) {
+      gainNode.connect(filterChain.input)
+      filterChain.output.connect(padPanNode)
+    } else {
+      gainNode.connect(padPanNode)
+    }
+    padPanNode.connect(busGainNodes.get(busId)!)
+    source.start(noteStart, trimStartSec, sourceBuffer.duration - trimStartSec)
+  })
+
+  const rendered = await offline.startRendering()
+  return encodeWav(rendered)
 }
 
 export const renderProjectAudio = async (

@@ -93,6 +93,7 @@ A browser-based sampler/sequencer built with React, TypeScript, and the Web Audi
 - **Audio export**: active pattern (WAV with loop markers or MP3 320kbps) or full song chain (WAV or MP3 320kbps), per-button format selector
 - **MIDI export**: patterns with pitch transposition, or song chain (single-track, all patterns sequenced with repeats and swing)
 - **Pattern drag-out**: drag a pattern chip out of the browser to create a `.mid` file (desktop browsers)
+- **Pad drag-out**: drag a pad with a sample out of the browser to create a `.wav` file with all current pad settings applied (desktop browsers)
 - **Standalone HTML** export
 - **Project import/export** as ZIP packages
 - **Import modes**: New Project, Merge, or Overwrite with conflict preview

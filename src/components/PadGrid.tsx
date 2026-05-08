@@ -15,6 +15,11 @@ import {
   selectVisibleSequence,
 } from '../store'
 import { MetadataTagChips } from './SampleLibrary'
+import { renderPadAudio } from '../lib/audioExport'
+
+let _padDragOutObjectUrl: string | null = null
+let _padDragOutPadId: string | null = null
+let _padDragOutTimer: ReturnType<typeof setTimeout> | null = null
 
 // Guard: suppress mouse events that follow a recent touch (prevents double-trigger)
 let _lastTouchTime = 0
@@ -49,6 +54,7 @@ export function PadGrid() {
   const padHoldRecordingPadId = useStore((s) => s.padHoldRecordingPadId)
 
   const _lastClickedPadRef = useRef<string | null>(null)
+  const _mouseDownPosRef = useRef<{ x: number, y: number } | null>(null)
 
   const {
     triggerPad,
@@ -261,12 +267,51 @@ export function PadGrid() {
               data-pad-id={pad.id}
               className={`pad ${selected ? 'selected' : ''} ${multiSelected ? 'multi-selected' : ''} ${isSequencedHit ? 'sequenced-hit' : ''} ${pad.id === padHoldRecordingPadId ? 'hold-recording' : ''} ${pad.settings.mute ? 'muted-pad' : ''}`}
               draggable={!!pad.settings.sampleId}
-              onDragStart={(e) => {
+                            onDragStart={(e) => {
                 e.dataTransfer.effectAllowed = 'copyMove'
                 e.dataTransfer.setData('application/x-online-sampler-pad-id', pad.id)
+                
+                // If we have a pre-rendered URL, attach it for drag-out
+                if (_padDragOutObjectUrl && _padDragOutPadId === pad.id) {
+                  const filename = `${project?.name.replace(/\s+/g, '_') || 'Sketch'}_${(bankNames?.[pad.bank] || `Bank${pad.bank + 1}`).replace(/\s+/g, '')}_${pad.name.replace(/\s+/g, '_')}.wav`
+                  e.dataTransfer.setData('DownloadURL', `audio/wav:${filename}:${_padDragOutObjectUrl}`)
+                  
+                  // For browsers that support File API in dataTransfer (Firefox)
+                  // Note: we can't easily recreate the File object from the URL here 
+                  // without the original blob. Let's see if we should store the blob too.
+                }
+              }}
+              onDragEnd={() => {
+                if (_padDragOutTimer) clearTimeout(_padDragOutTimer)
+                _padDragOutTimer = null
+                // We DON'T revoke immediately here because the browser needs the URL 
+                // to perform the actual download after the drop.
+                // We'll revoke it on the next mousedown or app unload.
+                _padDragOutPadId = null
               }}
               onMouseDown={(e) => {
                 if (Date.now() - _lastTouchTime < 500) return
+
+                // Clear previous URL if exists
+                if (_padDragOutObjectUrl) {
+                  URL.revokeObjectURL(_padDragOutObjectUrl)
+                  _padDragOutObjectUrl = null
+                }
+
+                _mouseDownPosRef.current = { x: e.clientX, y: e.clientY }
+                
+                // Start a timer. If it's a long press, we'll start rendering.
+                // This avoids workload for quick taps.
+                if (project && pad.settings.sampleId) {
+                  _padDragOutTimer = setTimeout(async () => {
+                    if (_mouseDownPosRef.current) {
+                      _padDragOutPadId = pad.id
+                      const blob = await renderPadAudio(project, pad, (audioEngine as any).buffers)
+                      _padDragOutObjectUrl = URL.createObjectURL(blob)
+                    }
+                  }, 150)
+                }
+
                 const s = useStore.getState()
                 if (e.metaKey || e.ctrlKey) {
                   // Ctrl+click: toggle pad in multi-select
@@ -299,6 +344,10 @@ export function PadGrid() {
                 }
               }}
               onMouseUp={() => {
+                if (_padDragOutTimer) clearTimeout(_padDragOutTimer)
+                _padDragOutTimer = null
+                _mouseDownPosRef.current = null
+
                 if (Date.now() - _lastTouchTime < 500) return
                 if (padHoldRecordingPadId === pad.id) {
                   stopPadHoldRecord()
@@ -309,6 +358,10 @@ export function PadGrid() {
                 }
               }}
               onMouseLeave={() => {
+                if (_padDragOutTimer) clearTimeout(_padDragOutTimer)
+                _padDragOutTimer = null
+                _mouseDownPosRef.current = null
+
                 if (Date.now() - _lastTouchTime < 500) return
                 if (padHoldRecordingPadId === pad.id) {
                   stopPadHoldRecord()
@@ -329,6 +382,10 @@ export function PadGrid() {
                 }
               }}
               onTouchEnd={(e) => {
+                if (_padDragOutTimer) clearTimeout(_padDragOutTimer)
+                _padDragOutTimer = null
+                _mouseDownPosRef.current = null
+
                 e.preventDefault()
                 if (padHoldRecordingPadId === pad.id) {
                   stopPadHoldRecord()
