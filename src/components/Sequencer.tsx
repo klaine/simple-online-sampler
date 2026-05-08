@@ -19,6 +19,7 @@ import {
 import { VirtualizedSequencerLanes } from './VirtualizedSequencerLanes'
 import { Timeline } from './Timeline'
 import { makeTouchDragHandlers } from '../lib/touchDrag'
+import { buildMidiForSequenceSync, warmupMidiModule } from '../lib/midiExport'
 
 function ColorPicker({ color, onChange }: { color: string; onChange: (c: string) => void }) {
   const [open, setOpen] = useState(false)
@@ -354,9 +355,17 @@ export function Sequencer() {
                 boxShadow: isActive ? `0 0 8px ${sequence.color}44` : undefined,
               }}
               draggable
-              onDragStart={() => {
+              onPointerDown={() => { warmupMidiModule() }}
+              onDragStart={(e) => {
                 draggedPatternIdRef.current = sequence.id
                 draggedChainEntryIdRef.current = null
+                const midiData = buildMidiForSequenceSync(sequence, project.pads, project.bpm)
+                if (midiData) {
+                  const blob = new Blob([new Uint8Array(midiData)], { type: 'audio/midi' })
+                  const file = new File([blob], `${sequence.name}.mid`, { type: 'audio/midi' })
+                  e.dataTransfer.items.add(file)
+                  e.dataTransfer.effectAllowed = 'copyMove'
+                }
               }}
               onDragOver={(e) => {
                 e.preventDefault()
@@ -372,7 +381,7 @@ export function Sequencer() {
               }}
               onDragEnd={() => setDragOverPatternId(null)}
               onClick={() => useStore.setState({ activeSequenceId: sequence.id })}
-              title="Drag to song chain"
+              title="Drag to song chain · Drag out for MIDI file"
             >
               <span
                 className="pattern-drag-handle"
