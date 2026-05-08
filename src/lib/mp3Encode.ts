@@ -1,9 +1,24 @@
+interface LamejsModule {
+  Mp3Encoder: new (channels: number, sampleRate: number, kbps: number) => {
+    encodeBuffer: (left: Int16Array, right?: Int16Array) => Int8Array
+    flush: () => Int8Array
+  }
+}
+
+let _lamejs: LamejsModule | null = null
+
+async function getLamejs(): Promise<LamejsModule> {
+  if (_lamejs) return _lamejs
+  _lamejs = await import('lamejs') as unknown as LamejsModule
+  return _lamejs
+}
+
 export async function encodeMp3(
   channels: Float32Array[],
   sampleRate: number,
   bitrate: number = 320,
 ): Promise<Blob> {
-  const { Mp3Encoder } = await import('lamejs')
+  const { Mp3Encoder } = await getLamejs()
 
   const numChannels = channels.length
   const encoder = new Mp3Encoder(numChannels, sampleRate, bitrate)
