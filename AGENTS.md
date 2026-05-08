@@ -78,7 +78,7 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - `KnobControl.tsx` — Drag knob with optional `logScale` power-curve mapping (for envelope time knobs: 50%→20% of range, 0-5s with ms/s auto-format display) and optional `freqScale` exponential mapping (equal knob travel per octave, for filter frequency knobs, auto-formats as Hz/kHz)
 - `MiniWaveform.tsx` — Memoized canvas waveform
 - `SequencerStep.tsx` — Memoized step with drag interactions
-- `ExportDialog.tsx` — Export format chooser with spinner
+- `ExportDialog.tsx` — Export format chooser with WAV/MP3 format dropdowns per audio button, MIDI: Song Chain button, spinner during rendering
 - `ImportDialog.tsx` — Import dialog
 - `ConfirmDialog.tsx` — Promise-based confirm overlay (replaces all `window.confirm` calls)
 - `SampleLibrary.tsx` — Sample library sidebar with file drop, chop/spread buttons, "Remove Unassigned" cleanup, record button, Import Samples button, autosample group UI (rename/delete/export/drag/assign-to-pads), group edit modal (name/bus/choke), manual sample grouping (multi-select + group button), per-sample ungroup, MPC badge on .pgm-imported groups, Preset badge on factory preset groups, ZIP import support, sidebar collapse button, projects section (list/new/duplicate/delete/switch)
@@ -98,7 +98,8 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - `Timeline.tsx` — Song chain arrangement timeline: visual block layout of song chain entries with proportional widths (steps × repeats), drag-and-drop reorder via refs (not dataTransfer in dragover), playhead tracks position across entire song chain during playback (uses `playingChainIndex` + `playingChainRepeat` for accurate position), active block highlights by chain index (not pattern ID), right-click context menu for Remove/Clone (uses `showConfirm`, no `window.prompt`)
 ### Library (`src/lib/`)
 - `audioEngine.ts` — Web Audio voice pool, multisample resolution, per-pad filter (LP12/LP24/HP/BP/LPHP with live param updates), choke groups, ADSR/AHR envelope shaping, AnalyserNode, bus routing, effect chains (with sidechain compressor worklet), `buildEffectChain`, `buildEffectNode`, `updateEffectNodeParams`, `updateBusEffectParams`, `updateMasterEffectParams`, `getOutputLatency`, input monitor, `setOutputDevice`, `setBufferSize`, `playPreview`/`stopPreview` (sample preview via AudioContext) (~1600 lines)
-- `audioExport.ts` — Offline WAV render with swing, layer resolution, per-pad filter, choke groups, ADSR envelope shaping, bus routing + effects (~513 lines)
+- `audioExport.ts` — Offline audio render (WAV + MP3) with swing, layer resolution, per-pad filter, choke groups, ADSR envelope shaping, bus routing + effects (~400 lines). `renderProjectAudio()` returns WAV or MP3 based on `format` option
+- `mp3Encode.ts` — MP3 encoding via lamejs (320kbps CBR): `encodeMp3()` converts Float32 channels → MP3 Blob, `audioBufferToChannels()` extracts channel data from AudioBuffer
 - `voiceUtils.ts` — Shared voice utilities: `mergeLayerSettings`, `resolveFilterType`, `resolveLayer`, `createFilterChain`, `scheduleAmplitudeEnvelope`, `createPanNode` — consumed by both `audioEngine.ts` (live) and `audioExport.ts` (offline) to prevent drift
 - `wavEncode.ts` — Shared WAV encoding: `encodeWav` (AudioBuffer), `encodeWavFromChannels` (raw Float32)
 - `transportScheduler.ts` — Step scheduler with swing offset
@@ -112,7 +113,7 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - `autotrim.ts` — `computeSilenceTrim()` (2ms pre-roll, -40dB peak-relative threshold) + `normalizePcm()` (peak normalize to -0.3 dBFS)
 - `deviceDrumkits.ts` — Extensible device drumkit mapping system: `DeviceDrumkit` interface, `MC707_DRUMKIT` (16 pads with MIDI notes, drum names, choke groups), `DEVICE_DRUMKITS` registry, lookup helpers
 - `pcmRecorder.ts` — Shared PCM capture with disabled browser audio processing, system-default sample rate
-- `midiExport.ts` — MIDI export
+- `midiExport.ts` — MIDI export: `buildMidiForSequence()` (async, per-pattern), `buildMidiForSequenceSync()` (sync, uses cached module for drag-out), `buildMidiForSongChain()` (single-track song chain), `warmupMidiModule()` / `ensureMidiModule()` (lazy load + cache `@tonejs/midi`)
 - `mpcImport.ts` — MPC1000/MPC2500 `.pgm` program file parser: `parseMpcPgm` (extracts pad-to-sample mapping + per-pad settings from binary: choke group, pan, level, tuning, filter type/freq/Q, attack/decay, play mode, up to 4 velocity layers), `matchMpcSamplesToFiles` (matches mapping to dropped audio files, returns `MpcMatchedPad[]` with full mapping data including additional layer files)
 - `lcdkImport.ts` — Loopcloud Drum `.lcdk` JSON kit parser: `parseLcdk` (extracts pad mappings with volume/pan/filter/choke/transpose/finetune/attack/release/samplestart + sequencer patterns), `matchLcdkSamplesToFiles` (matches pad filenames to dropped audio files). Patterns stored as JSON on first sample (`autosamplePatterns`) and imported into sequencer on `assignGroupToPads`.
 - `batteryMonolithImport.ts` — Battery 4 monolith `.nbkt` parser: `parseBatteryMonolith` (extracts embedded WAV samples + trailing patch data from monolith format, rejects patch-only files), `extractWavFromMonolith` (slice single WAV blob), `detectVelocityLayers` (groups `V1`/`V2`/`V3`… suffix samples and computes velocity splits: 2 layers = 0-99/100-127, N>2 = equal spread; optionally uses patch data for velocity-layer confirmation), `matchCellsToSamples` (maps Battery cell names to sample filenames), `getCategoryForCell`/`getChokeGroupForCell` (NI category code → DrumCategory + choke group mapping with name-based refinement), `classifyBatterySample` (filename-based drum category classifier). Patch data parser: FastLZ Level 2 decompressor for DSIN 't' blob, cell name + category code extraction, sample filename table extraction, kit name extraction from DSIN 'e' header. Falls back gracefully for encrypted (factory) kits.
@@ -129,9 +130,11 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 
 - Sequencer step pitch editing: `Alt+Shift+drag` on lit step, stored as `event.semitones`.
 - MIDI export transposes by step semitones.
-- Audio export supports: active pattern WAV, song chain WAV (full chain once).
-- Pattern WAV export renders 2 cycles with WAV `smpl` loop markers around cycle 2.
-- WAV filenames include BPM.
+- Audio export supports: active pattern WAV/MP3, song chain WAV/MP3 (full chain once). Format selected per-button in ExportDialog (WAV or MP3 320kbps).
+- Pattern audio export renders 2 cycles with WAV `smpl` loop markers around cycle 2 (WAV only, not applicable to MP3).
+- WAV/MP3 filenames include BPM and format extension.
+- Song chain MIDI export: single-track MIDI file with all patterns sequenced in order (respecting repeats and swing).
+- Pattern drag-out: dragging a pattern chip out of the browser creates a `.mid` file at the drop location (desktop browsers). Module pre-warmed on pointerdown for synchronous generation on dragstart.
 - Playback mode rules:
   - `one-shot`: attack ramp only, plays full trimmed sample. Not step/gate-clamped.
   - `adsr`: ADSR envelope — attack ramps to peak, decay ramps to sustain level (peak * sustain), release ramps to zero. In sequencer, ADSR respects step gate duration (`forceDuration`). For live pad hold (sample pads), voice holds at sustain level until `releasePad` triggers the release phase using the pad's actual release time.
