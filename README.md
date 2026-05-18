@@ -137,7 +137,8 @@ Runs TypeScript type checking followed by Vite production build.
 | `Space` | Play / Stop |
 | `S` | Stop |
 | `T` | Tap tempo |
-| `1`–`8` | Switch pad bank |
+| `1`–`8` | Switch pad bank (main keyboard) |
+| `Numpad1`–`Numpad9`, `Numpad0` | Trigger pads 1–10 in current bank (MPC-style) |
 | `Escape` | Close dialog / panel |
 | `Cmd/Ctrl+Z` | Undo |
 | `Cmd/Ctrl+Shift+Z` / `Cmd/Ctrl+Y` | Redo |

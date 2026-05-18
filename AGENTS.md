@@ -170,7 +170,8 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - `Space` — Play/stop
 - `S` — Stop
 - `T` — Tap tempo
-- `1`–`8` — Switch pad bank
+- `1`–`8` — Switch pad bank (main keyboard)
+- `Numpad1`–`Numpad9`, `Numpad0` — Trigger pads 1–10 in current bank (MPC-style)
 - `Escape` — Close open dialog/panel
 - `Cmd+Z` / `Ctrl+Z` — Undo (sequencer)
 - `Cmd+Shift+Z` / `Ctrl+Shift+Z` — Redo (sequencer)

@@ -29,6 +29,7 @@ import {
   updateGateEventRange,
   storeRefs,
 } from './store'
+import { PADS_PER_BANK } from './lib/constants'
 import { buildStandaloneHtml } from './lib/standaloneHtml'
 import { ExportDialog } from './components/ExportDialog'
 import { ImportDialog } from './components/ImportDialog'
@@ -63,6 +64,15 @@ const COMPUTER_KEY_NOTE_MAP: Record<string, number> = {
 }
 // Track active computer keyboard notes (code → MIDI note) to prevent repeats and handle note-off
 const _activeComputerKeys = new Map<string, number>()
+
+// Numpad 1-0 → pad indices 0-9 in current bank (MPC-style layout)
+const NUM_PAD_KEY_MAP: Record<string, number> = {
+  Numpad1: 0, Numpad2: 1, Numpad3: 2, Numpad4: 3,
+  Numpad5: 4, Numpad6: 5, Numpad7: 6, Numpad8: 7,
+  Numpad9: 8, Numpad0: 9,
+}
+// Track active numpad-held pads (code → padId) for note-off
+const _activeNumpadPads = new Map<string, string>()
 
 const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
   let binary = ''
@@ -998,6 +1008,22 @@ function App() {
         Boolean(target?.isContentEditable)
       ) return
 
+      // --- Numpad pad triggering (MPC-style) ---
+      {
+        const numPadIndex = NUM_PAD_KEY_MAP[event.code]
+        if (numPadIndex !== undefined && !event.metaKey && !event.ctrlKey && !event.altKey) {
+          event.preventDefault()
+          if (_activeNumpadPads.has(event.code)) return // key repeat
+          const s = useStore.getState()
+          const pad = s.project?.pads[s.activeBank * PADS_PER_BANK + numPadIndex]
+          if (pad && !pad.settings.mute) {
+            _activeNumpadPads.set(event.code, pad.id)
+            s.triggerPad(pad, 0.85)
+          }
+          return
+        }
+      }
+
       // --- Computer keyboard chromatic input ---
       const ckState = useStore.getState()
       if (ckState.computerKeyboardEnabled) {
@@ -1075,8 +1101,8 @@ function App() {
         return
       }
 
-      // Number keys 1-8: switch bank
-      if (event.key >= '1' && event.key <= '8' && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      // Number keys 1-8: switch bank (main keyboard only, not numpad)
+      if (event.key >= '1' && event.key <= '8' && !event.metaKey && !event.ctrlKey && !event.altKey && !event.code.startsWith('Numpad')) {
         const bank = Number(event.key) - 1
         useStore.setState({ activeBank: bank })
         return
@@ -1185,6 +1211,18 @@ function App() {
           if (s.isPlaying && s.seqRecordArmed) {
             s.recordPadRelease(pad.id, midiNote)
           }
+        }
+      }
+
+      // Numpad note-off
+      if (_activeNumpadPads.has(event.code)) {
+        const padId = _activeNumpadPads.get(event.code)!
+        _activeNumpadPads.delete(event.code)
+        audioEngine.releasePad(padId)
+        const s = useStore.getState()
+        s.feedCaptureBuffer(padId, 0, 'off')
+        if (s.isPlaying && s.seqRecordArmed) {
+          s.recordPadRelease(padId)
         }
       }
     }
