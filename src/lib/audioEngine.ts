@@ -1099,6 +1099,33 @@ export class AudioEngine {
     this.activeVoices = this.activeVoices.filter((voice) => !holdVoices.includes(voice))
   }
 
+  /** Stop all currently playing voices with a 5ms fade-out (used on transport stop). */
+  stopAllVoices(): void {
+    if (!this.ctx) return
+    const now = this.ctx.currentTime
+    const toStop = this.activeVoices.filter((v) => !v.disposed)
+
+    for (const voice of toStop) {
+      try {
+        voice.gain.gain.cancelScheduledValues(now)
+        voice.gain.gain.setValueAtTime(voice.gain.gain.value, now)
+        voice.gain.gain.linearRampToValueAtTime(0, now + 0.005)
+        voice.source.stop(now + 0.01)
+      } catch { /* already stopped/ended */ }
+    }
+
+    window.setTimeout(() => {
+      for (const voice of toStop) {
+        if (voice.disposed) continue
+        voice.disposed = true
+        this.releaseGain(voice.gain)
+        voice.filters.forEach((f) => this.releaseFilter(f))
+        try { voice.source.disconnect() } catch { /* ignore */ }
+      }
+      this.activeVoices = this.activeVoices.filter((v) => !toStop.includes(v))
+    }, 20)
+  }
+
   private disposeVoice(voice: ActiveVoice): void {
     if (voice.disposed) return
     voice.disposed = true

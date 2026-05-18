@@ -18,6 +18,7 @@ export const createTransportActions = (ctx: StoreContext) => ({
     mutableRefs.transportWorker = null
 
     transportVisualStore.reset()
+    audioEngine.stopAllVoices()
 
     ctx.set((d) => {
       d.isPlaying = false
