@@ -162,6 +162,9 @@ export interface AppState {
   previewSampleId: string | null
   showMetadataTags: boolean
   metadataTagWhitelist: Set<string>
+  libraryInspectorSampleId: string | null
+  libraryExpanded: boolean
+  kitPreviewRunId: string | null
 
 
 
@@ -300,6 +303,9 @@ export interface AppState {
   compactProject: () => Promise<void>
   toggleFavoriteSample: (sampleId: string) => void
   addSamplesToLibrary: (files: File[], padIndexMap?: Map<string, number>, groupLabel?: string) => Promise<void>
+  setLibraryInspectorSample: (sampleId: string | null) => void
+  toggleLibraryExpanded: () => void
+  setKitPreviewRunId: (runId: string | null) => void
 
   openChopModal: (sampleId: string) => void
   closeChopModal: () => void

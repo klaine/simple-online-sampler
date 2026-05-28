@@ -117,6 +117,31 @@ export const selectAssignedSampleIdsKey = (s: AppState): string => {
   return Array.from(ids).sort().join('|')
 }
 
+export const selectSampleToPadMap = memoize<AppState, Map<string, Pad[]>>(
+  (s) => [s.project?.pads],
+  (s) => {
+    const map = new Map<string, Pad[]>()
+    if (!s.project) return map
+    for (const pad of s.project.pads) {
+      if (pad.settings.sampleId) {
+        let arr = map.get(pad.settings.sampleId)
+        if (!arr) { arr = []; map.set(pad.settings.sampleId, arr) }
+        arr.push(pad)
+      }
+      if (pad.settings.layers) {
+        for (const l of pad.settings.layers) {
+          if (l.sampleId && l.sampleId !== pad.settings.sampleId) {
+            let arr = map.get(l.sampleId)
+            if (!arr) { arr = []; map.set(l.sampleId, arr) }
+            if (!arr.some((p) => p.id === pad.id)) arr.push(pad)
+          }
+        }
+      }
+    }
+    return map
+  },
+)
+
 // Pre-computed event lookup for sequencer rendering perf
 export const selectEventsByPadAndStep = memoize<AppState, Map<string, Map<number, SequenceEvent>>>(
   (s) => {

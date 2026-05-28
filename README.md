@@ -19,7 +19,10 @@ A browser-based sampler/sequencer built with React, TypeScript, and the Web Audi
 - **Sample assign modes** — replace existing sample or add as multisample layer
 - **Record to pad** — record button on empty pads opens recording dialog targeted to that pad
 - **Waveform editor** with zoom, trim handles, and auto-scroll (gain-scaled display, layer-aware)
-- **Sample library** with drag-and-drop import, search, sort, preview playback, chop, chromatic spread, collapsible sidebar, projects section
+- **Sample library** with drag-and-drop import, search, sort, preview playback, chop, chromatic spread, collapsible sidebar, projects section, mini waveform previews, pad assignment badges, sample inspector panel, kit preview grid, expanded browse mode
+- **Sample inspector** — click ⓘ or right-click a sample to view waveform, audio properties (duration, sample rate, channels), pad assignments (clickable to navigate), imported kit settings, and metadata tags
+- **Kit preview grid** — preview imported drumkits (MPC/Battery/LCDK/Preset) as a 4×4 pad grid; click pads to audition samples
+- **Expanded browse mode** — toggle ⊞ button to widen the library panel for better browsing with inspector side-by-side
 - **Sample grouping** — select multiple samples and group them; remove individual samples from groups; velocity subgroups with drag-to-pad as velocity layers
 - **Auto-grouping** — multi-file drops (library or pad grid) automatically group samples by common filename prefix
 - **Drag sample to pad** from the library sidebar

@@ -223,6 +223,20 @@ function App() {
   const perfDivContainerRef = useRef<HTMLDivElement | null>(null)
   const perfDivRafId = useRef(0)
 
+  const libraryExpanded = useStore((s) => s.libraryExpanded)
+  const savedSplitRatioRef = useRef<number | null>(null)
+  useEffect(() => {
+    if (libraryExpanded && performanceTab === 'library') {
+      if (savedSplitRatioRef.current === null) {
+        savedSplitRatioRef.current = perfSplitRatio
+      }
+      setPerfSplitRatio(0.75)
+    } else if (savedSplitRatioRef.current !== null) {
+      setPerfSplitRatio(savedSplitRatioRef.current)
+      savedSplitRatioRef.current = null
+    }
+  }, [libraryExpanded, performanceTab])
+
   const onPerfDivPointerMove = useCallback((e: PointerEvent) => {
     const dx = e.clientX - perfDivStartX.current
     cancelAnimationFrame(perfDivRafId.current)

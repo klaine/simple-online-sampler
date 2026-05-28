@@ -3,12 +3,16 @@ import {
   useStore,
   selectSelectedPad,
   selectFilteredSamples,
+  selectSampleToPadMap,
   showConfirm,
 } from '../store'
-import type { BusId, SampleAsset } from '../types'
+import type { BusId, Pad, SampleAsset } from '../types'
 import { BANK_COUNT, PADS_PER_BANK } from '../lib/constants'
 import { looksLikeDrumKit, mapToStandardKit } from '../lib/drumKitMap'
 import { makeTouchDragHandlers } from '../lib/touchDrag'
+import { MiniWaveform } from './MiniWaveform'
+import { LibraryInspector } from './LibraryInspector'
+import { KitPreviewGrid } from './KitPreviewGrid'
 
 // Module-level state survives component unmount (perf mode tab switches)
 let _expandedChops = new Set<string>()
@@ -46,9 +50,14 @@ interface SampleRowProps {
   isChopExpanded: boolean
   isSelected: boolean
   isSpreadTarget: boolean
+  isInspectorSelected: boolean
   hasSelectedPad: boolean
+  wavePeaks: number[] | undefined
+  assignedPads: Pad[] | undefined
   onToggleChop: (sampleId: string) => void
   onToggleSelect: (sampleId: string) => void
+  onInspect: (sampleId: string) => void
+  onNavigateToPad: (pad: Pad) => void
   spreadBank?: number
   spreadSlot?: number
   spreadCount?: number
@@ -66,9 +75,14 @@ const SampleRow = memo(function SampleRow({
   isChopExpanded,
   isSelected,
   isSpreadTarget,
+  isInspectorSelected,
   hasSelectedPad,
+  wavePeaks,
+  assignedPads,
   onToggleChop,
   onToggleSelect,
+  onInspect,
+  onNavigateToPad,
   spreadBank,
   spreadSlot,
   spreadCount,
@@ -119,15 +133,41 @@ const SampleRow = memo(function SampleRow({
             title="Select for grouping"
           />
         )}
-        <button
-          type="button"
-          className={isPreviewing ? 'sample-preview active' : 'sample-preview'}
-          onClick={() => void previewSample(sample)}
-        >
-          <span className="sample-name">{sample.name}</span>
-          <small>{`${Math.max(1, Math.round(sample.size / 1024))} KB`}</small>
-        </button>
-        <MetadataTagChips sample={sample} />
+        <div className="sample-info-col">
+          <button
+            type="button"
+            className={`sample-preview${isPreviewing ? ' active' : ''}${isInspectorSelected ? ' inspector-active' : ''}`}
+            onClick={() => void previewSample(sample)}
+            onContextMenu={(e) => { e.preventDefault(); onInspect(sample.id) }}
+          >
+            <span className="sample-name">{sample.name}</span>
+            <small>{`${Math.max(1, Math.round(sample.size / 1024))} KB`}</small>
+          </button>
+          {wavePeaks && wavePeaks.length > 0 && (
+            <div className="sample-waveform">
+              <MiniWaveform peaks={wavePeaks} />
+            </div>
+          )}
+          {assignedPads && assignedPads.length > 0 && (
+            <span className="pad-assign-badges">
+              {assignedPads.slice(0, 4).map((pad) => (
+                <button
+                  key={pad.id}
+                  type="button"
+                  className="pad-assign-badge"
+                  title={`Bank ${pad.bank + 1} Pad ${pad.slot + 1}`}
+                  onClick={(e) => { e.stopPropagation(); onNavigateToPad(pad) }}
+                >
+                  {pad.bank + 1}·{pad.slot + 1}
+                </button>
+              ))}
+              {assignedPads.length > 4 && (
+                <span className="pad-assign-badge pad-assign-more">+{assignedPads.length - 4}</span>
+              )}
+            </span>
+          )}
+          <MetadataTagChips sample={sample} />
+        </div>
         <div className="sample-actions">
           <button
             type="button"
@@ -163,6 +203,14 @@ const SampleRow = memo(function SampleRow({
             title="Assign to selected pad"
           >
             +
+          </button>
+          <button
+            type="button"
+            className="sample-inspect"
+            onClick={() => onInspect(sample.id)}
+            title="Inspect sample"
+          >
+            ⓘ
           </button>
           {inGroup && (
             <button
@@ -316,6 +364,11 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
   const filteredSamples = useStore(selectFilteredSamples)
   const selectedPad = useStore(selectSelectedPad)
   const chromaticSpreadSampleId = useStore((s) => s.chromaticSpreadSampleId)
+  const libraryWavePeaks = useStore((s) => s.libraryWavePeaks)
+  const sampleToPadMap = useStore(selectSampleToPadMap)
+  const inspectorSampleId = useStore((s) => s.libraryInspectorSampleId)
+  const libraryExpanded = useStore((s) => s.libraryExpanded)
+  const kitPreviewRunId = useStore((s) => s.kitPreviewRunId)
 
   const [dropActive, setDropActive] = useState(false)
   const [expandedChops, setExpandedChops] = useState<Set<string>>(() => _expandedChops)
@@ -345,7 +398,28 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
     updateAutosampleGroupSettings,
     deleteAutosampleGroup,
     exportAutosampleGroupZip,
+    setLibraryInspectorSample,
+    toggleLibraryExpanded,
+    setKitPreviewRunId,
   } = useStore.getState()
+
+  const handleInspect = useCallback((sampleId: string) => {
+    const current = useStore.getState().libraryInspectorSampleId
+    setLibraryInspectorSample(current === sampleId ? null : sampleId)
+  }, [setLibraryInspectorSample])
+
+  const handleNavigateToPad = useCallback((pad: Pad) => {
+    useStore.setState({
+      activeBank: pad.bank,
+      selectedPadId: pad.id,
+      performanceTab: 'padEditor',
+    })
+    try { localStorage.setItem('performanceTab', 'padEditor') } catch { /* ignore */ }
+  }, [])
+
+  const handleDismissInspector = useCallback(() => {
+    setLibraryInspectorSample(null)
+  }, [setLibraryInspectorSample])
 
   const sampleImportRef = useRef<HTMLInputElement>(null)
   const folderImportRef = useRef<HTMLInputElement>(null)
@@ -553,9 +627,14 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
     isChopExpanded: expandedChops.has(sample.id),
     isSelected: selectedSampleIds.has(sample.id),
     isSpreadTarget: chromaticSpreadSampleId === sample.id,
+    isInspectorSelected: inspectorSampleId === sample.id,
     hasSelectedPad: !!selectedPad,
+    wavePeaks: libraryWavePeaks[sample.id],
+    assignedPads: sampleToPadMap.get(sample.id),
     onToggleChop: toggleChopExpand,
     onToggleSelect: handleToggleSelect,
+    onInspect: handleInspect,
+    onNavigateToPad: handleNavigateToPad,
     ...(chromaticSpreadSampleId === sample.id
       ? {
           spreadBank,
@@ -573,7 +652,7 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
   return (
     <>
     <aside
-      className={`sidebar ${dropActive ? 'drop-active' : ''}`}
+      className={`sidebar${dropActive ? ' drop-active' : ''}${libraryExpanded ? ' library-expanded' : ''}`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -591,6 +670,14 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
               <option value="name">Name</option>
               <option value="size">Size</option>
             </select>
+            <button
+              type="button"
+              className={`library-expand-btn${libraryExpanded ? ' active' : ''}`}
+              onClick={() => toggleLibraryExpanded()}
+              title={libraryExpanded ? 'Collapse library view' : 'Expand library view'}
+            >
+              {libraryExpanded ? '⊟' : '⊞'}
+            </button>
           </div>
           {selectedSampleIds.size >= 2 && (
             <div className="sample-toolbar">
@@ -649,6 +736,16 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
                         {item.label}
                       </span>
                       <div className="sample-group-actions">
+                        {(isMpcGroup || isBatteryGroup || isLcdkGroup || isPresetGroup) && (
+                          <button
+                            type="button"
+                            className={kitPreviewRunId === item.key ? 'kit-preview-btn active' : 'kit-preview-btn'}
+                            title="Preview kit layout"
+                            onClick={() => setKitPreviewRunId(kitPreviewRunId === item.key ? null : item.key)}
+                          >
+                            ▦
+                          </button>
+                        )}
                         <button
                           type="button"
                           className="sample-group-assign"
@@ -759,6 +856,27 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
               return <SampleRow key={item.sample.id} {...makeSampleRowProps(item.sample)} />
             })}
           </div>
+          {kitPreviewRunId && (() => {
+            const kitSamples = filteredSamples.filter((s) => s.autosampleRunId === kitPreviewRunId)
+            if (kitSamples.length === 0) return null
+            return (
+              <KitPreviewGrid
+                samples={kitSamples}
+                onDismiss={() => setKitPreviewRunId(null)}
+              />
+            )
+          })()}
+          {inspectorSampleId && (() => {
+            const inspectorSample = filteredSamples.find((s) => s.id === inspectorSampleId) || useStore.getState().sampleMap.get(inspectorSampleId)
+            if (!inspectorSample) return null
+            return (
+              <LibraryInspector
+                sample={inspectorSample}
+                onDismiss={handleDismissInspector}
+                onNavigateToPad={handleNavigateToPad}
+              />
+            )
+          })()}
           <div className="record-controls">
             <input
               ref={sampleImportRef}

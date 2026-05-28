@@ -874,4 +874,18 @@ export const createLibraryActions = (ctx: StoreContext) => ({
     if (added > 0) ctx.get().addToast(`Added ${added} sample${added > 1 ? 's' : ''} to library`)
     else if (!pgmFiles.length) ctx.get().addToast('No audio files found in drop')
   },
+
+  setLibraryInspectorSample: (sampleId: string | null) => {
+    ctx.set((s) => { s.libraryInspectorSampleId = sampleId })
+  },
+
+  toggleLibraryExpanded: () => {
+    const next = !ctx.get().libraryExpanded
+    ctx.set((s) => { s.libraryExpanded = next })
+    try { localStorage.setItem('libraryExpanded', String(next)) } catch { /* ignore */ }
+  },
+
+  setKitPreviewRunId: (runId: string | null) => {
+    ctx.set((s) => { s.kitPreviewRunId = runId })
+  },
 })

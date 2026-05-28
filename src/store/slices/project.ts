@@ -131,6 +131,8 @@ export const createProjectActions = (ctx: StoreContext) => ({
       s.sampleMap = new Map(allSamples.map((sample) => [sample.id, sample]))
       s.libraryWavePeaks = {}
       s.waveformPeaks = []
+      s.libraryInspectorSampleId = null
+      s.kitPreviewRunId = null
     })
     audioEngine.setBpm(loaded.bpm)
     audioEngine.setPolyphony(loaded.polyphony)
