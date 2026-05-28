@@ -490,7 +490,7 @@ function App() {
           subscribeStore: (listener) => useStore.subscribe(listener),
           triggerChromatic: (pad, velocity, semitoneOffset) => {
             audioEngine.unlockSync()
-            void audioEngine.playPad(pad, velocity / 127, { semitoneOffset })
+            void audioEngine.playPad(pad, velocity, { semitoneOffset })
           },
           releaseChromatic: (padId, _semitoneOffset) => {
             audioEngine.releasePad(padId)
