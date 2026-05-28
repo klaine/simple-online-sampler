@@ -95,23 +95,17 @@ const InspectorWaveform = memo(function InspectorWaveform({ sample }: { sample: 
 export function LibraryInspector({ sample, onDismiss, onNavigateToPad }: InspectorProps) {
   const sampleToPadMap = useStore(selectSampleToPadMap)
   const assignedPads = sampleToPadMap.get(sample.id) ?? []
-  const {
-    previewSample,
-    previewSampleId,
-    assignSampleToSelectedPad,
-    openChopModal,
-    deleteSampleFromLibrary,
-  } = useStore((s) => ({
-    previewSample: s.previewSample,
-    previewSampleId: s.previewSampleId,
-    assignSampleToSelectedPad: s.assignSampleToSelectedPad,
-    openChopModal: s.openChopModal,
-    deleteSampleFromLibrary: s.deleteSampleFromLibrary,
-  }))
+  const previewSampleId = useStore((s) => s.previewSampleId)
   const selectedPad = useStore((s) => {
     if (!s.project || !s.selectedPadId) return null
     return s.project.pads.find((p) => p.id === s.selectedPadId) ?? null
   })
+  const {
+    previewSample,
+    assignSampleToSelectedPad,
+    openChopModal,
+    deleteSampleFromLibrary,
+  } = useStore.getState()
 
   const [audioInfo, setAudioInfo] = useState<{ duration: number; sampleRate: number; channels: number } | null>(null)
 

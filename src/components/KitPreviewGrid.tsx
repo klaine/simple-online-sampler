@@ -8,10 +8,8 @@ interface KitPreviewGridProps {
 }
 
 export function KitPreviewGrid({ samples, onDismiss }: KitPreviewGridProps) {
-  const { previewSample, previewSampleId } = useStore((s) => ({
-    previewSample: s.previewSample,
-    previewSampleId: s.previewSampleId,
-  }))
+  const previewSampleId = useStore((s) => s.previewSampleId)
+  const { previewSample } = useStore.getState()
 
   const padMap = useMemo(() => {
     const map = new Map<number, SampleAsset>()
