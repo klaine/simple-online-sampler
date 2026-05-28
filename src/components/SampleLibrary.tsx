@@ -482,22 +482,34 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
     })
 
     if (hasDirectory) {
-      // Recursively read all files from dropped directories + top-level files
+      // Recursively read all files from dropped directories + top-level files,
+      // tracking subfolder structure so it is preserved in the library.
       const allFiles: File[] = []
-      let folderName: string | undefined
-      const readEntry = (entry: FileSystemEntry): Promise<void> => {
+      const dirBuckets = new Map<string, File[]>()
+      let rootFolderName: string | undefined
+      const readEntry = (entry: FileSystemEntry, relPath = ''): Promise<void> => {
         if (entry.isFile) {
           return new Promise((resolve) => {
-            (entry as FileSystemFileEntry).file((f) => { allFiles.push(f); resolve() }, () => resolve())
+            (entry as FileSystemFileEntry).file((f) => {
+              allFiles.push(f)
+              const parent = relPath.split('/').filter(Boolean).join(' / ') || null
+              if (parent) {
+                let bucket = dirBuckets.get(parent)
+                if (!bucket) { bucket = []; dirBuckets.set(parent, bucket) }
+                bucket.push(f)
+              }
+              resolve()
+            }, () => resolve())
           })
         } else if (entry.isDirectory) {
-          if (!folderName) folderName = entry.name
+          if (!rootFolderName) rootFolderName = entry.name
+          const childPath = relPath ? `${relPath}/${entry.name}` : entry.name
           return new Promise((resolve) => {
             const reader = (entry as FileSystemDirectoryEntry).createReader()
             const readBatch = () => {
               reader.readEntries(async (entries) => {
                 if (entries.length === 0) { resolve(); return }
-                for (const e of entries) await readEntry(e)
+                for (const e of entries) await readEntry(e, childPath)
                 readBatch()
               }, () => resolve())
             }
@@ -513,15 +525,30 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
         }
         if (allFiles.length === 0) return
 
+        const hasSubfolders = dirBuckets.size > 0
+
         // If .pgm or .lcdk files are present, let addSamplesToLibrary handle grouping
         const hasPgm = allFiles.some((f) => f.name.match(/\.pgm$/i))
         const hasLcdk = allFiles.some((f) => f.name.match(/\.lcdk$/i))
         if (hasPgm || hasLcdk) {
-          void addSamplesToLibrary(allFiles, undefined, folderName)
+          void addSamplesToLibrary(allFiles, undefined, rootFolderName)
           return
         }
 
-        // Check if files look like a drum kit and offer standard layout mapping
+        // When subfolders exist, import each subfolder as a separate group
+        if (hasSubfolders) {
+          // Files at the root level (not in any subfolder)
+          const rootFiles = allFiles.filter((f) => ![...dirBuckets.values()].some((bucket) => bucket.includes(f)))
+          if (rootFiles.length > 0) {
+            void addSamplesToLibrary(rootFiles, undefined, rootFolderName || undefined)
+          }
+          for (const [dirName, dirFiles] of dirBuckets) {
+            void addSamplesToLibrary(dirFiles, undefined, dirName)
+          }
+          return
+        }
+
+        // Flat folder — check if files look like a drum kit and offer standard layout mapping
         const audioFiles = allFiles.filter((f) => f.type.startsWith('audio/') || f.name.match(/\.(wav|mp3|ogg|flac|aiff?|m4a|webm)$/i))
         const filenames = audioFiles.map((f) => f.name)
         if (looksLikeDrumKit(filenames)) {
@@ -532,11 +559,11 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
             kitResult.slots.forEach((fname, idx) => {
               if (fname) padIndexMap.set(fname, idx)
             })
-            void addSamplesToLibrary(audioFiles, padIndexMap, folderName)
+            void addSamplesToLibrary(audioFiles, padIndexMap, rootFolderName)
             return
           }
         }
-        void addSamplesToLibrary(allFiles, undefined, folderName)
+        void addSamplesToLibrary(allFiles, undefined, rootFolderName)
       })()
     } else if (files.length > 0) {
       void addSamplesToLibrary(files)
