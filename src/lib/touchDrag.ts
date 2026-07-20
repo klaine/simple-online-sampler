@@ -16,6 +16,7 @@ const DROP_SELECTORS = [
   '.chain-cell',
   '.chain-grid',
   '.chain-empty',
+  '.pattern-chip[data-pattern-id]',
 ]
 
 export function getTouchDragData(key: string): string | undefined {

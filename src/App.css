@@ -519,6 +519,31 @@ select.tb-led-value {
   padding: 0.15rem 0.35rem;
 }
 
+.tb-overflow-wrap {
+  position: relative;
+}
+
+.tb-overflow-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 0.3rem;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 0.5rem;
+  z-index: 100;
+  box-shadow: var(--shadow-md);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 92px;
+}
+
+.tb-overflow-menu button {
+  width: 100%;
+}
+
 .settings-popover {
   position: absolute;
   top: 100%;

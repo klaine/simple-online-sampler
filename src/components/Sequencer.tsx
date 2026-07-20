@@ -213,6 +213,25 @@ export function Sequencer() {
     return () => el.removeEventListener('touch-drop', handler)
   }, [])
 
+  // Handle touch-drop events on the pattern strip (pattern reorder via touch)
+  const patternStripRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = patternStripRef.current
+    if (!el) return
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as Record<string, string> | undefined
+      const patternId = detail?.['x-pattern-id']
+      if (!patternId) return
+      const chip = (e.target as HTMLElement).closest('.pattern-chip[data-pattern-id]') as HTMLElement | null
+      const targetId = chip?.dataset.patternId
+      if (targetId && targetId !== patternId) {
+        void useStore.getState().reorderPattern(patternId, targetId)
+      }
+    }
+    el.addEventListener('touch-drop', handler)
+    return () => el.removeEventListener('touch-drop', handler)
+  }, [])
+
   // Dismiss pending pattern delete on outside click
   useEffect(() => {
     if (!pendingDeletePatternId) return
@@ -378,13 +397,14 @@ export function Sequencer() {
         </div>
       )}
 
-      <div className="pattern-strip" onDragLeave={() => setDragOverPatternId(null)}>
+      <div className="pattern-strip" ref={patternStripRef} onDragLeave={() => setDragOverPatternId(null)}>
         {project.sequences.map((sequence) => {
           const isActive = sequence.id === activeSequence.id
           const isPlayingPat = sequence.id === playingPatternId
           return (
             <div
               key={sequence.id}
+              data-pattern-id={sequence.id}
               className={`pattern-chip ${isActive ? 'active' : ''} ${isPlayingPat ? 'playing' : ''} ${dragOverPatternId === sequence.id ? 'drag-over' : ''}`}
               style={{
                 borderColor: isActive ? sequence.color : undefined,

@@ -1,4 +1,4 @@
-import { useRef, useCallback, useState, useLayoutEffect } from 'react'
+import { useRef, useCallback, useState, useLayoutEffect, useEffect } from 'react'
 import { audioEngine } from '../lib/audioEngine'
 import { useStore } from '../store'
 import { VuMeter } from './VuMeter'
@@ -271,6 +271,67 @@ function SettingsPopover() {
   )
 }
 
+/** Phone-only overflow menu: metronome, tap tempo, record arm, Capture MIDI */
+function PhoneOverflowMenu() {
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const metronomeEnabled = useStore((s) => s.metronomeEnabled)
+  const seqRecordArmed = useStore((s) => s.seqRecordArmed)
+  const captureBufferCount = useStore((s) => s.captureBufferCount)
+  const { tapTempo } = useStore.getState()
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: PointerEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('pointerdown', onDown)
+    return () => document.removeEventListener('pointerdown', onDown)
+  }, [open])
+
+  return (
+    <div className="tb-overflow-wrap" ref={wrapRef}>
+      <button type="button" className="tb-secondary tb-overflow-btn" onClick={() => setOpen((o) => !o)} title="More transport options">
+        &#x22EF;
+      </button>
+      {open && (
+        <div className="tb-overflow-menu">
+          <button
+            type="button"
+            className={`tb-metronome ${metronomeEnabled ? 'on' : ''}`}
+            onClick={() => {
+              const next = !metronomeEnabled
+              useStore.setState({ metronomeEnabled: next })
+              localStorage.setItem('metronomeEnabled', String(next))
+            }}
+            title={metronomeEnabled ? 'Metronome On' : 'Metronome Off'}
+          >
+            MET
+          </button>
+          <button type="button" className="tb-tap" onClick={tapTempo}>TAP</button>
+          <button
+            type="button"
+            className={`seq-rec-btn ${seqRecordArmed ? 'armed' : ''}`}
+            onClick={() => useStore.setState((s) => ({ seqRecordArmed: !s.seqRecordArmed }))}
+            title="Arm sequencer recording"
+          >
+            ● REC
+          </button>
+          <button
+            type="button"
+            className={`tb-capture ${captureBufferCount > 0 ? 'has-data' : ''}`}
+            onClick={() => { void useStore.getState().captureMidi(); setOpen(false) }}
+            disabled={captureBufferCount === 0}
+            title={captureBufferCount > 0 ? `Capture MIDI (${captureBufferCount} notes buffered)` : 'Capture MIDI — play some notes first'}
+          >
+            ⊞ CAP
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function TopBar({ isPhone }: { isPhone?: boolean }) {
   const project = useStore((s) => s.project)
   const isPlaying = useStore((s) => s.isPlaying)
@@ -381,8 +442,9 @@ export function TopBar({ isPhone }: { isPhone?: boolean }) {
             </button>
           </div>
 
-          {/* Phone: Settings gear only */}
+          {/* Phone: overflow (metronome/rec/capture/tap) + settings gear */}
           <div className="tb-cluster tb-actions">
+            <PhoneOverflowMenu />
             <SettingsPopover />
           </div>
         </>
