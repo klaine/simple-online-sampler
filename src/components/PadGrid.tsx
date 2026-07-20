@@ -1,8 +1,6 @@
 import { useCallback, useRef, useState, useEffect, useSyncExternalStore, useMemo, memo } from 'react'
 import { audioEngine } from '../lib/audioEngine'
 import { releaseMidiNote } from '../lib/midiOut'
-import { parseMpcPgm, matchMpcSamplesToFiles } from '../lib/mpcImport'
-import { parseLcdk, matchLcdkSamplesToFiles } from '../lib/lcdkImport'
 import { db } from '../lib/db'
 import { BANK_COUNT } from '../lib/constants'
 import { showConfirm } from '../store/confirmDialog'
@@ -696,6 +694,7 @@ onDragEnd={() => {
                 const pgmFile = allDroppedFiles.find((f) => /\.pgm$/i.test(f.name))
                 if (pgmFile) {
                   // MPC program import: parse .pgm, match WAV files, assign to pads sequentially
+                  const { parseMpcPgm, matchMpcSamplesToFiles } = await import('../lib/mpcImport')
                   const pgmResult = parseMpcPgm(await pgmFile.arrayBuffer(), pgmFile.name)
                   if (pgmResult && pgmResult.pads.length > 0) {
                     const audioFiles = allDroppedFiles.filter((f) => f !== pgmFile && (f.type.startsWith('audio/') || /\.(wav|mp3|ogg|flac|aiff?|m4a|webm)$/i.test(f.name)))
@@ -764,6 +763,7 @@ onDragEnd={() => {
                 const lcdkFile = allDroppedFiles.find((f) => /\.lcdk$/i.test(f.name))
                 if (lcdkFile) {
                   try {
+                    const { parseLcdk, matchLcdkSamplesToFiles } = await import('../lib/lcdkImport')
                     const jsonStr = await lcdkFile.text()
                     const lcdkResult = parseLcdk(jsonStr, lcdkFile.name)
                     if (lcdkResult && lcdkResult.pads.length > 0) {

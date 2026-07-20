@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState } from 'react'
+import { useEffect, useRef, useCallback, useState, lazy, Suspense } from 'react'
 import './App.css'
 import { audioEngine } from './lib/audioEngine'
 import { db } from './lib/db'
@@ -30,11 +30,7 @@ import {
   storeRefs,
 } from './store'
 import { PADS_PER_BANK } from './lib/constants'
-import { buildStandaloneHtml } from './lib/standaloneHtml'
-import { ExportDialog } from './components/ExportDialog'
 import { ImportDialog } from './components/ImportDialog'
-import { RecordDialog } from './components/RecordDialog'
-import { AutosampleDialog } from './components/AutosampleDialog'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { SampleLibrary } from './components/SampleLibrary'
 import { PadEditor } from './components/PadEditor'
@@ -43,9 +39,14 @@ import { TopBar, SettingsContent } from './components/TopBar'
 import { Sequencer } from './components/Sequencer'
 import { Mixer } from './components/Mixer'
 import { Toasts } from './components/Toasts'
-import { ChopModal } from './components/ChopModal'
 import { registerMidiOutput, unregisterMidiOutput, getMidiOutputInfos, releaseMidiNote, isMidiEcho } from './lib/midiOut'
 import * as launchpad from './lib/launchpadProMk3'
+
+// Lazy-loaded dialogs — fetched on first open to keep the initial bundle small
+const ExportDialog = lazy(() => import('./components/ExportDialog').then((m) => ({ default: m.ExportDialog })))
+const RecordDialog = lazy(() => import('./components/RecordDialog').then((m) => ({ default: m.RecordDialog })))
+const AutosampleDialog = lazy(() => import('./components/AutosampleDialog').then((m) => ({ default: m.AutosampleDialog })))
+const ChopModal = lazy(() => import('./components/ChopModal').then((m) => ({ default: m.ChopModal })))
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1317,6 +1318,7 @@ function App() {
           base64: arrayBufferToBase64(await sample.blob.arrayBuffer()),
         })
       }
+      const { buildStandaloneHtml } = await import('./lib/standaloneHtml')
       const html = buildStandaloneHtml(project, embeddedSamples)
       const blob = new Blob([html], { type: 'text/html' })
       await downloadOrShare(blob, `${project.name.replace(/\s+/g, '-')}.standalone.html`)
@@ -1561,15 +1563,17 @@ function App() {
       <TopBar isPhone={isMobile} />
 
       {showExportDialog && (
-        <ExportDialog
-          onExportMidi={exportAllMidi}
-          onExportSongChainMidi={() => void exportSongChainMidi()}
-          onExportPack={() => void exportPack()}
-          onExportStandalone={() => void exportStandalonePage()}
-          onExportAudioPattern={(format) => void exportAudio('pattern', format)}
-          onExportAudioSong={(format) => void exportAudio('song', format)}
-          songChainEmpty={project.songChain.length === 0}
-        />
+        <Suspense fallback={null}>
+          <ExportDialog
+            onExportMidi={exportAllMidi}
+            onExportSongChainMidi={() => void exportSongChainMidi()}
+            onExportPack={() => void exportPack()}
+            onExportStandalone={() => void exportStandalonePage()}
+            onExportAudioPattern={(format) => void exportAudio('pattern', format)}
+            onExportAudioSong={(format) => void exportAudio('song', format)}
+            songChainEmpty={project.songChain.length === 0}
+          />
+        </Suspense>
       )}
 
       {showImportDialog && (
@@ -1630,10 +1634,10 @@ function App() {
         )}
 
       <Toasts />
-      {showRecordDialog && <RecordDialog />}
-      {showAutosampleDialog && <AutosampleDialog />}
+      {showRecordDialog && <Suspense fallback={null}><RecordDialog /></Suspense>}
+      {showAutosampleDialog && <Suspense fallback={null}><AutosampleDialog /></Suspense>}
       <ConfirmDialog />
-      <ChopModal />
+      <Suspense fallback={null}><ChopModal /></Suspense>
     </main>
   )
 }

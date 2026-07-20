@@ -5,8 +5,6 @@ import { encodeWavFromChannels } from '../../lib/wavEncode'
 import { PADS_PER_BANK } from '../../lib/constants'
 import type { SampleAsset, BusId, TrimSettings } from '../../types'
 import { showConfirm } from '../confirmDialog'
-import { parseMpcPgm, matchMpcSamplesToFiles } from '../../lib/mpcImport'
-import { parseLcdk, matchLcdkSamplesToFiles } from '../../lib/lcdkImport'
 import { parseBatteryMonolith, extractWavFromMonolith, detectVelocityLayers, parseWavListChunks, matchCellsToSamples, getCategoryForCell, getChokeGroupForCell } from '../../lib/batteryMonolithImport'
 import { importFileAsSample } from '../importHelpers'
 import type { StoreContext } from '../context'
@@ -404,6 +402,7 @@ export const createLibraryActions = (ctx: StoreContext) => ({
     // --- MPC .pgm import: detect program files among dropped files ---
     const pgmFiles = files.filter((f) => f.name.match(/\.pgm$/i))
     if (pgmFiles.length > 0) {
+      const { parseMpcPgm, matchMpcSamplesToFiles } = await import('../../lib/mpcImport')
       const audioFiles = files.filter((f) => !f.name.match(/\.pgm$/i) && (f.type.startsWith('audio/') || f.name.match(/\.(wav|mp3|ogg|flac|aiff?|m4a|webm)$/i)))
       const claimedFiles = new Set<File>() // track files consumed by pgms (for remaining handling)
       const kitNames: string[] = []
@@ -535,6 +534,7 @@ export const createLibraryActions = (ctx: StoreContext) => ({
     // --- Loopcloud Drum .lcdk import ---
     const lcdkFiles = files.filter((f) => f.name.match(/\.lcdk$/i))
     if (lcdkFiles.length > 0) {
+      const { parseLcdk, matchLcdkSamplesToFiles } = await import('../../lib/lcdkImport')
       const audioFiles = files.filter((f) => !f.name.match(/\.(lcdk|pgm)$/i) && (f.type.startsWith('audio/') || f.name.match(/\.(wav|mp3|ogg|flac|aiff?|m4a|webm)$/i)))
       const kitNames: string[] = []
 
