@@ -4,6 +4,7 @@ import { BUS_IDS } from '../types'
 import { useStore } from '../store'
 import { audioEngine } from '../lib/audioEngine'
 import { KnobControl } from './KnobControl'
+import { sliderKeyDown, sliderAria } from './sliderKeys'
 const EFFECT_TYPES: { value: EffectType; label: string }[] = [
   { value: 'off', label: 'Off' },
   { value: 'compressor', label: 'Comp' },
@@ -23,11 +24,13 @@ function Fader({
   min,
   max,
   onChange,
+  label = 'Volume',
 }: {
   value: number
   min: number
   max: number
   onChange: (v: number) => void
+  label?: string
 }) {
   const trackRef = useRef<HTMLDivElement>(null)
 
@@ -67,7 +70,14 @@ function Fader({
   const pct = ((value - min) / (max - min)) * 100
 
   return (
-    <div className="fader" ref={trackRef} onPointerDown={onPointerDown}>
+    <div
+      className="fader"
+      ref={trackRef}
+      onPointerDown={onPointerDown}
+      onKeyDown={(e) => sliderKeyDown(e, value, min, max, undefined, onChange)}
+      tabIndex={0}
+      {...sliderAria(label, value, min, max, `${Math.round(pct)}%`)}
+    >
       <div className="fader-track" />
       <div className="fader-fill" style={{ height: `${pct}%` }} />
       <div className="fader-thumb" style={{ bottom: `${pct}%` }} />
@@ -314,6 +324,7 @@ function BusChannel({ bus }: { bus: MixBus }) {
           min={0}
           max={2}
           onChange={(v) => setBusGain(bus.id, v)}
+          label={`Bus ${bus.id} volume`}
         />
         <span className="mixer-fader-value">{(bus.gain * 100).toFixed(0)}%</span>
       </div>
@@ -362,6 +373,7 @@ function MasterChannel() {
           min={0}
           max={2}
           onChange={(v) => setMasterGain(v)}
+          label="Master volume"
         />
         <span className="mixer-fader-value">{(masterBus.gain * 100).toFixed(0)}%</span>
       </div>

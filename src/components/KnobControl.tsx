@@ -1,4 +1,5 @@
 import { useRef } from 'react'
+import { sliderKeyDown, sliderAria } from './sliderKeys'
 
 interface KnobControlProps {
   label: string
@@ -121,7 +122,13 @@ export function KnobControl({
 
   return (
     <div className="knob-control">
-      <button type="button" className="knob" onPointerDown={startDrag}>
+      <button
+        type="button"
+        className="knob"
+        onPointerDown={startDrag}
+        onKeyDown={(e) => sliderKeyDown(e, value, min, max, step, (v) => onChange(clamp(v)))}
+        {...sliderAria(label, value, min, max, displayValue)}
+      >
         <span className="knob-indicator" style={{ transform: `translateX(-50%) rotate(${angle}deg)` }} />
       </button>
       <span className="knob-label">{label}</span>

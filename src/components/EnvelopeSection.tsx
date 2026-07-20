@@ -1,4 +1,5 @@
 import { useRef, useCallback, memo, useMemo } from 'react'
+import { sliderKeyDown, sliderAria } from './sliderKeys'
 
 // ---------------------------------------------------------------------------
 // Vertical Fader (MC-909 style)
@@ -79,7 +80,14 @@ function VerticalFader({ label, value, min, max, step, logScale, logExp, onChang
   return (
     <div className={`env-fader-col${disabled ? ' disabled' : ''}`}>
       <span className="env-fader-label">{label}</span>
-      <div className="env-fader" ref={trackRef} onPointerDown={disabled ? undefined : onPointerDown}>
+      <div
+        className="env-fader"
+        ref={trackRef}
+        onPointerDown={disabled ? undefined : onPointerDown}
+        onKeyDown={disabled ? undefined : (e) => sliderKeyDown(e, value, min, max, step, onChange)}
+        tabIndex={disabled ? undefined : 0}
+        {...(disabled ? { 'aria-disabled': true } : sliderAria(`Envelope ${label}`, value, min, max, display))}
+      >
         <div className="env-fader-track">
           {[0, 25, 50, 75, 100].map((t) => (
             <div key={t} className="env-fader-tick" style={{ bottom: `${t}%` }} />
