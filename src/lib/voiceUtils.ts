@@ -220,4 +220,39 @@ export function createPanNode(ctx: BaseAudioContext, settings: PadSettings): Ste
   return panNode
 }
 
+// ---------------------------------------------------------------------------
+// Reverse playback
+// ---------------------------------------------------------------------------
+
+// Shared context solely for creating reversed buffers (AudioBuffers are context-independent)
+let _reversalCtx: OfflineAudioContext | null = null
+
+/** Create a reversed copy of an AudioBuffer. Callers cache the result (per sample/render). */
+export function reverseAudioBuffer(buffer: AudioBuffer): AudioBuffer {
+  if (!_reversalCtx) _reversalCtx = new OfflineAudioContext(2, 1, 44100)
+  const reversed = _reversalCtx.createBuffer(buffer.numberOfChannels, buffer.length, buffer.sampleRate)
+  for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
+    const src = buffer.getChannelData(ch)
+    const dst = reversed.getChannelData(ch)
+    for (let i = 0, j = src.length - 1; j >= 0; i++, j--) dst[i] = src[j]
+  }
+  return reversed
+}
+
+/**
+ * Compute source start offset + trimmed playback duration for a voice.
+ * When `settings.reverse` is on, the caller must use a reversed buffer and the
+ * start offset is mirrored so trim markers keep their meaning (trim.end = attack edge).
+ */
+export function resolveSourceOffsets(
+  settings: PadSettings,
+  sourceDurationSec: number,
+): { startOffsetSec: number; playbackDurationSec: number } {
+  const trimStartSec = Math.max(0, Math.min(sourceDurationSec, settings.trim.start * sourceDurationSec))
+  const trimEndSec = Math.max(trimStartSec, Math.min(sourceDurationSec, settings.trim.end * sourceDurationSec))
+  const playbackDurationSec = Math.max(0.01, trimEndSec - trimStartSec)
+  const startOffsetSec = settings.reverse ? Math.max(0, sourceDurationSec - trimEndSec) : trimStartSec
+  return { startOffsetSec, playbackDurationSec }
+}
+
 

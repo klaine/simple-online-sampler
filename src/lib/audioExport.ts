@@ -11,6 +11,7 @@ import {
   createFilterChain,
   scheduleAmplitudeEnvelope,
   createPanNode,
+  reverseAudioBuffer,
 } from './voiceUtils'
 
 export type ExportMode = 'pattern' | 'song'
@@ -163,16 +164,31 @@ export const renderPadAudio = async (
   exportRrCounters.clear()
   let maxNoteEndSec = 0
 
+  // Reversed buffers are cached per render (reversal is O(n) per unique buffer)
+  const reversedCache = new Map<AudioBuffer, AudioBuffer>()
+  const resolveRenderBuffer = (ms: PadSettings, buffer: AudioBuffer): AudioBuffer => {
+    if (!ms.reverse) return buffer
+    let rev = reversedCache.get(buffer)
+    if (!rev) {
+      rev = reverseAudioBuffer(buffer)
+      reversedCache.set(buffer, rev)
+    }
+    return rev
+  }
+
   const buildNoteEntry = (
     entry: ScheduledEvent,
     ms: PadSettings,
-    sourceBuffer: AudioBuffer,
+    originalBuffer: AudioBuffer,
     atSecOverride?: number,
   ) => {
     const atSec = atSecOverride ?? entry.atSec
+    const sourceBuffer = resolveRenderBuffer(ms, originalBuffer)
     const trimStartSec = Math.max(0, Math.min(sourceBuffer.duration, ms.trim.start * sourceBuffer.duration))
     const trimEndSec = Math.max(trimStartSec, Math.min(sourceBuffer.duration, ms.trim.end * sourceBuffer.duration))
-    
+    // Reverse: mirrored start offset so trim markers keep their meaning (trim.end = attack edge)
+    const startSec = ms.reverse ? Math.max(0, sourceBuffer.duration - trimEndSec) : trimStartSec
+
     // Account for pitch shifting in duration calculation
     const pitchRatio = Math.pow(2, ((ms.semitones ?? 0) + (ms.fineCents ?? 0) / 100) / 12)
     const playbackDurationSec = Math.max(0.01, (trimEndSec - trimStartSec) / pitchRatio)
@@ -204,7 +220,7 @@ export const renderPadAudio = async (
       entry: { ...entry, atSec },
       ms,
       sourceBuffer,
-      trimStartSec,
+      trimStartSec: startSec,
       playbackDurationSec,
       noteDurationSec,
       sourceStopSec,
@@ -325,16 +341,31 @@ export const renderProjectAudio = async (
 
   let maxNoteEndSec = 0
 
+  // Reversed buffers are cached per render (reversal is O(n) per unique buffer)
+  const reversedCache = new Map<AudioBuffer, AudioBuffer>()
+  const resolveRenderBuffer = (ms: PadSettings, buffer: AudioBuffer): AudioBuffer => {
+    if (!ms.reverse) return buffer
+    let rev = reversedCache.get(buffer)
+    if (!rev) {
+      rev = reverseAudioBuffer(buffer)
+      reversedCache.set(buffer, rev)
+    }
+    return rev
+  }
+
   // Helper to build a note render entry from resolved settings + buffer
   const buildNoteEntry = (
     entry: ScheduledEvent & { atSec: number; stepDurationSec: number },
     ms: PadSettings,
-    sourceBuffer: AudioBuffer,
+    originalBuffer: AudioBuffer,
     atSecOverride?: number,
   ) => {
     const atSec = atSecOverride ?? entry.atSec
+    const sourceBuffer = resolveRenderBuffer(ms, originalBuffer)
     const trimStartSec = Math.max(0, Math.min(sourceBuffer.duration, ms.trim.start * sourceBuffer.duration))
     const trimEndSec = Math.max(trimStartSec, Math.min(sourceBuffer.duration, ms.trim.end * sourceBuffer.duration))
+    // Reverse: mirrored start offset so trim markers keep their meaning (trim.end = attack edge)
+    const startSec = ms.reverse ? Math.max(0, sourceBuffer.duration - trimEndSec) : trimStartSec
     const playbackDurationSec = Math.max(0.01, trimEndSec - trimStartSec)
     const gate = Math.max(1, entry.event.gate)
     const forceDurationSec = Math.max(MIN_FORCE_DURATION_SEC, gate * entry.stepDurationSec)
@@ -366,7 +397,7 @@ export const renderProjectAudio = async (
       entry: { ...entry, atSec },
       ms,
       sourceBuffer,
-      trimStartSec,
+      trimStartSec: startSec,
       playbackDurationSec,
       noteDurationSec,
       sourceStopSec,

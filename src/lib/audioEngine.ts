@@ -7,6 +7,8 @@ import {
   createFilterChain,
   scheduleAmplitudeEnvelope,
   createPanNode,
+  reverseAudioBuffer,
+  resolveSourceOffsets,
 } from './voiceUtils'
 
 // Module-level round-robin counters (not in store — non-reactive)
@@ -617,6 +619,19 @@ export class AudioEngine {
   // Queue for samples that failed decoding on a suspended context (Safari)
   private pendingDecodes: Map<string, ArrayBuffer> = new Map()
 
+  // Reversed buffer cache (keyed by sampleId, invalidated when the sample buffer changes)
+  private reversedBuffers = new Map<string, AudioBuffer>()
+
+  /** Get (or lazily create) the reversed copy of a sample's buffer */
+  private getReversedBuffer(sampleId: string, source: AudioBuffer): AudioBuffer {
+    let rev = this.reversedBuffers.get(sampleId)
+    if (!rev || rev.length !== source.length) {
+      rev = reverseAudioBuffer(source)
+      this.reversedBuffers.set(sampleId, rev)
+    }
+    return rev
+  }
+
   private async flushPendingDecodes(): Promise<void> {
     if (this.pendingDecodes.size === 0) return
     const ctx = this.getContext()
@@ -700,6 +715,7 @@ export class AudioEngine {
     try {
       const audioBuffer = await ctx.decodeAudioData(buffer.slice(0))
       this.buffers.set(sample.id, audioBuffer)
+      this.reversedBuffers.delete(sample.id) // invalidate stale reversed copy (e.g. after crop/normalize)
     } catch (e) {
       // Safari may fail decodeAudioData on a suspended context —
       // queue the raw buffer and decode after unlock/resume
@@ -710,6 +726,7 @@ export class AudioEngine {
 
   unregisterSample(sampleId: string): void {
     this.buffers.delete(sampleId)
+    this.reversedBuffers.delete(sampleId)
   }
 
   /** Remove cached AudioBuffers for samples no longer assigned to any pad */
@@ -717,6 +734,7 @@ export class AudioEngine {
     for (const id of this.buffers.keys()) {
       if (!usedSampleIds.has(id)) {
         this.buffers.delete(id)
+        this.reversedBuffers.delete(id)
       }
     }
   }
@@ -838,9 +856,10 @@ export class AudioEngine {
       }
 
       for (const layer of pad.settings.layers) {
-        const sourceBuffer = this.buffers.get(layer.sampleId)
-        if (!sourceBuffer) continue
+        const rawBuffer = this.buffers.get(layer.sampleId)
+        if (!rawBuffer) continue
         const settings = mergeLayerSettings(pad.settings, layer)
+        const sourceBuffer = settings.reverse ? this.getReversedBuffer(layer.sampleId, rawBuffer) : rawBuffer
         const offsetMs = layer.stackOffsetMs ?? 0
         this.playVoice(pad, settings, sourceBuffer, velocity, chokeGroup, {
           ...options,
@@ -859,8 +878,9 @@ export class AudioEngine {
     const { sampleId, layer } = resolved
     const settings = mergeLayerSettings(pad.settings, layer)
 
-    const sourceBuffer = this.buffers.get(sampleId)
-    if (!sourceBuffer) return
+    const rawBuffer = this.buffers.get(sampleId)
+    if (!rawBuffer) return
+    const sourceBuffer = settings.reverse ? this.getReversedBuffer(sampleId, rawBuffer) : rawBuffer
 
     this.evictIfNeeded()
 
@@ -909,9 +929,7 @@ export class AudioEngine {
     }
 
     const duration = sourceBuffer.duration
-    const startOffset = Math.max(0, Math.min(duration, settings.trim.start * duration))
-    const endOffset = Math.max(startOffset, Math.min(duration, settings.trim.end * duration))
-    const playbackDuration = Math.max(0.01, endOffset - startOffset)
+    const { startOffsetSec: startOffset, playbackDurationSec: playbackDuration } = resolveSourceOffsets(settings, duration)
 
     const delayMs = Math.max(0, (startTimeSec - ctx.currentTime) * 1000)
 
@@ -992,9 +1010,7 @@ export class AudioEngine {
     }
 
     const duration = sourceBuffer.duration
-    const startOffset = Math.max(0, Math.min(duration, settings.trim.start * duration))
-    const endOffset = Math.max(startOffset, Math.min(duration, settings.trim.end * duration))
-    const playbackDuration = Math.max(0.01, endOffset - startOffset)
+    const { startOffsetSec: startOffset, playbackDurationSec: playbackDuration } = resolveSourceOffsets(settings, duration)
     const delayMs = Math.max(0, (startTimeSec - ctx.currentTime) * 1000)
 
     // --- Amplitude envelope ---

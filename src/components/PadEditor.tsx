@@ -313,6 +313,16 @@ export function PadEditor({ waveformRef, waveformCanvasRef, dragTargetRef }: Pad
                   <option value="ahr">AHR</option>
                 </select>
               </label>
+              <span className="pan-random-toggle">
+                <label title="Play sample backwards (trim markers keep their meaning — trim end is the attack edge)">
+                  <input
+                    type="checkbox"
+                    checked={selectedPad.settings.reverse ?? false}
+                    onChange={(e) => void updatePadSettings({ reverse: e.target.checked })}
+                  />
+                  REV
+                </label>
+              </span>
               <label>
                 Bus
                 <select

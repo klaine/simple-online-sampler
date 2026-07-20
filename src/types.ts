@@ -94,6 +94,7 @@ export interface PadSettings {
   chokeGroup: number  // 0 = none, 1–8 = choke group
   pan?: number        // -1 (left) to 1 (right), undefined = 0 (center)
   randomPan?: boolean // when true, pan value controls random pan width
+  reverse?: boolean   // play sample backwards within trim markers (undefined/false = forward)
   midiOut?: MidiOutConfig  // optional MIDI out config (undefined = disabled)
   /** Per-pad mute (undefined/false = not muted) */
   mute?: boolean
