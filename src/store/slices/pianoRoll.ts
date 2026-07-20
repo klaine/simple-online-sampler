@@ -32,14 +32,15 @@ export const createPianoRollActions = (ctx: StoreContext) => ({
     })
   },
 
-  setPianoRollNoteVelocity: async (eventId: string, velocity: number) => {
+  // Called per-pointermove during velocity drags — light save (debounced IDB, no normalize)
+  setPianoRollNoteVelocity: (eventId: string, velocity: number) => {
     const s = ctx.get()
     const activeSeq = selectActiveSequence(s)
     if (!s.project || !activeSeq) return
     const events = activeSeq.events.map((e) =>
       e.id === eventId ? { ...e, velocity: Math.max(1, Math.min(127, velocity)) } : e,
     )
-    await ctx.get().saveProject({
+    ctx.get().saveProjectLight({
       ...s.project,
       sequences: s.project.sequences.map((seq) =>
         seq.id === activeSeq.id ? { ...seq, events } : seq,
@@ -47,14 +48,15 @@ export const createPianoRollActions = (ctx: StoreContext) => ({
     })
   },
 
-  setPianoRollNoteGate: async (eventId: string, gate: number) => {
+  // Called per-pointermove during gate drags — light save (debounced IDB, no normalize)
+  setPianoRollNoteGate: (eventId: string, gate: number) => {
     const s = ctx.get()
     const activeSeq = selectActiveSequence(s)
     if (!s.project || !activeSeq) return
     const events = activeSeq.events.map((e) =>
       e.id === eventId ? { ...e, gate: Math.max(1, gate) } : e,
     )
-    await ctx.get().saveProject({
+    ctx.get().saveProjectLight({
       ...s.project,
       sequences: s.project.sequences.map((seq) =>
         seq.id === activeSeq.id ? { ...seq, events } : seq,
@@ -62,14 +64,15 @@ export const createPianoRollActions = (ctx: StoreContext) => ({
     })
   },
 
-  setPianoRollNoteStartAndGate: async (eventId: string, step: number, gate: number) => {
+  // Called per-pointermove during left-edge drags — light save (debounced IDB, no normalize)
+  setPianoRollNoteStartAndGate: (eventId: string, step: number, gate: number) => {
     const s = ctx.get()
     const activeSeq = selectActiveSequence(s)
     if (!s.project || !activeSeq) return
     const events = activeSeq.events.map((e) =>
       e.id === eventId ? { ...e, step: Math.max(0, step), gate: Math.max(1, gate) } : e,
     )
-    await ctx.get().saveProject({
+    ctx.get().saveProjectLight({
       ...s.project,
       sequences: s.project.sequences.map((seq) =>
         seq.id === activeSeq.id ? { ...seq, events } : seq,

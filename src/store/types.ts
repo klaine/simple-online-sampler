@@ -273,9 +273,9 @@ export interface AppState {
 
   togglePianoRollExpanded: (padId: string) => void
   togglePianoRollNote: (step: number, padId: string, note: number) => Promise<void>
-  setPianoRollNoteVelocity: (eventId: string, velocity: number) => Promise<void>
-  setPianoRollNoteGate: (eventId: string, gate: number) => Promise<void>
-  setPianoRollNoteStartAndGate: (eventId: string, step: number, gate: number) => Promise<void>
+  setPianoRollNoteVelocity: (eventId: string, velocity: number) => void
+  setPianoRollNoteGate: (eventId: string, gate: number) => void
+  setPianoRollNoteStartAndGate: (eventId: string, step: number, gate: number) => void
   setPianoRollOctaveOffset: (padId: string, offset: number) => void
 
   addSequence: () => Promise<void>
