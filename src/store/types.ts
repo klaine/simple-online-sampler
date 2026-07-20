@@ -80,7 +80,6 @@ export interface AppState {
   playingChainIndex: number | null
   playingChainRepeat: number
   loopEnabled: boolean
-  playheadStep: number | null
   showPerfStats: boolean
   perfStats: PerfStatsState
 

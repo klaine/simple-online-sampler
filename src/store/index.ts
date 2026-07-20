@@ -169,7 +169,6 @@ export const useStore = create<AppState>()(
       playingChainIndex: null,
       playingChainRepeat: 1,
       loopEnabled: true,
-      playheadStep: null,
       showPerfStats: false,
       perfStats: { tickCount: 0, lateNotes: 0, maxDriftMs: 0, p95DriftMs: 0 },
 

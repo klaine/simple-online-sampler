@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
-import { useStore } from '../store'
+import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useStore, transportVisualStore } from '../store'
 import { showConfirm } from '../store/confirmDialog'
 import type { SongChainEntry, SequencePattern } from '../types'
 
@@ -16,7 +16,7 @@ interface TimelineProps {
 export function Timeline({ show }: TimelineProps) {
   const project = useStore((s) => s.project)
   const isPlaying = useStore((s) => s.isPlaying)
-  const playheadStep = useStore((s) => s.playheadStep)
+  const playheadStep = useSyncExternalStore(transportVisualStore.subscribe, transportVisualStore.getPlayheadStep)
   const playingPatternId = useStore((s) => s.playingPatternId)
   const playbackScope = useStore((s) => s.playbackScope)
   const playingChainIndex = useStore((s) => s.playingChainIndex)
