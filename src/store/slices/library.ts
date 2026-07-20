@@ -399,6 +399,7 @@ export const createLibraryActions = (ctx: StoreContext) => ({
   addSamplesToLibrary: async (files: File[], padIndexMap?: Map<string, number>, groupLabel?: string) => {
     let added = 0
     const importedSamples: SampleAsset[] = []
+    const failedFiles: string[] = []
 
     // --- MPC .pgm import: detect program files among dropped files ---
     const pgmFiles = files.filter((f) => f.name.match(/\.pgm$/i))
@@ -517,6 +518,7 @@ export const createLibraryActions = (ctx: StoreContext) => ({
             added++
           } catch (e) {
             console.warn('Failed to import file', file.name, e)
+            failedFiles.push(file.name)
           }
         }
       }
@@ -838,6 +840,7 @@ export const createLibraryActions = (ctx: StoreContext) => ({
         added++
       } catch (e) {
         console.warn('Failed to import file', file.name, e)
+        failedFiles.push(file.name)
       }
     }
     } // end if pgmFiles.length === 0
@@ -873,8 +876,12 @@ export const createLibraryActions = (ctx: StoreContext) => ({
       const updated = ctx.get().samples.filter((s) => s.autosampleRunId === runId)
       for (const sample of updated) void db.putSample(sample)
     }
+    if (failedFiles.length > 0) {
+      const names = failedFiles.slice(0, 3).join(', ') + (failedFiles.length > 3 ? `, +${failedFiles.length - 3} more` : '')
+      ctx.get().addToast(`Couldn't import ${failedFiles.length} file${failedFiles.length > 1 ? 's' : ''}: ${names}`, 'error')
+    }
     if (added > 0) ctx.get().addToast(`Added ${added} sample${added > 1 ? 's' : ''} to library`)
-    else if (!pgmFiles.length) ctx.get().addToast('No audio files found in drop')
+    else if (failedFiles.length === 0 && !pgmFiles.length) ctx.get().addToast('No audio files found in drop')
   },
 
   setLibraryInspectorSample: (sampleId: string | null) => {

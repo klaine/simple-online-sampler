@@ -1252,50 +1252,74 @@ function App() {
   // --- Export actions ---
   const exportAllMidi = useCallback(async () => {
     if (!project) return
-    for (const sequence of project.sequences) {
-      const bytes = await buildMidiForSequence(sequence, project.pads, project.bpm)
-      const safeBytes = new Uint8Array(bytes.length)
-      safeBytes.set(bytes)
-      const blob = new Blob([safeBytes], { type: 'audio/midi' })
-      void downloadOrShare(blob, `${sequence.name}.mid`)
+    try {
+      for (const sequence of project.sequences) {
+        const bytes = await buildMidiForSequence(sequence, project.pads, project.bpm)
+        const safeBytes = new Uint8Array(bytes.length)
+        safeBytes.set(bytes)
+        const blob = new Blob([safeBytes], { type: 'audio/midi' })
+        void downloadOrShare(blob, `${sequence.name}.mid`)
+      }
+      useStore.getState().addToast(`Exported ${project.sequences.length} MIDI file${project.sequences.length > 1 ? 's' : ''}`, 'success')
+    } catch (e) {
+      console.error('MIDI export failed', e)
+      useStore.getState().addToast('MIDI export failed', 'error')
     }
   }, [project])
 
   const exportSongChainMidi = useCallback(async () => {
     if (!project) return
     if (project.songChain.length === 0) return
-    const bytes = await buildMidiForSongChain(project.sequences, project.pads, project.bpm, project.songChain, project.swing ?? 0)
-    const blob = new Blob([new Uint8Array(bytes)], { type: 'audio/midi' })
-    const safeName = project.name.replace(/\s+/g, '-')
-    await downloadOrShare(blob, `${safeName}-song-chain.mid`)
+    try {
+      const bytes = await buildMidiForSongChain(project.sequences, project.pads, project.bpm, project.songChain, project.swing ?? 0)
+      const blob = new Blob([new Uint8Array(bytes)], { type: 'audio/midi' })
+      const safeName = project.name.replace(/\s+/g, '-')
+      await downloadOrShare(blob, `${safeName}-song-chain.mid`)
+      useStore.getState().addToast('Exported song chain MIDI', 'success')
+    } catch (e) {
+      console.error('Song chain MIDI export failed', e)
+      useStore.getState().addToast('Song chain MIDI export failed', 'error')
+    }
   }, [project])
 
   const exportPack = useCallback(async () => {
     if (!project) return
-    const { samples } = useStore.getState()
-    const blob = await exportProjectPackage(project, samples)
-    await downloadOrShare(blob, `${project.name.replace(/\s+/g, '-')}.ospack`)
+    try {
+      const { samples } = useStore.getState()
+      const blob = await exportProjectPackage(project, samples)
+      await downloadOrShare(blob, `${project.name.replace(/\s+/g, '-')}.ospack`)
+      useStore.getState().addToast('Exported project pack', 'success')
+    } catch (e) {
+      console.error('Pack export failed', e)
+      useStore.getState().addToast('Pack export failed', 'error')
+    }
   }, [project])
 
   const exportStandalonePage = useCallback(async () => {
     if (!project) return
-    const usedIds = Array.from(
-      new Set(project.pads.map((p) => p.settings.sampleId).filter((id): id is string => Boolean(id))),
-    )
-    const embeddedSamples: Array<{ id: string; name: string; mimeType: string; base64: string }> = []
-    for (const sampleId of usedIds) {
-      const sample = await db.getSample(sampleId)
-      if (!sample) continue
-      embeddedSamples.push({
-        id: sample.id,
-        name: sample.name,
-        mimeType: sample.mimeType,
-        base64: arrayBufferToBase64(await sample.blob.arrayBuffer()),
-      })
+    try {
+      const usedIds = Array.from(
+        new Set(project.pads.map((p) => p.settings.sampleId).filter((id): id is string => Boolean(id))),
+      )
+      const embeddedSamples: Array<{ id: string; name: string; mimeType: string; base64: string }> = []
+      for (const sampleId of usedIds) {
+        const sample = await db.getSample(sampleId)
+        if (!sample) continue
+        embeddedSamples.push({
+          id: sample.id,
+          name: sample.name,
+          mimeType: sample.mimeType,
+          base64: arrayBufferToBase64(await sample.blob.arrayBuffer()),
+        })
+      }
+      const html = buildStandaloneHtml(project, embeddedSamples)
+      const blob = new Blob([html], { type: 'text/html' })
+      await downloadOrShare(blob, `${project.name.replace(/\s+/g, '-')}.standalone.html`)
+      useStore.getState().addToast('Exported standalone page', 'success')
+    } catch (e) {
+      console.error('Standalone page export failed', e)
+      useStore.getState().addToast('Standalone page export failed', 'error')
     }
-    const html = buildStandaloneHtml(project, embeddedSamples)
-    const blob = new Blob([html], { type: 'text/html' })
-    await downloadOrShare(blob, `${project.name.replace(/\s+/g, '-')}.standalone.html`)
   }, [project])
 
   const exportAudio = useCallback(async (mode: 'pattern' | 'song', format: ExportFormat = 'wav') => {
