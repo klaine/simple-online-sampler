@@ -33,6 +33,8 @@ export const mutableRefs = {
   }>,
   captureTransportStartMs: null as number | null,
   captureFirstNoteTimeMs: null as number | null,
+  // Running count of note-on events in captureBuffer (avoids O(n) scan per hit)
+  captureNoteOnCount: 0,
 
   // Pad hold record
   holdRecStream: null as MediaStream | null,

@@ -8,6 +8,9 @@ import type { SampleAsset, SequenceEvent } from '../../types'
 import { mutableRefs, HOLD_REC_WORKLET_SRC, HOLD_REC_SAMPLE_RATE, HOLD_REC_MIN_MS } from '../refs'
 import type { StoreContext } from '../context'
 
+// Hard cap on the capture buffer — plenty of headroom for a 4-bar capture window
+const CAPTURE_BUFFER_MAX_EVENTS = 1024
+
 export const createRecordingActions = (ctx: StoreContext) => ({
   openRecordDialog: (targetPadId?: string) => {
     ctx.set((d) => {
@@ -197,19 +200,32 @@ export const createRecordingActions = (ctx: StoreContext) => ({
 
   feedCaptureBuffer: (padId: string, velocity: number, type: 'on' | 'off', note?: number) => {
     const now = performance.now()
-    mutableRefs.captureBuffer.push({
+    const buf = mutableRefs.captureBuffer
+    buf.push({
       padId,
       velocity,
       note,
       type,
       timestamp: now,
     })
-    if (type === 'on' && mutableRefs.captureFirstNoteTimeMs === null) {
+    // Cap buffer growth — drop oldest events (plenty of headroom for a 4-bar capture window)
+    if (buf.length > CAPTURE_BUFFER_MAX_EVENTS) {
+      const overflow = buf.length - CAPTURE_BUFFER_MAX_EVENTS
+      let droppedOns = 0
+      for (let i = 0; i < overflow; i++) if (buf[i].type === 'on') droppedOns++
+      buf.splice(0, overflow)
+      mutableRefs.captureNoteOnCount = Math.max(0, mutableRefs.captureNoteOnCount - droppedOns)
+    }
+    if (type !== 'on') return
+    mutableRefs.captureNoteOnCount += 1
+    if (mutableRefs.captureFirstNoteTimeMs === null) {
       mutableRefs.captureFirstNoteTimeMs = now
     }
-    // Update reactive count for UI
-    const noteOnCount = mutableRefs.captureBuffer.filter((e) => e.type === 'on').length
-    ctx.set((d) => { d.captureBufferCount = noteOnCount })
+    // Update reactive count for UI (only when it actually changed — no immer produce per note-off)
+    const count = mutableRefs.captureNoteOnCount
+    if (ctx.get().captureBufferCount !== count) {
+      ctx.set((d) => { d.captureBufferCount = count })
+    }
   },
 
   captureMidi: async () => {
@@ -232,6 +248,7 @@ export const createRecordingActions = (ctx: StoreContext) => ({
       mutableRefs.captureBuffer = []
       mutableRefs.captureTransportStartMs = null
       mutableRefs.captureFirstNoteTimeMs = null
+      mutableRefs.captureNoteOnCount = 0
       ctx.set((d) => { d.captureBufferCount = 0 })
       return
     }
@@ -255,6 +272,7 @@ export const createRecordingActions = (ctx: StoreContext) => ({
         mutableRefs.captureBuffer = []
         mutableRefs.captureTransportStartMs = null
         mutableRefs.captureFirstNoteTimeMs = null
+        mutableRefs.captureNoteOnCount = 0
         ctx.set((d) => { d.captureBufferCount = 0 })
         return
       }
@@ -321,6 +339,7 @@ export const createRecordingActions = (ctx: StoreContext) => ({
       mutableRefs.captureBuffer = []
       mutableRefs.captureTransportStartMs = null
       mutableRefs.captureFirstNoteTimeMs = null
+      mutableRefs.captureNoteOnCount = 0
       ctx.set((d) => { d.captureBufferCount = 0 })
       return
     }
@@ -348,6 +367,7 @@ export const createRecordingActions = (ctx: StoreContext) => ({
     mutableRefs.captureBuffer = []
     mutableRefs.captureTransportStartMs = null
     mutableRefs.captureFirstNoteTimeMs = null
+    mutableRefs.captureNoteOnCount = 0
     ctx.set((d) => { d.captureBufferCount = 0 })
 
     ctx.get().addToast(`Captured ${finalEvents.length} events into new pattern`, 'success')
@@ -357,6 +377,7 @@ export const createRecordingActions = (ctx: StoreContext) => ({
     mutableRefs.captureBuffer = []
     mutableRefs.captureTransportStartMs = null
     mutableRefs.captureFirstNoteTimeMs = null
+    mutableRefs.captureNoteOnCount = 0
     ctx.set((d) => { d.captureBufferCount = 0 })
   },
 })
