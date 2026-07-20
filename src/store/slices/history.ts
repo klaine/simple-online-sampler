@@ -19,7 +19,9 @@ export const createHistoryActions = (ctx: StoreContext) => ({
     const s = ctx.get()
     if (!s.project || s.isUndoingOrRedoing) return
 
-    const project = structuredClone(s.project)
+    // Store the pre-edit project by reference — immer updates are immutable with
+    // structural sharing, so past states are never mutated and clones are unnecessary.
+    const project = s.project
 
     ctx.set((d) => {
       d.undoStack = [...d.undoStack, { description, project }].slice(-MAX_UNDO_DEPTH)
@@ -32,7 +34,7 @@ export const createHistoryActions = (ctx: StoreContext) => ({
     if (!s.project || s.undoStack.length === 0 || s.isUndoingOrRedoing) return
 
     const entry = s.undoStack[s.undoStack.length - 1]
-    const currentProject = structuredClone(s.project)
+    const currentProject = s.project
 
     ctx.set((d) => {
       d.isUndoingOrRedoing = true
@@ -52,7 +54,7 @@ export const createHistoryActions = (ctx: StoreContext) => ({
     if (!s.project || s.redoStack.length === 0 || s.isUndoingOrRedoing) return
 
     const entry = s.redoStack[s.redoStack.length - 1]
-    const currentProject = structuredClone(s.project)
+    const currentProject = s.project
 
     ctx.set((d) => {
       d.isUndoingOrRedoing = true
