@@ -52,6 +52,22 @@ export const useStore = create<AppState>()(
     let _lastSnapshotSongLoopStart: unknown = null
     let _lastSnapshotSongLoopEnd: unknown = null
 
+    // Throttle state: knob/trim/drag edits can fire rebuilds every rAF frame.
+    // Coalesce to at most one build per SNAPSHOT_MIN_INTERVAL_MS with a trailing
+    // build so the snapshot always catches up. The scheduler reads
+    // mutableRefs.playbackSnapshot fresh every tick, so a trailing build is
+    // picked up automatically (max ~100ms staleness during continuous drags).
+    const SNAPSHOT_MIN_INTERVAL_MS = 100
+    let _lastSnapshotBuildMs = 0
+    let _snapshotTrailingTimer: number | null = null
+    let _pendingSnapshotProj: Project | null = null
+
+    const buildSnapshotNow = (proj: Project) => {
+      _lastSnapshotBuildMs = performance.now()
+      mutableRefs.playbackVersion += 1
+      mutableRefs.playbackSnapshot = buildPlaybackSnapshot(proj, mutableRefs.playbackVersion)
+    }
+
     const rebuildPlaybackSnapshot = (proj: Project) => {
       if (
         proj.pads === _lastSnapshotPads &&
@@ -71,8 +87,23 @@ export const useStore = create<AppState>()(
       _lastSnapshotSongChain = proj.songChain
       _lastSnapshotSongLoopStart = proj.songLoopStart
       _lastSnapshotSongLoopEnd = proj.songLoopEnd
-      mutableRefs.playbackVersion += 1
-      mutableRefs.playbackSnapshot = buildPlaybackSnapshot(proj, mutableRefs.playbackVersion)
+
+      const now = performance.now()
+      const elapsed = now - _lastSnapshotBuildMs
+      if (elapsed >= SNAPSHOT_MIN_INTERVAL_MS) {
+        buildSnapshotNow(proj)
+        return
+      }
+      _pendingSnapshotProj = proj
+      if (_snapshotTrailingTimer === null) {
+        _snapshotTrailingTimer = window.setTimeout(() => {
+          _snapshotTrailingTimer = null
+          if (_pendingSnapshotProj) {
+            buildSnapshotNow(_pendingSnapshotProj)
+            _pendingSnapshotProj = null
+          }
+        }, SNAPSHOT_MIN_INTERVAL_MS - elapsed)
+      }
     }
 
     const touchAndNormalize = (proj: Project): Project => touchProject(normalizeProject(proj))
