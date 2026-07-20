@@ -7,6 +7,7 @@ import {
   selectSelectedLayer,
   storeRefs,
 } from '../store'
+import { showConfirm } from '../store/confirmDialog'
 import { KnobControl } from './KnobControl'
 import { EnvelopeSection } from './EnvelopeSection'
 import { midiToName } from '../lib/utils'
@@ -348,7 +349,11 @@ export function PadEditor({ waveformRef, waveformCanvasRef, dragTargetRef }: Pad
                 <button
                   type="button"
                   className="file-input-btn"
-                  onClick={() => void useStore.getState().cropSampleToTrim(selectedPad.id)}
+                  onClick={async () => {
+                    if (await showConfirm('Crop sample to trim markers? This permanently rewrites the audio and cannot be undone.')) {
+                      void useStore.getState().cropSampleToTrim(selectedPad.id)
+                    }
+                  }}
                 >
                   Crop
                 </button>
@@ -357,7 +362,11 @@ export function PadEditor({ waveformRef, waveformCanvasRef, dragTargetRef }: Pad
                 <button
                   type="button"
                   className="file-input-btn"
-                  onClick={() => void useStore.getState().normalizeSample(selectedPad.id)}
+                  onClick={async () => {
+                    if (await showConfirm('Normalize sample to -0.3 dBFS? This permanently rewrites the audio and cannot be undone.')) {
+                      void useStore.getState().normalizeSample(selectedPad.id)
+                    }
+                  }}
                 >
                   Normalize
                 </button>

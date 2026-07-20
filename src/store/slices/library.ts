@@ -37,7 +37,9 @@ export const createLibraryActions = (ctx: StoreContext) => ({
     const s = ctx.get()
     if (!s.project) return
 
-    s.pushUndo('Delete sample')
+    // No undo entry: the PCM blob is permanently deleted from IndexedDB and cannot
+    // be restored, so an undo entry would be a broken promise. The confirm dialog
+    // below is the safety net.
     const usedByPrimary = s.project.pads.filter((p) => p.settings.sampleId === sample.id)
     const usedByLayer = s.project.pads.filter((p) =>
       p.settings.layers.some((l) => l.sampleId === sample.id),
@@ -228,7 +230,7 @@ export const createLibraryActions = (ctx: StoreContext) => ({
     const s = ctx.get()
     if (!s.project) return
 
-    s.pushUndo('Remove unassigned samples')
+    // No undo entry (see deleteSampleFromLibrary) — blobs are permanently deleted.
     const usedIds = new Set<string>()
     for (const pad of s.project.pads) {
       if (pad.settings.sampleId) usedIds.add(pad.settings.sampleId)
