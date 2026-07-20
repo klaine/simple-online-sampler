@@ -16,6 +16,7 @@ interface ActiveVoice {
   source: AudioBufferSourceNode
   gain: GainNode
   filters: BiquadFilterNode[]
+  pan: StereoPannerNode
   startedAt: number
   hold: boolean
   padId: string
@@ -929,6 +930,7 @@ export class AudioEngine {
       source,
       gain: gainNode,
       filters: filterNodes,
+      pan: panNode,
       startedAt: Date.now(),
       hold: (settings.mode === 'adsr' || settings.mode === 'ahr') ? hold : false,
       padId: pad.id,
@@ -1010,6 +1012,7 @@ export class AudioEngine {
       source,
       gain: gainNode,
       filters: filterNodes,
+      pan: panNodeS,
       startedAt: Date.now(),
       hold: (settings.mode === 'adsr' || settings.mode === 'ahr') ? holdS : false,
       padId: pad.id,
@@ -1094,6 +1097,7 @@ export class AudioEngine {
         voice.disposed = true
         this.releaseGain(voice.gain)
         voice.filters.forEach((f) => this.releaseFilter(f))
+        try { voice.pan.disconnect() } catch { /* ignore */ }
       }, Math.ceil((releaseSec + 0.02) * 1000))
     })
     this.activeVoices = this.activeVoices.filter((voice) => !holdVoices.includes(voice))
@@ -1121,6 +1125,7 @@ export class AudioEngine {
         this.releaseGain(voice.gain)
         voice.filters.forEach((f) => this.releaseFilter(f))
         try { voice.source.disconnect() } catch { /* ignore */ }
+        try { voice.pan.disconnect() } catch { /* ignore */ }
       }
       this.activeVoices = this.activeVoices.filter((v) => !toStop.includes(v))
     }, 20)
@@ -1131,6 +1136,7 @@ export class AudioEngine {
     voice.disposed = true
     try { voice.source.stop() } catch { /* already stopped */ }
     try { voice.source.disconnect() } catch { /* already disconnected */ }
+    try { voice.pan.disconnect() } catch { /* already disconnected */ }
     this.releaseGain(voice.gain)
     voice.filters.forEach((f) => this.releaseFilter(f))
     const idx = this.activeVoices.indexOf(voice)
@@ -1159,6 +1165,7 @@ export class AudioEngine {
         try { candidate.source.stop() } catch { /* already stopped */ }
       }
       try { candidate.source.disconnect() } catch { /* noop */ }
+      try { candidate.pan.disconnect() } catch { /* noop */ }
       candidate.disposed = true
       this.releaseGain(candidate.gain)
       candidate.filters.forEach((f) => this.releaseFilter(f))
