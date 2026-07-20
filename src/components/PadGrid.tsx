@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, useEffect, useSyncExternalStore, useMemo } from 'react'
+import { useCallback, useRef, useState, useEffect, useSyncExternalStore, useMemo, memo } from 'react'
 import { audioEngine } from '../lib/audioEngine'
 import { releaseMidiNote } from '../lib/midiOut'
 import { parseMpcPgm, matchMpcSamplesToFiles } from '../lib/mpcImport'
@@ -25,6 +25,40 @@ let _padDragOutTimer: ReturnType<typeof setTimeout> | null = null
 // Guard: suppress mouse events that follow a recent touch (prevents double-trigger)
 let _lastTouchTime = 0
 
+/** Inline TR-style step row for the selected pad — owns its playhead subscription
+ *  so step ticks only re-render this row, not the whole PadGrid. */
+const InlineStepRow = memo(function InlineStepRow({
+  lengthSteps,
+  stepMap,
+  padId,
+}: {
+  lengthSteps: number
+  stepMap: Map<number, { velocity: number }>
+  padId: string
+}) {
+  const playheadStep = useSyncExternalStore(transportVisualStore.subscribe, transportVisualStore.getPlayheadStep)
+  return (
+    <div className="inline-step-row">
+      <div className="inline-step-grid" style={{ gridTemplateColumns: `repeat(${lengthSteps}, 1fr)` }}>
+        {Array.from({ length: lengthSteps }, (_, i) => {
+          const hit = stepMap.get(i)
+          const isPlayhead = playheadStep === i
+          return (
+            <button
+              key={i}
+              type="button"
+              className={`inline-step${hit ? ' on' : ''}${isPlayhead ? ' playhead' : ''}${i % 4 === 0 ? ' beat' : ''}${Math.floor(i / 4) % 2 === 1 ? ' group-odd' : ''}`}
+              onClick={() => void useStore.getState().toggleStep(i, padId)}
+            >
+              {hit && <span className="inline-step-fill" style={{ opacity: hit.velocity / 127 }} />}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+})
+
 const velocityFromMouseEvent = (event: React.MouseEvent<HTMLElement>): number => {
   const rect = event.currentTarget.getBoundingClientRect()
   const ratio = 1 - Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height))
@@ -43,8 +77,6 @@ export function PadGrid() {
   const sampleMap = useStore((s) => s.sampleMap)
   const selectedPadId = useStore((s) => s.selectedPadId)
   const selectedPadIds = useStore((s) => s.selectedPadIds)
-  const sequencedPadHits = useSyncExternalStore(transportVisualStore.subscribe, transportVisualStore.getSequencedPadHits)
-  const playheadStep = useSyncExternalStore(transportVisualStore.subscribe, transportVisualStore.getPlayheadStep)
   const activeBank = useStore((s) => s.activeBank)
   const midiStatus = useStore((s) => s.midiStatus)
   const lastMidiNote = useStore((s) => s.lastMidiNote)
@@ -71,7 +103,6 @@ export function PadGrid() {
     startPadHoldRecord,
     stopPadHoldRecord,
     addToast,
-    toggleStep,
   } = useStore.getState()
 
   const visibleSequence = useStore(selectVisibleSequence)
@@ -126,16 +157,36 @@ export function PadGrid() {
   const [bankDraft, setBankDraft] = useState('')
   const bankNames = useStore((s) => s.project?.bankNames)
 
-  // Derive which banks have active sequencer hits (for cross-bank flash on bank buttons)
-  const hitBanks = useMemo(() => {
-    if (!project || sequencedPadHits.size === 0) return new Set<number>()
-    const banks = new Set<number>()
-    for (const padId of sequencedPadHits) {
-      const pad = project.pads.find((p) => p.id === padId)
-      if (pad !== undefined) banks.add(pad.bank)
+  // Sequenced-hit flash is applied imperatively (classList) via a transportVisualStore
+  // subscription — pads/bank tabs flash without re-rendering the grid.
+  useEffect(() => {
+    let lastHits: Set<string> | null = null
+    const apply = () => {
+      const hits = transportVisualStore.getSequencedPadHits()
+      if (hits === lastHits) return // reference changes on every mutation — skip playhead notifies
+      lastHits = hits
+      const el = gridRef.current
+      if (!el) return
+      const s = useStore.getState()
+      el.querySelectorAll<HTMLElement>('.pad[data-pad-id]').forEach((padEl) => {
+        padEl.classList.toggle('sequenced-hit', hits.has(padEl.dataset.padId ?? ''))
+      })
+      const hitBanks = new Set<number>()
+      if (s.project) {
+        for (const padId of hits) {
+          const pad = s.project.pads.find((p) => p.id === padId)
+          if (pad) hitBanks.add(pad.bank)
+        }
+      }
+      el.querySelectorAll<HTMLElement>('[data-bank-idx]').forEach((btn) => {
+        const i = Number(btn.dataset.bankIdx)
+        btn.classList.toggle('bank-hit', hitBanks.has(i) && i !== s.activeBank)
+      })
     }
-    return banks
-  }, [project, sequencedPadHits])
+    const unsub = transportVisualStore.subscribe(apply)
+    apply()
+    return unsub
+  }, [])
 
   const clearBankSwitchTimer = useCallback(() => {
     if (bankSwitchTimer.current) {
@@ -176,7 +227,8 @@ export function PadGrid() {
           <button
             key={i}
             type="button"
-            className={`${i === activeBank ? 'active' : ''} ${hitBanks.has(i) && i !== activeBank ? 'bank-hit' : ''}`}
+            className={`${i === activeBank ? 'active' : ''}`}
+            data-bank-idx={i}
             onClick={() => useStore.setState({ activeBank: i })}
             onDoubleClick={() => {
               const name = bankNames?.[i] ?? `Bank ${i + 1}`
@@ -235,38 +287,20 @@ export function PadGrid() {
       </div>
       {/* Inline TR-style step sequencer for selected pad */}
       {inlineSteps && selectedPadId && (
-        <div className="inline-step-row">
-          <div className="inline-step-grid" style={{ gridTemplateColumns: `repeat(${inlineSteps.lengthSteps}, 1fr)` }}>
-            {Array.from({ length: inlineSteps.lengthSteps }, (_, i) => {
-              const hit = inlineSteps.stepMap.get(i)
-              const isPlayhead = playheadStep === i
-              return (
-                <button
-                  key={i}
-                  type="button"
-                  className={`inline-step${hit ? ' on' : ''}${isPlayhead ? ' playhead' : ''}${i % 4 === 0 ? ' beat' : ''}${Math.floor(i / 4) % 2 === 1 ? ' group-odd' : ''}`}
-                  onClick={() => void toggleStep(i, selectedPadId)}
-                >
-                  {hit && <span className="inline-step-fill" style={{ opacity: hit.velocity / 127 }} />}
-                </button>
-              )
-            })}
-          </div>
-        </div>
+        <InlineStepRow lengthSteps={inlineSteps.lengthSteps} stepMap={inlineSteps.stepMap} padId={selectedPadId} />
       )}
       <div className="grid">
         {displayedPads.map((pad) => {
           const sample = pad.settings.sampleId ? sampleMap.get(pad.settings.sampleId) : undefined
           const selected = pad.id === selectedPadId
           const multiSelected = selectedPadIds.includes(pad.id)
-          const isSequencedHit = sequencedPadHits.has(pad.id)
           return (
             <div
               key={pad.id}
               role="button"
               tabIndex={0}
               data-pad-id={pad.id}
-              className={`pad ${selected ? 'selected' : ''} ${multiSelected ? 'multi-selected' : ''} ${isSequencedHit ? 'sequenced-hit' : ''} ${pad.id === padHoldRecordingPadId ? 'hold-recording' : ''} ${pad.settings.mute ? 'muted-pad' : ''}`}
+              className={`pad ${selected ? 'selected' : ''} ${multiSelected ? 'multi-selected' : ''} ${pad.id === padHoldRecordingPadId ? 'hold-recording' : ''} ${pad.settings.mute ? 'muted-pad' : ''}`}
               draggable={!!pad.settings.sampleId}
                             onDragStart={(e) => {
                 e.dataTransfer.effectAllowed = 'copyMove'

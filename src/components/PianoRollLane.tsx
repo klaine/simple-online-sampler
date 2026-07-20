@@ -1,5 +1,5 @@
-import { memo, useCallback, useMemo, useRef } from 'react'
-import { useStore } from '../store'
+import { memo, useCallback, useMemo, useRef, useSyncExternalStore } from 'react'
+import { useStore, transportVisualStore } from '../store'
 import type { SequenceEvent } from '../types'
 
 interface PianoRollLaneProps {
@@ -8,11 +8,41 @@ interface PianoRollLaneProps {
   octaveOffset: number
   lengthSteps: number
   events: SequenceEvent[]
-  playheadStep: number | null
   /** CSS grid-template-columns for step cells, to align with sequencer */
   stepGridColumns: string
   fitSixteen: boolean
 }
+
+/** Single grid cell — subscribes to the playhead with a boolean snapshot so only
+ *  cells at the previous/current playhead step re-render per tick. */
+const PianoRollCell = memo(function PianoRollCell({
+  step,
+  barStart,
+  onCellPointerDown,
+  onCellPointerMove,
+  onCellPointerUp,
+  note,
+}: {
+  step: number
+  note: number
+  barStart: boolean
+  onCellPointerDown: (e: React.PointerEvent, step: number, note: number) => void
+  onCellPointerMove: (e: React.PointerEvent) => void
+  onCellPointerUp: () => void
+}) {
+  const isPlayheadHere = useSyncExternalStore(
+    transportVisualStore.subscribe,
+    () => transportVisualStore.getPlayheadStep() === step,
+  )
+  return (
+    <div
+      className={`piano-roll-cell${isPlayheadHere ? ' playhead' : ''}${barStart ? ' bar-start' : ''}`}
+      onPointerDown={(e) => onCellPointerDown(e, step, note)}
+      onPointerMove={onCellPointerMove}
+      onPointerUp={onCellPointerUp}
+    />
+  )
+})
 
 const NOTE_ROWS = 24 // 2 octaves
 const ROW_HEIGHT = 14 // px per note row
@@ -34,7 +64,6 @@ export const PianoRollLane = memo(function PianoRollLane({
   octaveOffset,
   lengthSteps,
   events,
-  playheadStep,
   stepGridColumns,
   fitSixteen,
 }: PianoRollLaneProps) {
@@ -225,18 +254,17 @@ export const PianoRollLane = memo(function PianoRollLane({
             className={`piano-roll-row ${isBlackKey(note) ? 'black' : 'white'} ${note % 12 === 0 ? 'c-note' : ''}`}
             style={{ height: ROW_HEIGHT, gridTemplateColumns: stepGridColumns }}
           >
-            {Array.from({ length: lengthSteps }, (_, step) => {
-              const isPlayheadHere = playheadStep === step
-              return (
-                <div
-                  key={step}
-                  className={`piano-roll-cell${isPlayheadHere ? ' playhead' : ''}${step % 4 === 0 ? ' bar-start' : ''}`}
-                  onPointerDown={(e) => handleCellPointerDown(e, step, note)}
-                  onPointerMove={handleCellPointerMove}
-                  onPointerUp={handleCellPointerUp}
-                />
-              )
-            })}
+            {Array.from({ length: lengthSteps }, (_, step) => (
+              <PianoRollCell
+                key={step}
+                step={step}
+                note={note}
+                barStart={step % 4 === 0}
+                onCellPointerDown={handleCellPointerDown}
+                onCellPointerMove={handleCellPointerMove}
+                onCellPointerUp={handleCellPointerUp}
+              />
+            ))}
           </div>
         ))}
         {/* Note blocks rendered as positioned overlays */}

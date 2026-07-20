@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, useCallback, useSyncExternalStore, useMemo } from 'react'
+import { useRef, useState, useEffect, useCallback, useSyncExternalStore, useMemo, memo } from 'react'
 import {
   MAX_SEQUENCE_STEPS,
   MIN_SEQUENCE_STEPS,
@@ -22,6 +22,41 @@ import { makeTouchDragHandlers } from '../lib/touchDrag'
 import { buildMidiForSequenceSync, warmupMidiModule } from '../lib/midiExport'
 
 let _dragOutObjectUrl: string | null = null
+
+/** Step number header row — owns its own playhead subscription so step ticks
+ *  only re-render this row, not the whole Sequencer. */
+const StepHeadRow = memo(function StepHeadRow({
+  stepIndices,
+  sequenceGridColumns,
+  fitSteps,
+}: {
+  stepIndices: number[]
+  sequenceGridColumns: string
+  fitSteps: boolean
+}) {
+  const playheadStep = useSyncExternalStore(transportVisualStore.subscribe, transportVisualStore.getPlayheadStep)
+  return (
+    <div
+      className={`sequencer-matrix-head ${fitSteps ? 'fit-sixteen' : ''}`}
+      style={{ gridTemplateColumns: sequenceGridColumns }}
+    >
+      <span className="lane-head">Pad</span>
+      <span className="lane-head">M</span>
+      <span className="lane-head">C</span>
+      <span className="lane-head">D</span>
+      {stepIndices.map((step) => (
+        <span
+          key={step}
+          className={`step-head ${playheadStep === step ? 'playhead' : ''} ${
+            Math.floor(step / 4) % 2 === 0 ? 'group-even' : 'group-odd'
+          } ${step > 0 && step % 16 === 0 ? 'bar-divider' : ''}`}
+        >
+          {step + 1}
+        </span>
+      ))}
+    </div>
+  )
+})
 
 function ColorPicker({ color, onChange }: { color: string; onChange: (c: string) => void }) {
   const [open, setOpen] = useState(false)
@@ -75,7 +110,6 @@ export function Sequencer() {
   const playingPatternId = useStore((s) => s.playingPatternId)
   const playingChainIndex = useStore((s) => s.playingChainIndex)
   const playingChainRepeat = useStore((s) => s.playingChainRepeat)
-  const playheadStep = useSyncExternalStore(transportVisualStore.subscribe, transportVisualStore.getPlayheadStep)
   const showPerfStats = useStore((s) => s.showPerfStats)
   const perfStats = useStore((s) => s.perfStats)
   const activeSequenceId = useStore((s) => s.activeSequenceId)
@@ -599,32 +633,13 @@ export function Sequencer() {
       </div>
 
       <div ref={matrixWrapRef} className={`sequencer-matrix-wrap ${fitSteps ? 'fit-sixteen' : ''}`}>
-        <div
-          className={`sequencer-matrix-head ${fitSteps ? 'fit-sixteen' : ''}`}
-          style={{ gridTemplateColumns: sequenceGridColumns }}
-        >
-          <span className="lane-head">Pad</span>
-          <span className="lane-head">M</span>
-          <span className="lane-head">C</span>
-          <span className="lane-head">D</span>
-          {stepIndices.map((step) => (
-            <span
-              key={step}
-              className={`step-head ${playheadStep === step ? 'playhead' : ''} ${
-                Math.floor(step / 4) % 2 === 0 ? 'group-even' : 'group-odd'
-              } ${step > 0 && step % 16 === 0 ? 'bar-divider' : ''}`}
-            >
-              {step + 1}
-            </span>
-          ))}
-        </div>
+        <StepHeadRow stepIndices={stepIndices} sequenceGridColumns={sequenceGridColumns} fitSteps={fitSteps} />
 
         <VirtualizedSequencerLanes
           bankGroups={bankGroups}
           scrollContainerRef={matrixWrapRef}
           sequenceGridColumns={sequenceGridColumns}
           stepGridColumns={stepGridColumns}
-          playheadStep={playheadStep}
           fitSteps={fitSteps}
           visibleSequence={visibleSequence}
           stepIndices={stepIndices}

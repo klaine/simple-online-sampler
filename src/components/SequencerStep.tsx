@@ -1,13 +1,12 @@
-import { memo } from 'react'
+import { memo, useSyncExternalStore } from 'react'
 import type { SequenceEvent } from '../types'
-import { useStore } from '../store'
+import { useStore, transportVisualStore } from '../store'
 
 interface SequencerStepProps {
   padId: string
   step: number
   exactEvent: SequenceEvent | undefined
   spanningEvent: SequenceEvent | undefined
-  isPlayhead: boolean
   isGateMode: boolean
   fitSixteen: boolean
   showGateResizeTip: boolean
@@ -19,13 +18,17 @@ export const SequencerStep = memo(function SequencerStep({
   step,
   exactEvent,
   spanningEvent,
-  isPlayhead,
   isGateMode,
   fitSixteen,
   showGateResizeTip,
   patternId,
 }: SequencerStepProps) {
   const store = useStore
+  // Per-cell boolean playhead subscription — only this cell re-renders when its flag flips
+  const isPlayhead = useSyncExternalStore(
+    transportVisualStore.subscribe,
+    () => transportVisualStore.getPlayheadStep() === step,
+  )
 
   const isOn = Boolean(spanningEvent)
   const isTail = Boolean(spanningEvent && step > spanningEvent.step && step <= spanningEvent.step + spanningEvent.gate - 1)

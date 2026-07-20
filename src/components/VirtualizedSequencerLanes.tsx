@@ -27,7 +27,6 @@ interface VirtualizedSequencerLanesProps {
   scrollContainerRef: React.RefObject<HTMLDivElement | null>
   sequenceGridColumns: string
   stepGridColumns: string
-  playheadStep: number | null
   fitSteps: boolean
   visibleSequence: { id: string; lengthSteps: number }
   stepIndices: number[]
@@ -51,7 +50,6 @@ export const VirtualizedSequencerLanes = memo(function VirtualizedSequencerLanes
   scrollContainerRef,
   sequenceGridColumns,
   stepGridColumns,
-  playheadStep,
   fitSteps,
   visibleSequence,
   stepIndices,
@@ -216,7 +214,6 @@ export const VirtualizedSequencerLanes = memo(function VirtualizedSequencerLanes
                         step={step}
                         exactEvent={exactEvent}
                         spanningEvent={spanningEvent}
-                        isPlayhead={playheadStep === step}
                         isGateMode={pad.settings.mode === 'adsr'}
                         fitSixteen={fitSteps}
                         showGateResizeTip={showGateResizeTip}
@@ -226,13 +223,12 @@ export const VirtualizedSequencerLanes = memo(function VirtualizedSequencerLanes
                   })}
                 </div>
                 {isPianoRollExpanded && (
-                  <PianoRollLane
+                   <PianoRollLane
                     padId={pad.id}
                     baseNote={pad.settings.baseNote ?? 60}
                     octaveOffset={pianoRollOctaveOffset[pad.id] ?? 0}
                     lengthSteps={visibleSequence.lengthSteps}
                     events={eventsByPad.get(pad.id) ?? []}
-                    playheadStep={playheadStep}
                     stepGridColumns={stepGridColumns}
                     fitSixteen={fitSteps}
                   />
