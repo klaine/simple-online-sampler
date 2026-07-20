@@ -19,36 +19,46 @@ export const createProjectActions = (ctx: StoreContext) => ({
   hydrate: async () => {
     // Guard against double-invoke (React Strict Mode)
     if (mutableRefs.hydratePromise) return mutableRefs.hydratePromise
+    ctx.set((s) => { s.hydrateError = null })
     mutableRefs.hydratePromise = (async () => {
-      const existing = await db.getLatestProject()
-      const loadedProject = normalizeProject(existing ?? createDefaultProject('Sketch 01'))
-      if (!existing) {
-        await db.putProject(loadedProject)
-      }
-
-      const allSamples = await db.getAllSamples()
-      ctx.set((s) => {
-        s.project = loadedProject
-        s.projectNameDraft = loadedProject.name
-        s.bpmDraft = String(loadedProject.bpm)
-        s.swingDraft = String(loadedProject.swing ?? 0)
-        s.selectedPadId = loadedProject.pads[0]?.id ?? null
-        s.activeSequenceId = loadedProject.sequences[0]?.id ?? null
-        s.samples = allSamples
-        s.sampleMap = new Map(allSamples.map((sample) => [sample.id, sample]))
-      })
-      audioEngine.setBpm(loadedProject.bpm)
-      audioEngine.setPolyphony(loadedProject.polyphony)
-      rebuildPlaybackSnapshot(loadedProject)
-
-      // Load factory preset kits on first launch (no samples in DB)
-      if (allSamples.length === 0) {
-        const loaded = await loadPresetKits(ctx.get, ctx.set)
-        for (const { runId, bank } of loaded) {
-          await ctx.get().assignGroupToPads(runId, bank, true)
+      try {
+        const existing = await db.getLatestProject()
+        const loadedProject = normalizeProject(existing ?? createDefaultProject('Sketch 01'))
+        if (!existing) {
+          await db.putProject(loadedProject)
         }
+
+        const allSamples = await db.getAllSamples()
+        ctx.set((s) => {
+          s.project = loadedProject
+          s.projectNameDraft = loadedProject.name
+          s.bpmDraft = String(loadedProject.bpm)
+          s.swingDraft = String(loadedProject.swing ?? 0)
+          s.selectedPadId = loadedProject.pads[0]?.id ?? null
+          s.activeSequenceId = loadedProject.sequences[0]?.id ?? null
+          s.samples = allSamples
+          s.sampleMap = new Map(allSamples.map((sample) => [sample.id, sample]))
+        })
+        audioEngine.setBpm(loadedProject.bpm)
+        audioEngine.setPolyphony(loadedProject.polyphony)
+        rebuildPlaybackSnapshot(loadedProject)
+
+        // Load factory preset kits on first launch (no samples in DB)
+        if (allSamples.length === 0) {
+          const loaded = await loadPresetKits(ctx.get, ctx.set)
+          for (const { runId, bank } of loaded) {
+            await ctx.get().assignGroupToPads(runId, bank, true)
+          }
+        }
+        await ctx.get().refreshProjectList()
+      } catch (e) {
+        console.error('[hydrate] failed:', e)
+        // Allow retry and surface the failure instead of hanging on "Loading project..."
+        mutableRefs.hydratePromise = null
+        ctx.set((s) => {
+          s.hydrateError = e instanceof Error ? e.message : String(e)
+        })
       }
-      await ctx.get().refreshProjectList()
     })()
     return mutableRefs.hydratePromise
   },

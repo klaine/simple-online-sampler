@@ -70,6 +70,8 @@ export interface SequencerBankGroup {
 export interface AppState {
   // --- Project / Persistence ---
   project: Project | null
+  /** Set when hydrate() fails (e.g. IndexedDB unavailable) — renders an error screen with retry */
+  hydrateError: string | null
   samples: SampleAsset[]
   sampleMap: Map<string, SampleAsset>
 

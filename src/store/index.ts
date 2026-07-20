@@ -225,6 +225,7 @@ export const useStore = create<AppState>()(
       bpmDraft: '94',
       swingDraft: '0',
       projectNameDraft: '',
+      hydrateError: null,
       sequenceLengthDraft: '16',
       trimDraft: { start: 0, end: 1 },
       waveformZoom: 'full' as const,

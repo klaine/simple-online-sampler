@@ -172,6 +172,7 @@ function ProjectsPanel() {
 function App() {
   // --- Store subscriptions (only what App itself needs) ---
   const project = useStore((s) => s.project)
+  const hydrateError = useStore((s) => s.hydrateError)
   const samples = useStore((s) => s.samples)
   const isPlaying = useStore((s) => s.isPlaying)
   const showLibraryWaveforms = useStore((s) => s.showLibraryWaveforms)
@@ -1509,6 +1510,18 @@ function App() {
   }
 
   // --- Render ---
+
+  if (hydrateError) {
+    return (
+      <main className="app">
+        <div className="hydrate-error">
+          <p>Failed to load project data{hydrateError ? `: ${hydrateError}` : '.'}</p>
+          <p>Your browser may be blocking local storage (IndexedDB).</p>
+          <button type="button" onClick={() => void useStore.getState().hydrate()}>Retry</button>
+        </div>
+      </main>
+    )
+  }
 
   if (!project || !activeSequence) {
     return <main className="app">Loading project...</main>
