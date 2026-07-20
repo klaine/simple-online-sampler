@@ -4,6 +4,7 @@ import { encodeWavFromChannels } from '../lib/wavEncode'
 import { normalizePcm } from '../lib/autotrim'
 import { startPcmCapture, computePeaks, RECORDER_SAMPLE_RATE, type PcmRecorderSession } from '../lib/pcmRecorder'
 import { audioEngine } from '../lib/audioEngine'
+import { useDialogFocus } from './useDialogFocus'
 
 const MAX_DURATION_SEC = 60
 
@@ -18,6 +19,7 @@ export function RecordDialog() {
   const recordTargetPadId = useStore((s) => s.recordTargetPadId)
   const project = useStore((s) => s.project)
   const { closeRecordDialog, saveRecording } = useStore.getState()
+  const dialogRef = useDialogFocus<HTMLElement>(true)
 
   // --- Local state ---
   const [phase, setPhase] = useState<'ready' | 'recording' | 'review'>('ready')
@@ -380,7 +382,7 @@ export function RecordDialog() {
   }, [phase, handleDiscard])
 
   return (
-    <section className="import-dialog-overlay" role="dialog" aria-modal="true">
+    <section ref={dialogRef} className="import-dialog-overlay" role="dialog" aria-modal="true">
       <div className="import-dialog record-dialog">
         <div className="import-dialog-head">
           <h2>

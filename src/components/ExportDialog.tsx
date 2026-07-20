@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useStore } from '../store'
+import { useDialogFocus } from './useDialogFocus'
 import type { ExportFormat } from '../lib/audioExport'
 
 interface ExportDialogProps {
@@ -25,9 +26,10 @@ export function ExportDialog({
   const [patternFormat, setPatternFormat] = useState<ExportFormat>('wav')
   const [songFormat, setSongFormat] = useState<ExportFormat>('wav')
   const close = () => { if (!isExporting) useStore.setState({ showExportDialog: false }) }
+  const dialogRef = useDialogFocus<HTMLElement>(true)
 
   return (
-    <section className="import-dialog-overlay" role="dialog" aria-modal="true">
+    <section ref={dialogRef} className="import-dialog-overlay" role="dialog" aria-modal="true">
       <div className="import-dialog">
         <div className="import-dialog-head">
           <h2>Export</h2>

@@ -1,5 +1,6 @@
 import type { ImportMode } from '../types'
 import { useStore } from '../store'
+import { useDialogFocus } from './useDialogFocus'
 
 interface ImportDialogProps {
   onPreview: () => void
@@ -11,9 +12,10 @@ export function ImportDialog({ onPreview, onImport }: ImportDialogProps) {
   const importFile = useStore((s) => s.importFile)
   const previewText = useStore((s) => s.previewText)
   const conflicts = useStore((s) => s.conflicts)
+  const dialogRef = useDialogFocus<HTMLElement>(true)
 
   return (
-    <section className="import-dialog-overlay" role="dialog" aria-modal="true">
+    <section ref={dialogRef} className="import-dialog-overlay" role="dialog" aria-modal="true">
       <div className="import-dialog">
         <div className="import-dialog-head">
           <h2>Import Package</h2>

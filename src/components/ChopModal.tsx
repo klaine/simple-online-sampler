@@ -2,11 +2,13 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useStore } from '../store'
 import { audioEngine } from '../lib/audioEngine'
 import { BANK_COUNT, PADS_PER_BANK } from '../lib/constants'
+import { useDialogFocus } from './useDialogFocus'
 
 export function ChopModal() {
   const chopModalSampleId = useStore((s) => s.chopModalSampleId)
   const sampleMap = useStore((s) => s.sampleMap)
   const { closeChopModal, updateChopPoints, assignChopsToPads } = useStore.getState()
+  const dialogRef = useDialogFocus<HTMLDivElement>(chopModalSampleId != null)
 
   const [startBank, setStartBank] = useState(0)
   const [startSlot, setStartSlot] = useState(0)
@@ -146,7 +148,7 @@ export function ChopModal() {
   const chopCount = boundaries.length - 1
 
   return (
-    <div className="modal-overlay" onClick={closeChopModal}>
+    <div className="modal-overlay" ref={dialogRef} onClick={closeChopModal}>
       <div className="chop-modal" onClick={(e) => e.stopPropagation()}>
         <div className="chop-modal-header">
           <h3>Chop: {sample.name}</h3>

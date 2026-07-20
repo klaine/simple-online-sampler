@@ -9,6 +9,7 @@ import { midiToName, uid } from '../lib/utils'
 import { BANK_COUNT, PADS_PER_BANK } from '../lib/constants'
 import { DEVICE_DRUMKITS, getDeviceDrumkit, getDrumName, getDrumChokeGroup, getDrumPadIndex } from '../lib/deviceDrumkits'
 import type { DeviceDrumkit } from '../lib/deviceDrumkits'
+import { useDialogFocus } from './useDialogFocus'
 
 type NoteMode = 'range' | 'scale' | 'custom' | 'drumkit'
 type ScaleType = 'major' | 'minor'
@@ -162,6 +163,7 @@ export function AutosampleDialog() {
   const project = useStore((s) => s.project)
   const midiOutputs = useStore((s) => s.midiOutputs)
   const { closeAutosampleDialog, createSampleFromPcm, assignSampleIdToPad, addToast } = useStore.getState()
+  const dialogRef = useDialogFocus<HTMLElement>(true)
 
   const [phase, setPhase] = useState<'setup' | 'running' | 'done'>('setup')
   const persisted = loadPersistedState()
@@ -575,7 +577,7 @@ export function AutosampleDialog() {
     : ''
 
   return (
-    <section className="import-dialog-overlay" role="dialog" aria-modal="true">
+    <section ref={dialogRef} className="import-dialog-overlay" role="dialog" aria-modal="true">
       <div className="import-dialog autosample-dialog">
         <div className="import-dialog-head">
           <h2>Auto-Sample External Gear</h2>

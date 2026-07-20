@@ -1,22 +1,16 @@
 import { useEffect, useCallback, useRef } from 'react'
 import { useStore } from '../store'
 import { resolveConfirmDialog } from '../store'
+import { useDialogFocus } from './useDialogFocus'
 
 export function ConfirmDialog() {
   const dialog = useStore((s) => s.confirmDialog)
   const cancelRef = useRef<HTMLButtonElement>(null)
+  // Focus Cancel by default (confirms are destructive), trap Tab, restore focus on close
+  const dialogRef = useDialogFocus<HTMLElement>(dialog != null, cancelRef)
 
   const handleConfirm = useCallback(() => resolveConfirmDialog(true), [])
   const handleCancel = useCallback(() => resolveConfirmDialog(false), [])
-
-  // Focus management: focus Cancel (safe default — confirms are destructive),
-  // restore previously focused element on close
-  useEffect(() => {
-    if (!dialog) return
-    const previousFocus = document.activeElement as HTMLElement | null
-    cancelRef.current?.focus()
-    return () => previousFocus?.focus?.()
-  }, [dialog])
 
   // ESC to cancel (Enter activates whichever button has focus — safe default is Cancel)
   useEffect(() => {
@@ -34,7 +28,7 @@ export function ConfirmDialog() {
   if (!dialog) return null
 
   return (
-    <section className="import-dialog-overlay" role="dialog" aria-modal="true" onClick={(e) => { if (e.target === e.currentTarget) handleCancel() }}>
+    <section ref={dialogRef} className="import-dialog-overlay" role="dialog" aria-modal="true" onClick={(e) => { if (e.target === e.currentTarget) handleCancel() }}>
       <div className="import-dialog confirm-dialog">
         <p className="confirm-dialog-message">{dialog.message}</p>
         <div className="confirm-dialog-actions">
@@ -45,3 +39,4 @@ export function ConfirmDialog() {
     </section>
   )
 }
+
