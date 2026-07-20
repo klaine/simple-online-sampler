@@ -49,6 +49,11 @@ export const createProjectActions = (ctx: StoreContext) => ({
           for (const { runId, bank } of loaded) {
             await ctx.get().assignGroupToPads(runId, bank, true)
           }
+          // One-time welcome hint for brand-new users
+          if (loaded.length > 0 && !localStorage.getItem('welcomeToastShown')) {
+            localStorage.setItem('welcomeToastShown', '1')
+            ctx.get().addToast('Welcome! Preset kits are loaded on Banks 1–3 — tap a pad to play. See ? in the sequencer for tips.', 'info')
+          }
         }
         await ctx.get().refreshProjectList()
       } catch (e) {

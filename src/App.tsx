@@ -553,6 +553,11 @@ function App() {
         }
       } catch {
         useStore.setState({ midiStatus: 'MIDI: unavailable' })
+        // One-time toast so MIDI denial/unsupported isn't silent (avoid nagging on every load)
+        if (!localStorage.getItem('midiUnavailableToastShown')) {
+          localStorage.setItem('midiUnavailableToastShown', '1')
+          useStore.getState().addToast('MIDI unavailable — check browser support or permission', 'info')
+        }
       }
     }
 
