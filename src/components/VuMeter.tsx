@@ -7,12 +7,18 @@ export function VuMeter() {
   const dataRef = useRef<Uint8Array | null>(null)
 
   useEffect(() => {
+    // Silence gating: once the meter has been silent for a few frames, only sample
+    // every ~10th frame (enough to detect audio returning) and skip redraws.
+    let silentStreak = 0
     const draw = () => {
+      rafRef.current = requestAnimationFrame(draw)
       const analyser = audioEngine.getAnalyser()
       const canvas = canvasRef.current
-      if (!analyser || !canvas) {
-        rafRef.current = requestAnimationFrame(draw)
-        return
+      if (!analyser || !canvas) return
+
+      if (silentStreak > 12) {
+        silentStreak++
+        if (silentStreak % 10 !== 0) return
       }
 
       if (!dataRef.current || dataRef.current.length !== analyser.frequencyBinCount) {
@@ -31,6 +37,10 @@ export function VuMeter() {
       // Map to 0–1 with a bit of headroom visualization
       const level = Math.min(1, rms * 3)
 
+      const silent = level < 0.004
+      silentStreak = silent ? silentStreak + 1 : 0
+      if (silent && silentStreak > 12) return // already showing empty meter
+
       const ctx = canvas.getContext('2d')
       if (ctx) {
         const w = canvas.width
@@ -48,8 +58,6 @@ export function VuMeter() {
         ctx.fillStyle = green ? '#3c3' : yellow ? '#cc3' : '#c33'
         ctx.fillRect(0, h - barH, w, barH)
       }
-
-      rafRef.current = requestAnimationFrame(draw)
     }
 
     rafRef.current = requestAnimationFrame(draw)

@@ -85,14 +85,19 @@ function LevelMeter({ getBusId, isMaster }: { getBusId?: BusId; isMaster?: boole
   const dataRef = useRef<Uint8Array | null>(null)
 
   useEffect(() => {
+    // Silence gating: once silent, only sample every ~10th frame and skip redraws
+    let silentStreak = 0
     const draw = () => {
+      rafRef.current = requestAnimationFrame(draw)
       const analyser = isMaster
         ? audioEngine.getMasterAnalyser()
         : getBusId ? audioEngine.getBusAnalyser(getBusId) : null
       const canvas = canvasRef.current
-      if (!analyser || !canvas) {
-        rafRef.current = requestAnimationFrame(draw)
-        return
+      if (!analyser || !canvas) return
+
+      if (silentStreak > 12) {
+        silentStreak++
+        if (silentStreak % 10 !== 0) return
       }
 
       if (!dataRef.current || dataRef.current.length !== analyser.frequencyBinCount) {
@@ -109,6 +114,10 @@ function LevelMeter({ getBusId, isMaster }: { getBusId?: BusId; isMaster?: boole
       const rms = Math.sqrt(sum / dataRef.current.length)
       const level = Math.min(1, rms * 3)
 
+      const silent = level < 0.004
+      silentStreak = silent ? silentStreak + 1 : 0
+      if (silent && silentStreak > 12) return // already showing empty meter
+
       const ctx = canvas.getContext('2d')
       if (ctx) {
         const w = canvas.width
@@ -123,8 +132,6 @@ function LevelMeter({ getBusId, isMaster }: { getBusId?: BusId; isMaster?: boole
         ctx.fillStyle = green ? '#3a3' : yellow ? '#bb3' : '#c33'
         ctx.fillRect(0, h - barH, w, barH)
       }
-
-      rafRef.current = requestAnimationFrame(draw)
     }
 
     rafRef.current = requestAnimationFrame(draw)

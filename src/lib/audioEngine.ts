@@ -12,6 +12,9 @@ import {
 // Module-level round-robin counters (not in store — non-reactive)
 const rrCounters = new Map<string, number>()
 
+// Rate-limit eviction warnings (voice eviction is a hot path)
+let _lastEvictionWarnMs = 0
+
 interface ActiveVoice {
   source: AudioBufferSourceNode
   gain: GainNode
@@ -412,9 +415,8 @@ export class AudioEngine {
 
   private polyphony = 32
 
-  // Node pools to reduce allocation in hot path
+  // Node pool to reduce allocation in hot path
   private gainPool: GainNode[] = []
-  private filterPool: BiquadFilterNode[] = []
 
   private workletReady = false
 
@@ -523,7 +525,6 @@ export class AudioEngine {
     this.masterAnalyser = null
     this.busNodes.clear()
     this.gainPool.length = 0
-    this.filterPool.length = 0
     this.workletReady = false
 
     this.getContext()
@@ -544,9 +545,10 @@ export class AudioEngine {
     if (this.gainPool.length < 16) this.gainPool.push(node)
   }
 
-  private releaseFilter(node: BiquadFilterNode): void {
-    try { node.disconnect() } catch { /* */ }
-    if (this.filterPool.length < 16) this.filterPool.push(node)
+  private releaseFilters(nodes: BiquadFilterNode[]): void {
+    for (const f of nodes) {
+      try { f.disconnect() } catch { /* */ }
+    }
   }
 
   nowSeconds(): number {
@@ -1096,7 +1098,7 @@ export class AudioEngine {
         if (voice.disposed) return
         voice.disposed = true
         this.releaseGain(voice.gain)
-        voice.filters.forEach((f) => this.releaseFilter(f))
+        this.releaseFilters(voice.filters)
         try { voice.pan.disconnect() } catch { /* ignore */ }
       }, Math.ceil((releaseSec + 0.02) * 1000))
     })
@@ -1123,7 +1125,7 @@ export class AudioEngine {
         if (voice.disposed) continue
         voice.disposed = true
         this.releaseGain(voice.gain)
-        voice.filters.forEach((f) => this.releaseFilter(f))
+        this.releaseFilters(voice.filters)
         try { voice.source.disconnect() } catch { /* ignore */ }
         try { voice.pan.disconnect() } catch { /* ignore */ }
       }
@@ -1138,7 +1140,7 @@ export class AudioEngine {
     try { voice.source.disconnect() } catch { /* already disconnected */ }
     try { voice.pan.disconnect() } catch { /* already disconnected */ }
     this.releaseGain(voice.gain)
-    voice.filters.forEach((f) => this.releaseFilter(f))
+    this.releaseFilters(voice.filters)
     const idx = this.activeVoices.indexOf(voice)
     if (idx !== -1) this.activeVoices.splice(idx, 1)
   }
@@ -1151,7 +1153,11 @@ export class AudioEngine {
       const candidate = this.activeVoices[candidateIdx]
       if (!candidate) break
 
-      console.warn('[AudioEngine] Voice eviction — polyphony limit reached:', this.activeVoices.length, '/', this.polyphony, 'evicting padId:', candidate.padId, 'age:', Date.now() - candidate.startedAt, 'ms')
+      const evictWarnNow = Date.now()
+      if (evictWarnNow - _lastEvictionWarnMs > 1000) {
+        _lastEvictionWarnMs = evictWarnNow
+        console.warn('[AudioEngine] Voice eviction — polyphony limit reached:', this.activeVoices.length, '/', this.polyphony, 'evicting padId:', candidate.padId, 'age:', evictWarnNow - candidate.startedAt, 'ms')
+      }
 
       // Fade out over 5ms to avoid click, then stop at 10ms
       if (ctx) {
@@ -1168,7 +1174,7 @@ export class AudioEngine {
       try { candidate.pan.disconnect() } catch { /* noop */ }
       candidate.disposed = true
       this.releaseGain(candidate.gain)
-      candidate.filters.forEach((f) => this.releaseFilter(f))
+      this.releaseFilters(candidate.filters)
       this.activeVoices.splice(candidateIdx, 1)
     }
   }

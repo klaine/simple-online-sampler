@@ -256,7 +256,7 @@ export const createTransportActions = (ctx: StoreContext) => ({
           }
         }
 
-        if (tickCount > 0 && tickCount % 24 === 0) {
+        if (tickCount > 0 && tickCount % 24 === 0 && ctx.get().showPerfStats) {
           const sorted = [...mutableRefs.perfDriftWindow].sort((a, b) => a - b)
           const p95 = sorted.length > 0 ? sorted[Math.floor(sorted.length * 0.95)] : 0
           ctx.set((d) => {
