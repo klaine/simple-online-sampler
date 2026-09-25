@@ -1,4 +1,4 @@
-import { useRef, useCallback, useState, useLayoutEffect, useEffect } from 'react'
+import { useRef, useCallback, useState, useLayoutEffect, useEffect, memo } from 'react'
 import { audioEngine } from '../lib/audioEngine'
 import { useStore } from '../store'
 import { VuMeter } from './VuMeter'
@@ -314,6 +314,8 @@ function PhoneOverflowMenu() {
             className={`seq-rec-btn ${seqRecordArmed ? 'armed' : ''}`}
             onClick={() => useStore.setState((s) => ({ seqRecordArmed: !s.seqRecordArmed }))}
             title="Arm sequencer recording"
+            aria-label="Arm sequencer recording"
+            aria-pressed={seqRecordArmed}
           >
             ● REC
           </button>
@@ -332,8 +334,9 @@ function PhoneOverflowMenu() {
   )
 }
 
-export function TopBar({ isPhone }: { isPhone?: boolean }) {
-  const project = useStore((s) => s.project)
+export const TopBar = memo(function TopBar({ isPhone }: { isPhone?: boolean }) {
+  const projectAvailable = useStore((s) => s.project !== null)
+  const polyphony = useStore((s) => s.project?.polyphony ?? 16)
   const isPlaying = useStore((s) => s.isPlaying)
   const loopEnabled = useStore((s) => s.loopEnabled)
   const bpmDraft = useStore((s) => s.bpmDraft)
@@ -376,7 +379,7 @@ export function TopBar({ isPhone }: { isPhone?: boolean }) {
 
   const [nameEditing, setNameEditing] = useState(false)
 
-  if (!project) return null
+  if (!projectAvailable) return null
 
   return (
     <header className={`topbar sticky${isPhone ? ' topbar-phone' : ''}`}>
@@ -501,11 +504,12 @@ export function TopBar({ isPhone }: { isPhone?: boolean }) {
               <span className="tb-led-label">POLY</span>
               <select
                 className="tb-led-value"
-                value={project.polyphony}
+                value={polyphony}
                 onChange={(e) => {
                   const polyphony = Number(e.target.value) as 4 | 8 | 16 | 32
                   audioEngine.setPolyphony(polyphony)
-                  void saveProject({ ...project, polyphony })
+                  const currentProject = useStore.getState().project
+                  if (currentProject) void saveProject({ ...currentProject, polyphony })
                 }}
               >
                 <option value={4}>4</option>
@@ -551,6 +555,8 @@ export function TopBar({ isPhone }: { isPhone?: boolean }) {
                className={`seq-rec-btn ${seqRecordArmed ? 'armed' : ''}`}
                onClick={() => useStore.setState((s) => ({ seqRecordArmed: !s.seqRecordArmed }))}
                title="Arm sequencer recording"
+               aria-label="Arm sequencer recording"
+               aria-pressed={seqRecordArmed}
              >
                ● REC
              </button>
@@ -637,4 +643,4 @@ export function TopBar({ isPhone }: { isPhone?: boolean }) {
       )}
     </header>
   )
-}
+})

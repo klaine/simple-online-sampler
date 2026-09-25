@@ -2791,8 +2791,8 @@ select.tb-led-value {
   }
 
   .perf-mobile-content > .sequencer .step-wrap {
-    height: 20px;
-    min-width: 20px;
+    height: 32px;
+    min-width: 28px;
   }
 
   .perf-mobile-content > .sequencer .lane-label {
@@ -3829,6 +3829,13 @@ select.tb-led-value {
   align-items: center;
   width: 100%;
   min-width: 0;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 3rem;
+}
+
+.sample-group {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 2.5rem;
 }
 
 .sample-row:has(.sample-select-cb) {

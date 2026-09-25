@@ -13,6 +13,7 @@ import { makeTouchDragHandlers } from '../lib/touchDrag'
 import { MiniWaveform } from './MiniWaveform'
 import { LibraryInspector } from './LibraryInspector'
 import { KitPreviewGrid } from './KitPreviewGrid'
+import { db } from '../lib/db'
 
 // Module-level state survives component unmount (perf mode tab switches)
 let _expandedChops = new Set<string>()
@@ -53,6 +54,7 @@ interface SampleRowProps {
   isInspectorSelected: boolean
   hasSelectedPad: boolean
   wavePeaks: number[] | undefined
+  registerWaveformRow: (sampleId: string, element: HTMLDivElement | null) => void
   assignedPads: Pad[] | undefined
   onToggleChop: (sampleId: string) => void
   onToggleSelect: (sampleId: string) => void
@@ -78,6 +80,7 @@ const SampleRow = memo(function SampleRow({
   isInspectorSelected,
   hasSelectedPad,
   wavePeaks,
+  registerWaveformRow,
   assignedPads,
   onToggleChop,
   onToggleSelect,
@@ -92,6 +95,9 @@ const SampleRow = memo(function SampleRow({
   setSpreadCount,
   setSpreadChokeGroup,
 }: SampleRowProps) {
+  const rowRef = useCallback((element: HTMLDivElement | null) => {
+    registerWaveformRow(sample.id, element)
+  }, [registerWaveformRow, sample.id])
   const hasChops = (sample.chopPoints?.length ?? 0) > 0
   const chopBoundaries = hasChops ? [0, ...(sample.chopPoints ?? []), 1] : []
 
@@ -109,7 +115,9 @@ const SampleRow = memo(function SampleRow({
   return (
     <div>
       <div
+        ref={rowRef}
         className="sample-row"
+        data-sample-id={sample.id}
         draggable
         onDragStart={(e) => {
           e.dataTransfer.effectAllowed = 'copy'
@@ -357,7 +365,7 @@ const buildVeloSubgroups = (samples: SampleAsset[]): VeloSubgroup[] => {
   return result
 }
 
-export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
+export const SampleLibrary = memo(function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
   const sampleQuery = useStore((s) => s.sampleQuery)
   const sampleSort = useStore((s) => s.sampleSort)
   const previewSampleId = useStore((s) => s.previewSampleId)
@@ -365,6 +373,8 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
   const selectedPad = useStore(selectSelectedPad)
   const chromaticSpreadSampleId = useStore((s) => s.chromaticSpreadSampleId)
   const libraryWavePeaks = useStore((s) => s.libraryWavePeaks)
+  const showLibraryWaveforms = useStore((s) => s.showLibraryWaveforms)
+  const isPlaying = useStore((s) => s.isPlaying)
   const sampleToPadMap = useStore(selectSampleToPadMap)
   const inspectorSampleId = useStore((s) => s.libraryInspectorSampleId)
   const libraryExpanded = useStore((s) => s.libraryExpanded)
@@ -384,6 +394,159 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
   const [spreadCount, setSpreadCount] = useState(12)
   const [spreadChokeGroup, setSpreadChokeGroup] = useState(0)
   const [selectedSampleIds, setSelectedSampleIds] = useState<Set<string>>(new Set())
+  const [visibleWaveformIds, setVisibleWaveformIds] = useState<Set<string>>(() => new Set())
+  const libraryListRef = useRef<HTMLDivElement | null>(null)
+  const waveformObserverRef = useRef<IntersectionObserver | null>(null)
+  const waveformTargetsRef = useRef(new Map<string, HTMLDivElement>())
+  const waveformQueueRef = useRef<SampleAsset[]>([])
+  const waveformScheduledRef = useRef(new Set<string>())
+  const waveformQueueRunningRef = useRef(false)
+  const waveformDecodeActiveRef = useRef(true)
+  const isPlayingRef = useRef(isPlaying)
+  const showLibraryWaveformsRef = useRef(showLibraryWaveforms)
+  const visibleWaveformIdsRef = useRef(visibleWaveformIds)
+  isPlayingRef.current = isPlaying
+  showLibraryWaveformsRef.current = showLibraryWaveforms
+  visibleWaveformIdsRef.current = visibleWaveformIds
+
+  const registerWaveformRow = useCallback((sampleId: string, element: HTMLDivElement | null) => {
+    const previous = waveformTargetsRef.current.get(sampleId)
+    if (previous && previous !== element) waveformObserverRef.current?.unobserve(previous)
+    if (!element) {
+      waveformTargetsRef.current.delete(sampleId)
+      return
+    }
+    waveformTargetsRef.current.set(sampleId, element)
+    waveformObserverRef.current?.observe(element)
+  }, [])
+
+  useEffect(() => {
+    waveformDecodeActiveRef.current = true
+    return () => {
+      waveformDecodeActiveRef.current = false
+      waveformQueueRef.current.length = 0
+      waveformScheduledRef.current.clear()
+    }
+  }, [])
+
+  useEffect(() => {
+    const root = libraryListRef.current
+    if (!root) return
+    if (typeof IntersectionObserver === 'undefined') {
+      setVisibleWaveformIds(new Set(waveformTargetsRef.current.keys()))
+      return
+    }
+
+    const observer = new IntersectionObserver((entries) => {
+      const visibilityChanges: Array<[string, boolean]> = []
+      for (const entry of entries) {
+        const sampleId = (entry.target as HTMLElement).dataset.sampleId
+        if (sampleId) visibilityChanges.push([sampleId, entry.isIntersecting])
+      }
+      if (visibilityChanges.length > 0) {
+        setVisibleWaveformIds((current) => {
+          let next: Set<string> | null = null
+          for (const [sampleId, isVisible] of visibilityChanges) {
+            if (isVisible && !current.has(sampleId)) {
+              next ??= new Set(current)
+              next.add(sampleId)
+            } else if (!isVisible && current.has(sampleId)) {
+              next ??= new Set(current)
+              next.delete(sampleId)
+            }
+          }
+          return next ?? current
+        })
+      }
+    }, { root, rootMargin: '200px 0px' })
+
+    waveformObserverRef.current = observer
+    waveformTargetsRef.current.forEach((element) => observer.observe(element))
+    return () => {
+      observer.disconnect()
+      waveformObserverRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!showLibraryWaveforms || isPlaying || visibleWaveformIds.size === 0) return
+    const currentPeaks = useStore.getState().libraryWavePeaks
+    for (const sample of filteredSamples) {
+      if (visibleWaveformIds.has(sample.id) && !currentPeaks[sample.id] && !waveformScheduledRef.current.has(sample.id)) {
+        waveformScheduledRef.current.add(sample.id)
+        waveformQueueRef.current.push(sample)
+      }
+    }
+    if (waveformQueueRunningRef.current || waveformQueueRef.current.length === 0) return
+
+    const drainWaveformQueue = async (): Promise<void> => {
+      if (waveformQueueRunningRef.current || !waveformDecodeActiveRef.current) return
+      waveformQueueRunningRef.current = true
+      const decodeContext = new AudioContext()
+      try {
+        while (
+          waveformDecodeActiveRef.current &&
+          showLibraryWaveformsRef.current &&
+          !isPlayingRef.current &&
+          waveformQueueRef.current.length > 0
+        ) {
+          const sample = waveformQueueRef.current.shift()!
+          if (!visibleWaveformIdsRef.current.has(sample.id) || !waveformTargetsRef.current.has(sample.id)) {
+            waveformScheduledRef.current.delete(sample.id)
+            continue
+          }
+          try {
+            const bucketCount = 112
+            const cached = await db.getWaveformPeaksByHash(sample.hash, bucketCount)
+            let peaks = cached
+            if (!peaks) {
+              const buffer = await decodeContext.decodeAudioData(await sample.blob.arrayBuffer())
+              const channel = buffer.getChannelData(0)
+              const bucketSize = Math.max(16, Math.floor(channel.length / bucketCount))
+              peaks = Array.from({ length: bucketCount }, (_, i) => {
+                const start = i * bucketSize
+                const end = Math.min(channel.length, start + bucketSize)
+                let max = 0
+                for (let c = start; c < end; c++) max = Math.max(max, Math.abs(channel[c]))
+                return max
+              })
+              await db.putWaveformPeaks({
+                key: `${sample.hash}:${bucketCount}`, sampleId: sample.id, hash: sample.hash,
+                bucketCount, peaks, updatedAt: Date.now(),
+              })
+            }
+            if (waveformDecodeActiveRef.current) {
+              useStore.setState((state) => ({
+                libraryWavePeaks: { ...state.libraryWavePeaks, [sample.id]: peaks ?? [] },
+              }))
+            }
+          } catch {
+            if (waveformDecodeActiveRef.current) {
+              useStore.setState((state) => ({
+                libraryWavePeaks: { ...state.libraryWavePeaks, [sample.id]: [] },
+              }))
+            }
+          } finally {
+            waveformScheduledRef.current.delete(sample.id)
+          }
+          await new Promise((resolve) => setTimeout(resolve, 0))
+        }
+      } finally {
+        await decodeContext.close().catch(() => undefined)
+        waveformQueueRunningRef.current = false
+        if (
+          waveformDecodeActiveRef.current &&
+          showLibraryWaveformsRef.current &&
+          !isPlayingRef.current &&
+          waveformQueueRef.current.length > 0
+        ) {
+          void drainWaveformQueue()
+        }
+      }
+    }
+
+    void drainWaveformQueue()
+  }, [filteredSamples, isPlaying, showLibraryWaveforms, visibleWaveformIds])
 
   const {
     openRecordDialog,
@@ -656,7 +819,8 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
     isSpreadTarget: chromaticSpreadSampleId === sample.id,
     isInspectorSelected: inspectorSampleId === sample.id,
     hasSelectedPad: !!selectedPad,
-    wavePeaks: libraryWavePeaks[sample.id],
+    wavePeaks: visibleWaveformIds.has(sample.id) ? libraryWavePeaks[sample.id] : undefined,
+    registerWaveformRow,
     assignedPads: sampleToPadMap.get(sample.id),
     onToggleChop: toggleChopExpand,
     onToggleSelect: handleToggleSelect,
@@ -726,7 +890,7 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
               </button>
             </div>
           )}
-          <div className="library-list">
+          <div className="library-list" ref={libraryListRef}>
             {filteredSamples.length === 0 && <p>{dropActive ? 'Drop files here to add to library' : 'No samples yet. Drop audio files here.'}</p>}
             {libraryItems.map((item) => {
               if (item.type === 'group') {
@@ -1009,4 +1173,4 @@ export function SampleLibrary({ onCollapse }: { onCollapse?: () => void }) {
     )}
     </>
   )
-}
+})

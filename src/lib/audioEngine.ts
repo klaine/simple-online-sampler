@@ -423,6 +423,7 @@ export class AudioEngine {
   private workletReady = false
 
   // Input monitor state
+  private monitorRequestId = 0
   private monitorStream: MediaStream | null = null
   private monitorSource: MediaStreamAudioSourceNode | null = null
   private monitorGain: GainNode | null = null
@@ -508,15 +509,7 @@ export class AudioEngine {
     }
     this.activeVoices.length = 0
 
-    if (this.monitorSource) {
-      try { this.monitorSource.disconnect() } catch { /* ignore */ }
-      this.monitorSource = null
-    }
-    if (this.monitorStream) {
-      this.monitorStream.getTracks().forEach((t) => t.stop())
-      this.monitorStream = null
-    }
-    this.monitorGain = null
+    this.stopInputMonitor()
 
     await this.ctx.close()
 
@@ -1047,6 +1040,7 @@ export class AudioEngine {
 
   async startInputMonitor(deviceId: string | null, busId: BusId): Promise<void> {
     this.stopInputMonitor()
+    const requestId = this.monitorRequestId
     const ctx = this.getContext()
     const audioConstraints: MediaTrackConstraints & Record<string, unknown> = {
       echoCancellation: false,
@@ -1057,8 +1051,7 @@ export class AudioEngine {
     const constraints: MediaStreamConstraints = { audio: audioConstraints, video: false }
     try {
       const stream = await navigator.mediaDevices.getUserMedia(constraints)
-      // In case stopInputMonitor was called while awaiting
-      if (this.monitorStream) {
+      if (requestId !== this.monitorRequestId || this.monitorStream) {
         stream.getTracks().forEach((t) => t.stop())
         return
       }
@@ -1070,12 +1063,14 @@ export class AudioEngine {
       this.monitorSource.connect(this.monitorGain)
       this.monitorGain.connect(busNode)
     } catch (e) {
+      if (requestId !== this.monitorRequestId) return
       console.warn('Input monitor: getUserMedia failed', e)
       throw e
     }
   }
 
   stopInputMonitor(): void {
+    this.monitorRequestId++
     if (this.monitorSource) {
       try { this.monitorSource.disconnect() } catch { /* noop */ }
       this.monitorSource = null

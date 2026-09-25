@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, memo } from 'react'
 import type { BusId, EffectSlot, EffectType, MixBus } from '../types'
 import { BUS_IDS } from '../types'
 import { useStore } from '../store'
@@ -471,7 +471,7 @@ function InputMonitorStrip() {
 // Mixer Panel
 // ---------------------------------------------------------------------------
 
-export function Mixer() {
+export const Mixer = memo(function Mixer() {
   const mixBuses = useStore((s) => s.project?.mixBuses)
   const [collapsed, setCollapsed] = useState(false)
 
@@ -503,4 +503,4 @@ export function Mixer() {
       )}
     </section>
   )
-}
+})

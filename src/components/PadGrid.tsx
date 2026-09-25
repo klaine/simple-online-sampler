@@ -19,9 +19,24 @@ let _padDragOutObjectUrl: string | null = null
 let _padDragOutBlob: Blob | null = null
 let _padDragOutPadId: string | null = null
 let _padDragOutTimer: ReturnType<typeof setTimeout> | null = null
+const _activePadKeyboardKeys = new Map<string, string>()
 
 // Guard: suppress mouse events that follow a recent touch (prevents double-trigger)
 let _lastTouchTime = 0
+
+function releaseKeyboardTriggeredPad(padId: string): void {
+  let wasActive = false
+  for (const [code, activePadId] of _activePadKeyboardKeys) {
+    if (activePadId === padId) {
+      _activePadKeyboardKeys.delete(code)
+      wasActive = true
+    }
+  }
+  if (!wasActive) return
+  audioEngine.releasePad(padId)
+  useStore.getState().feedCaptureBuffer(padId, 0, 'off')
+  releaseMidiNote(padId)
+}
 
 /** Inline TR-style step row for the selected pad — owns its playhead subscription
  *  so step ticks only re-render this row, not the whole PadGrid. */
@@ -71,7 +86,7 @@ const velocityFromTouchEvent = (event: React.TouchEvent<HTMLElement>): number =>
   return Math.max(0.2, ratio)
 }
 
-export function PadGrid() {
+export const PadGrid = memo(function PadGrid() {
   const sampleMap = useStore((s) => s.sampleMap)
   const selectedPadId = useStore((s) => s.selectedPadId)
   const selectedPadIds = useStore((s) => s.selectedPadIds)
@@ -79,7 +94,8 @@ export function PadGrid() {
   const midiStatus = useStore((s) => s.midiStatus)
   const lastMidiNote = useStore((s) => s.lastMidiNote)
   const padDragPrompt = useStore((s) => s.padDragPrompt)
-  const project = useStore((s) => s.project)
+  const projectName = useStore((s) => s.project?.name ?? 'Sketch')
+  const projectPads = useStore((s) => s.project?.pads)
   const displayedPads = useStore(selectDisplayedPads)
   const padHoldRecordEnabled = useStore((s) => s.padHoldRecordEnabled)
   const padHoldRecordingPadId = useStore((s) => s.padHoldRecordingPadId)
@@ -194,8 +210,8 @@ export function PadGrid() {
   }, [])
 
   // Pad drag prompt modal
-  const promptSource = padDragPrompt ? project?.pads.find((p) => p.id === padDragPrompt.sourcePadId) : null
-  const promptTarget = padDragPrompt ? project?.pads.find((p) => p.id === padDragPrompt.targetPadId) : null
+  const promptSource = padDragPrompt ? projectPads?.find((p) => p.id === padDragPrompt.sourcePadId) : null
+  const promptTarget = padDragPrompt ? projectPads?.find((p) => p.id === padDragPrompt.targetPadId) : null
 
   return (
     <div className="pad-panel" ref={gridRef}>
@@ -297,6 +313,7 @@ export function PadGrid() {
               key={pad.id}
               role="button"
               tabIndex={0}
+              aria-label={`${pad.name}, ${sample?.name ? `sample ${sample.name}` : 'empty pad'}`}
               data-pad-id={pad.id}
               className={`pad ${selected ? 'selected' : ''} ${multiSelected ? 'multi-selected' : ''} ${pad.id === padHoldRecordingPadId ? 'hold-recording' : ''} ${pad.settings.mute ? 'muted-pad' : ''}`}
               draggable={!!pad.settings.sampleId}
@@ -307,7 +324,7 @@ export function PadGrid() {
                 // If we have a pre-rendered URL, attach it for drag-out
                 if (_padDragOutObjectUrl && _padDragOutPadId === pad.id) {
                   const sanitizedPadName = pad.name.replace(/\.[^/.]+$/, "").replace(/\s+/g, '_')
-                  const filename = `${project?.name.replace(/\s+/g, '_') || 'Sketch'}_${(bankNames?.[pad.bank] || `Bank${pad.bank + 1}`).replace(/\s+/g, '')}_${sanitizedPadName}.wav`
+                  const filename = `${projectName.replace(/\s+/g, '_')}_${(bankNames?.[pad.bank] || `Bank${pad.bank + 1}`).replace(/\s+/g, '')}_${sanitizedPadName}.wav`
                   
                   // For browsers that support File API in dataTransfer
                   if (_padDragOutBlob) {
@@ -340,11 +357,14 @@ onDragEnd={() => {
                 
                 // Start a timer. If it's a long press, we'll start rendering.
                 // This avoids workload for quick taps.
-                if (project && pad.settings.sampleId) {
+                const currentProject = useStore.getState().project
+                if (currentProject && pad.settings.sampleId) {
                   _padDragOutTimer = setTimeout(async () => {
                     if (_mouseDownPosRef.current) {
                       _padDragOutPadId = pad.id
-                      const blob = await renderPadAudio(project, pad, (audioEngine as any).buffers)
+                      const latestProject = useStore.getState().project
+                      if (!latestProject) return
+                      const blob = await renderPadAudio(latestProject, pad, (audioEngine as any).buffers)
                       _padDragOutObjectUrl = URL.createObjectURL(blob)
                       _padDragOutBlob = blob
                     }
@@ -436,6 +456,22 @@ onDragEnd={() => {
                 // Fallback unlock in case touchstart's resume was rejected by browser
                 void audioEngine.unlockAndPrepare()
               }}
+              onKeyDown={(e) => {
+                if (e.target !== e.currentTarget) return
+                if (e.key !== 'Enter' && e.key !== ' ') return
+                e.preventDefault()
+                if (e.repeat || _activePadKeyboardKeys.has(e.code)) return
+                _activePadKeyboardKeys.set(e.code, pad.id)
+                useStore.setState({ selectedPadId: pad.id, selectedPadIds: [] })
+                triggerPad(pad, 0.85)
+              }}
+              onKeyUp={(e) => {
+                if (e.target !== e.currentTarget) return
+                if (e.key !== 'Enter' && e.key !== ' ') return
+                e.preventDefault()
+                if (_activePadKeyboardKeys.get(e.code) === pad.id) releaseKeyboardTriggeredPad(pad.id)
+              }}
+              onBlur={() => releaseKeyboardTriggeredPad(pad.id)}
               onDragOver={(e) => e.preventDefault()}
               onDrop={async (e) => {
                 e.preventDefault()
@@ -941,4 +977,4 @@ onDragEnd={() => {
       )}
     </div>
   )
-}
+})

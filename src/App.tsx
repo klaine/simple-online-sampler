@@ -20,7 +20,6 @@ import {
   selectDisplayedSample,
   selectActiveSequence,
   selectVisibleSequence,
-  selectFilteredSamples,
   selectAssignedSampleIdsKey,
   normalizeProject,
   MIN_STEP_SEMITONES,
@@ -39,6 +38,7 @@ import { TopBar, SettingsContent } from './components/TopBar'
 import { Sequencer } from './components/Sequencer'
 import { Mixer } from './components/Mixer'
 import { Toasts } from './components/Toasts'
+import { useDialogFocus } from './components/useDialogFocus'
 import { registerMidiOutput, unregisterMidiOutput, getMidiOutputInfos, releaseMidiNote, isMidiEcho } from './lib/midiOut'
 import * as launchpad from './lib/launchpadProMk3'
 
@@ -131,6 +131,53 @@ function PerfSettingsPanel() {
   )
 }
 
+function ProjectAudioSync() {
+  const mixBuses = useStore((s) => s.project?.mixBuses)
+  const masterGain = useStore((s) => s.project?.masterBus.gain)
+  const masterEffects = useStore((s) => s.project?.masterBus.effects)
+  const prevBusStructKeysRef = useRef<Map<string, string>>(new Map())
+  const prevMasterStructRef = useRef('')
+
+  useEffect(() => {
+    if (!mixBuses || masterGain == null) return
+    const anySoloed = mixBuses.some((bus) => bus.solo)
+    for (const bus of mixBuses) audioEngine.updateBus(bus.id, bus, anySoloed)
+    audioEngine.updateMasterGain(masterGain)
+  }, [mixBuses, masterGain])
+
+  useEffect(() => {
+    if (!mixBuses || !masterEffects) return
+    for (const bus of mixBuses) {
+      const structKey = JSON.stringify(bus.effects.map((slot) => ({
+        type: slot.type,
+        enabled: slot.enabled,
+        sc: slot.sidechainSource,
+        ...(slot.type === 'reverb' ? { decay: slot.params.decay } : {}),
+      })))
+      if (structKey !== prevBusStructKeysRef.current.get(bus.id)) {
+        prevBusStructKeysRef.current.set(bus.id, structKey)
+        audioEngine.rebuildBusEffects(bus.id, bus.effects)
+      } else {
+        audioEngine.updateBusEffectParams(bus.id, bus.effects)
+      }
+    }
+
+    const masterStructKey = JSON.stringify(masterEffects.map((slot) => ({
+      type: slot.type,
+      enabled: slot.enabled,
+      ...(slot.type === 'reverb' ? { decay: slot.params.decay } : {}),
+    })))
+    if (masterStructKey !== prevMasterStructRef.current) {
+      prevMasterStructRef.current = masterStructKey
+      audioEngine.rebuildMasterEffects(masterEffects)
+    } else {
+      audioEngine.updateMasterEffectParams(masterEffects)
+    }
+  }, [mixBuses, masterEffects])
+
+  return null
+}
+
 function ProjectsPanel() {
   const projectList = useStore((s) => s.projectList)
   const currentProjectId = useStore((s) => s.project?.id ?? null)
@@ -172,11 +219,11 @@ function ProjectsPanel() {
 
 function App() {
   // --- Store subscriptions (only what App itself needs) ---
-  const project = useStore((s) => s.project)
+  const projectReady = useStore((s) => s.project !== null)
+  const songChainEmpty = useStore((s) => (s.project?.songChain.length ?? 0) === 0)
+  const hasActiveSequence = useStore((s) => selectActiveSequence(s) !== null)
   const hydrateError = useStore((s) => s.hydrateError)
   const samples = useStore((s) => s.samples)
-  const isPlaying = useStore((s) => s.isPlaying)
-  const showLibraryWaveforms = useStore((s) => s.showLibraryWaveforms)
   const showExportDialog = useStore((s) => s.showExportDialog)
   const showImportDialog = useStore((s) => s.showImportDialog)
   const sampleAssignPrompt = useStore((s) => s.sampleAssignPrompt)
@@ -187,6 +234,7 @@ function App() {
   const audioMonitorBusId = useStore((s) => s.audioMonitorBusId)
   const audioOutputDeviceId = useStore((s) => s.audioOutputDeviceId)
   const performanceTab = useStore((s) => s.performanceTab)
+  const sampleAssignDialogRef = useDialogFocus(Boolean(sampleAssignPrompt))
 
   // --- Phone detection (pointer: coarse + phone-sized viewport) ---
   // iPads also have pointer: coarse, so we explicitly exclude them
@@ -282,9 +330,7 @@ function App() {
   const selectedLayer = useStore(selectSelectedLayer)
   const selectedSample = useStore(selectDisplayedSample)
   const padEditorCollapsed = useStore((s) => s.padEditorCollapsed)
-  const activeSequence = useStore(selectActiveSequence)
   const visibleSequence = useStore(selectVisibleSequence)
-  const filteredSamples = useStore(selectFilteredSamples)
   const assignedSampleIdsKey = useStore(selectAssignedSampleIdsKey)
 
   // --- Actions ---
@@ -613,59 +659,6 @@ function App() {
     void loadBuffers()
   }, [samples, assignedSampleIdsKey])
 
-  // --- Library waveform peaks ---
-  useEffect(() => {
-    if (!showLibraryWaveforms || isPlaying) return
-
-    let cancelled = false
-    const buildPeaks = async () => {
-      while (!cancelled) {
-        const currentPeaks = useStore.getState().libraryWavePeaks
-        const missing = filteredSamples.filter((s) => !currentPeaks[s.id]).slice(0, 8)
-        if (missing.length === 0) break
-
-        const nextEntries: Array<[string, number[]]> = []
-        const bucketCount = 112
-        const decodeContext = new AudioContext()
-        for (const sample of missing) {
-          if (cancelled) break
-          try {
-            const cached = await db.getWaveformPeaksByHash(sample.hash, bucketCount)
-            if (cached) { nextEntries.push([sample.id, cached]); continue }
-            const buffer = await decodeContext.decodeAudioData(await sample.blob.arrayBuffer())
-            const channel = buffer.getChannelData(0)
-            const bucketSize = Math.max(16, Math.floor(channel.length / bucketCount))
-            const peaks = Array.from({ length: bucketCount }, (_, i) => {
-              const start = i * bucketSize
-              const end = Math.min(channel.length, start + bucketSize)
-              let max = 0
-              for (let c = start; c < end; c++) max = Math.max(max, Math.abs(channel[c]))
-              return max
-            })
-            await db.putWaveformPeaks({
-              key: `${sample.hash}:${bucketCount}`, sampleId: sample.id, hash: sample.hash,
-              bucketCount, peaks, updatedAt: Date.now(),
-            })
-            nextEntries.push([sample.id, peaks])
-          } catch { nextEntries.push([sample.id, []]) }
-        }
-        void decodeContext.close().catch(() => undefined)
-        if (!cancelled && nextEntries.length > 0) {
-          useStore.setState((s) => {
-            const updated = { ...s.libraryWavePeaks }
-            nextEntries.forEach(([id, peaks]) => { updated[id] = peaks })
-            return { libraryWavePeaks: updated }
-          })
-        }
-        // Small yield before next batch to keep UI responsive
-        await new Promise((r) => setTimeout(r, 50))
-      }
-    }
-
-    void buildPeaks()
-    return () => { cancelled = true }
-  }, [filteredSamples, showLibraryWaveforms, isPlaying]) // eslint-disable-line react-hooks/exhaustive-deps
-
   // --- Sync trimDraft from selected pad/layer ---
   useEffect(() => {
     if (!selectedPad) return
@@ -677,41 +670,6 @@ function App() {
   useEffect(() => {
     useStore.setState({ selectedLayerId: null })
   }, [selectedPad?.id])
-
-  // --- Sync mixer state to audio engine ---
-  useEffect(() => {
-    if (!project) return
-    const anySoloed = project.mixBuses.some((b) => b.solo)
-    for (const bus of project.mixBuses) {
-      audioEngine.updateBus(bus.id, bus, anySoloed)
-    }
-    audioEngine.updateMasterGain(project.masterBus.gain)
-  }, [project?.mixBuses, project?.masterBus?.gain])
-
-  // --- Rebuild bus effect chains when structural config changes (type/enabled/sidechain) ---
-  const prevBusStructKeysRef = useRef<Map<string, string>>(new Map())
-  const prevMasterStructRef = useRef<string>('')
-  useEffect(() => {
-    if (!project) return
-    for (const bus of project.mixBuses) {
-      // Structural key: only type + enabled + sidechainSource + reverb decay (requires new IR)
-      const structKey = JSON.stringify(bus.effects.map((s) => ({ type: s.type, enabled: s.enabled, sc: s.sidechainSource, ...(s.type === 'reverb' ? { decay: s.params.decay } : {}) })))
-      if (structKey !== prevBusStructKeysRef.current.get(bus.id)) {
-        prevBusStructKeysRef.current.set(bus.id, structKey)
-        audioEngine.rebuildBusEffects(bus.id, bus.effects)
-      } else {
-        // Only params changed — update in-place without graph rebuild
-        audioEngine.updateBusEffectParams(bus.id, bus.effects)
-      }
-    }
-    const masterStructKey = JSON.stringify(project.masterBus.effects.map((s) => ({ type: s.type, enabled: s.enabled, ...(s.type === 'reverb' ? { decay: s.params.decay } : {}) })))
-    if (masterStructKey !== prevMasterStructRef.current) {
-      prevMasterStructRef.current = masterStructKey
-      audioEngine.rebuildMasterEffects(project.masterBus.effects)
-    } else {
-      audioEngine.updateMasterEffectParams(project.masterBus.effects)
-    }
-  }, [project?.mixBuses, project?.masterBus?.effects])
 
   // --- Audio input monitor ---
   useEffect(() => {
@@ -1095,6 +1053,10 @@ function App() {
       }
 
       if (event.code === 'Space') {
+        const interactiveTarget = target?.closest(
+          'button, a, input, select, textarea, [role="button"], [role="switch"], [role="checkbox"], [contenteditable="true"], [tabindex]:not([tabindex="-1"])',
+        )
+        if (event.defaultPrevented || interactiveTarget) return
         event.preventDefault()
         useStore.getState().togglePlayPause()
         return
@@ -1257,6 +1219,7 @@ function App() {
 
   // --- Export actions ---
   const exportAllMidi = useCallback(async () => {
+    const project = useStore.getState().project
     if (!project) return
     try {
       for (const sequence of project.sequences) {
@@ -1271,9 +1234,10 @@ function App() {
       console.error('MIDI export failed', e)
       useStore.getState().addToast('MIDI export failed', 'error')
     }
-  }, [project])
+  }, [])
 
   const exportSongChainMidi = useCallback(async () => {
+    const project = useStore.getState().project
     if (!project) return
     if (project.songChain.length === 0) return
     try {
@@ -1286,9 +1250,10 @@ function App() {
       console.error('Song chain MIDI export failed', e)
       useStore.getState().addToast('Song chain MIDI export failed', 'error')
     }
-  }, [project])
+  }, [])
 
   const exportPack = useCallback(async () => {
+    const project = useStore.getState().project
     if (!project) return
     try {
       const { samples } = useStore.getState()
@@ -1299,9 +1264,10 @@ function App() {
       console.error('Pack export failed', e)
       useStore.getState().addToast('Pack export failed', 'error')
     }
-  }, [project])
+  }, [])
 
   const exportStandalonePage = useCallback(async () => {
+    const project = useStore.getState().project
     if (!project) return
     try {
       const usedIds = Array.from(
@@ -1327,9 +1293,12 @@ function App() {
       console.error('Standalone page export failed', e)
       useStore.getState().addToast('Standalone page export failed', 'error')
     }
-  }, [project])
+  }, [])
 
   const exportAudio = useCallback(async (mode: 'pattern' | 'song', format: ExportFormat = 'wav') => {
+    const state = useStore.getState()
+    const project = state.project
+    const activeSequence = selectActiveSequence(state)
     if (!project || !activeSequence) return
     if (mode === 'song' && project.songChain.length === 0) return
     useStore.setState({ isExporting: true })
@@ -1371,9 +1340,10 @@ function App() {
     } finally {
       useStore.setState({ isExporting: false })
     }
-  }, [project, activeSequence])
+  }, [])
 
   const doPreviewImport = useCallback(async () => {
+    const project = useStore.getState().project
     if (!project || !importFile) return
     const incoming = normalizeProject(await readProjectFromPackage(importFile))
     const quick = importPreview(project, incoming)
@@ -1389,9 +1359,10 @@ function App() {
         ...report.sequenceNameCollisions.slice(0, 8).map((e) => `Seq collision -> ${e}`),
       ],
     })
-  }, [project, importFile, importMode])
+  }, [importFile, importMode])
 
   const doRunImport = useCallback(async () => {
+    const project = useStore.getState().project
     if (!project || !importFile) return
     const result = await importProjectPackage(importFile, importMode, project)
     const normalized = normalizeProject(result.project)
@@ -1413,7 +1384,7 @@ function App() {
     audioEngine.setBpm(normalized.bpm)
     audioEngine.setPolyphony(normalized.polyphony)
     void useStore.getState().saveProject(normalized)
-  }, [project, importFile, importMode])
+  }, [importFile, importMode])
 
   // --- Shared performance tab UI ---
   const desktopTabs = (
@@ -1554,13 +1525,14 @@ function App() {
     )
   }
 
-  if (!project || !activeSequence) {
+  if (!projectReady || !hasActiveSequence) {
     return <main className="app">Loading project...</main>
   }
 
   return (
     <main className="app app-perf-layout">
       <TopBar isPhone={isMobile} />
+      <ProjectAudioSync />
 
       {showExportDialog && (
         <Suspense fallback={null}>
@@ -1571,7 +1543,7 @@ function App() {
             onExportStandalone={() => void exportStandalonePage()}
             onExportAudioPattern={(format) => void exportAudio('pattern', format)}
             onExportAudioSong={(format) => void exportAudio('song', format)}
-            songChainEmpty={project.songChain.length === 0}
+            songChainEmpty={songChainEmpty}
           />
         </Suspense>
       )}
@@ -1584,10 +1556,16 @@ function App() {
       )}
 
       {sampleAssignPrompt && (
-        <section className="import-dialog-overlay" role="dialog" aria-modal="true">
+        <section
+          ref={sampleAssignDialogRef}
+          className="import-dialog-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="sample-assign-title"
+        >
           <div className="import-dialog sample-assign-prompt">
             <div className="import-dialog-head">
-              <h2>Pad already has a sample</h2>
+              <h2 id="sample-assign-title">Pad already has a sample</h2>
               <button type="button" onClick={() => useStore.getState().cancelSampleAssignPrompt()}>Close</button>
             </div>
             <p className="preview">

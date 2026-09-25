@@ -70,24 +70,24 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - `src/store/importHelpers.ts` — `importFileAsSample`, `loadPresetKits`
 - `src/store/context.ts` — `StoreContext` interface for slice factories
 - `src/store/slices/` — 15 domain slice factories: `project.ts`, `pad.ts`, `transport.ts`, `sequencer.ts`, `pianoRoll.ts`, `patterns.ts`, `songChain.ts`, `library.ts`, `sampleGroups.ts`, `chopSpreadDrag.ts`, `recording.ts`, `midiOut.ts`, `mixer.ts`, `ui.ts`, `audioMonitor.ts`, `history.ts`
-- `src/App.tsx` — App shell: effects, drag handlers, export callbacks, layout (~1683 lines)
-- `src/App.css` — All styling (single file, ~3617 lines)
+- `src/App.tsx` — App shell: MIDI/keyboard handlers, drag handlers, export callbacks, layout; `ProjectAudioSync` isolates mixer subscriptions (~1623 lines)
+- `src/App.css` — All styling (single file, ~4748 lines)
 - `src/types.ts` — Core types: Pad, PadSettings, SampleLayer, SampleAsset, Project, BusId, EffectSlot, MixBus, MasterBus, TrimSettings, MidiOutConfig, EnvelopeSettings, etc.
 
 ### Components (`src/components/`)
 - `KnobControl.tsx` — Drag knob with optional `logScale` power-curve mapping (for envelope time knobs: 50%→20% of range, 0-5s with ms/s auto-format display) and optional `freqScale` exponential mapping (equal knob travel per octave, for filter frequency knobs, auto-formats as Hz/kHz)
 - `MiniWaveform.tsx` — Memoized canvas waveform
-- `SequencerStep.tsx` — Memoized step with drag interactions
+- `SequencerStep.tsx` — Memoized step with drag interactions and keyboard activation
 - `ExportDialog.tsx` — Export format chooser with WAV/MP3 format dropdowns per audio button, MIDI: Song Chain button, spinner during rendering
 - `ImportDialog.tsx` — Import dialog
 - `ConfirmDialog.tsx` — Promise-based confirm overlay (replaces all `window.confirm` calls)
-- `SampleLibrary.tsx` — Sample library sidebar with file drop, chop/spread buttons, "Remove Unassigned" cleanup, record button, Import Samples button, autosample group UI (rename/delete/export/drag/assign-to-pads), group edit modal (name/bus/choke), manual sample grouping (multi-select + group button), per-sample ungroup, MPC badge on .pgm-imported groups, Preset badge on factory preset groups, ZIP import support, sidebar collapse button, projects section (list/new/duplicate/delete/switch), mini waveform previews per sample, pad assignment badges (clickable to navigate), inspector panel integration, kit preview grid integration, expanded browse mode toggle
+- `SampleLibrary.tsx` — Sample library sidebar with file drop, chop/spread buttons, "Remove Unassigned" cleanup, record button, Import Samples button, autosample group UI (rename/delete/export/drag/assign-to-pads), group edit modal (name/bus/choke), manual sample grouping (multi-select + group button), per-sample ungroup, MPC badge on .pgm-imported groups, Preset badge on factory preset groups, ZIP import support, sidebar collapse button, projects section (list/new/duplicate/delete/switch), viewport-loaded mini waveform previews with offscreen rendering containment, pad assignment badges (clickable to navigate), inspector panel integration, kit preview grid integration, expanded browse mode toggle
 - `LibraryInspector.tsx` — Sample detail/inspector panel: waveform canvas (300 buckets), play/stop preview, audio properties (duration, sample rate, channels, format, size), pad assignment list (clickable to navigate), imported kit settings display (choke group, pan, level, filter, play mode), WAV metadata tags, action buttons (assign to pad, chop, delete)
 - `KitPreviewGrid.tsx` — 4×4 pad grid preview for imported drumkits (MPC/Battery/LCDK/Preset): shows sample names per pad position (by `autosamplePadIndex`), click to audition via `previewSample`, playing state highlight
 - `PadEditor.tsx` — Collapsible pad settings, waveform trim with zoom (gain-scaled, layer-aware), filter knobs (LP12/LP24/HP/BP), MC-909 style AMP envelope section (vertical faders + ADSR/AHR curve visualization), multisample layer UI, per-layer editing, stacked timeline (canvas waveforms + drag offset), bus selector, choke group selector, pan knob (with random pan toggle), MIDI Out section, Crop button (destructively trims sample to trim markers), Normalize button (peak normalize to -0.3 dBFS), Reset Pad button (resets to defaults + clears sequencer events)
 - `EnvelopeSection.tsx` — Reusable MC-909 style envelope section with ADSR/AHR curve SVG visualization, vertical faders (with log-scale support), level/depth fader, mode-aware (ADSR shows A/D/S/R, AHR shows A/H/R), used for AMP envelope in PadEditor
-- `PadGrid.tsx` — Pad grid with bank nav (double-click to rename banks), pad drag (move/copy/swap), record button overlay on empty pads, MIDI debug display, autosample group drop with metadata (trim/bus/choke), group drop on bank tabs (assigns starting from pad 1 of target bank), MPC .pgm import on file drop, touch event handling (preventDefault to avoid double-trigger on mobile)
-- `TopBar.tsx` — Header with transport, BPM, swing, tap tempo, VU meter, metronome toggle, sequencer record arm/quantize/overdub/count-in buttons, Capture MIDI button, MIDI input cluster, Audio Out device selector, drag-to-adjust BPM/Swing inputs, settings popover (buffer size, metronome volume)
+- `PadGrid.tsx` — Pad grid with keyboard activation for focused pads, bank nav (double-click to rename banks), pad drag (move/copy/swap), record button overlay on empty pads, MIDI debug display, autosample group drop with metadata (trim/bus/choke), group drop on bank tabs (assigns starting from pad 1 of target bank), MPC .pgm import on file drop, touch event handling (preventDefault to avoid double-trigger on mobile)
+- `TopBar.tsx` — Header with transport, BPM, swing, tap tempo, VU meter, metronome toggle, sequencer record arm/quantize/overdub/count-in buttons with accessible armed state, Capture MIDI button, MIDI input cluster, Audio Out device selector, drag-to-adjust BPM/Swing inputs, settings popover (buffer size, metronome volume)
 - `Sequencer.tsx` — Compact toolbar, draggable pattern strip (drag to reorder), song chain, sequencer matrix with collapsible bank groups (all 8 banks visible, auto-collapsed if no events in current pattern), inline ColorPicker (8×8 grid popover), performance stats overlay (FPS + tick drift)
 - `VirtualizedSequencerLanes.tsx` — Lightweight custom lane virtualizer: only renders visible bank groups + expanded piano roll lanes, uses cumulative height offsets with paddingTop/paddingBottom
 - `PianoRollLane.tsx` — Memoized inline piano roll for any pad lane: 24-row (2 octave) grid, click-to-toggle notes, velocity drag (Shift+drag), octave scroll buttons, note length drag (left/right edges adjust gate), aligned with sequencer step columns via shared CSS grid template
@@ -99,7 +99,7 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - `AutosampleDialog.tsx` — Full autosample UI: MIDI out config, audio input, note range, timing, pad assignment, normalize, auto-trim toggle, auto-crop toggle, mix bus routing, choke group config, device drumkit modes (MC-707), editable kit name
 - `Timeline.tsx` — Song chain arrangement timeline: visual block layout of song chain entries with proportional widths (steps × repeats), drag-and-drop reorder via refs (not dataTransfer in dragover), playhead tracks position across entire song chain during playback (uses `playingChainIndex` + `playingChainRepeat` for accurate position), active block highlights by chain index (not pattern ID), right-click context menu for Remove/Clone (uses `showConfirm`, no `window.prompt`)
 ### Library (`src/lib/`)
-- `audioEngine.ts` — Web Audio voice pool, multisample resolution, per-pad filter (LP12/LP24/HP/BP/LPHP with live param updates), choke groups, ADSR/AHR envelope shaping, AnalyserNode, bus routing, effect chains (with sidechain compressor worklet), `buildEffectChain`, `buildEffectNode`, `updateEffectNodeParams`, `updateBusEffectParams`, `updateMasterEffectParams`, `getOutputLatency`, input monitor, `setOutputDevice`, `setBufferSize`, `playPreview`/`stopPreview` (sample preview via AudioContext) (~1600 lines)
+- `audioEngine.ts` — Web Audio voice pool, multisample resolution, per-pad filter (LP12/LP24/HP/BP/LPHP with live param updates), choke groups, ADSR/AHR envelope shaping, AnalyserNode, bus routing, effect chains (with sidechain compressor worklet), `buildEffectChain`, `buildEffectNode`, `updateEffectNodeParams`, `updateBusEffectParams`, `updateMasterEffectParams`, `getOutputLatency`, input monitor, `setOutputDevice`, `setBufferSize`, `playPreview`/`stopPreview` (sample preview via AudioContext) (~1256 lines)
 - `audioExport.ts` — Offline audio render (WAV + MP3) with swing, layer resolution, per-pad filter, choke groups, ADSR envelope shaping, bus routing + effects (~400 lines). `renderProjectAudio()` returns WAV or MP3 based on `format` option. `renderPadAudio()` renders a single pad with all settings for drag-out.
 - `mp3Encode.ts` — MP3 encoding via lamejs (320kbps CBR): `encodeMp3()` converts Float32 channels → MP3 Blob, `audioBufferToChannels()` extracts channel data from AudioBuffer
 - `voiceUtils.ts` — Shared voice utilities: `mergeLayerSettings`, `resolveFilterType`, `resolveLayer`, `createFilterChain`, `scheduleAmplitudeEnvelope`, `createPanNode` — consumed by both `audioEngine.ts` (live) and `audioExport.ts` (offline) to prevent drift
@@ -157,6 +157,8 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - Piano roll note length: drag left/right edges of note blocks to adjust `gate` (steps). Left edge moves start step + adjusts gate to keep end fixed. Store actions: `setPianoRollNoteGate`, `setPianoRollNoteStartAndGate`.
 - Envelope time faders: MC-909 style vertical faders with logarithmic power curve (exponent ≈ 2.322), range 0–5s, display auto-formats as ms/s.
 - Filter frequency knobs: exponential mapping (`freqScale`) — equal knob travel per octave, auto-formats as Hz/kHz.
+- Focused pad keyboard activation: Enter/Space triggers the pad on keydown and releases held voices on keyup; focused sequencer steps toggle from Enter/Space activation.
+- The global Space transport shortcut does not override focused interactive controls.
 **When changing playback logic, update:**
 1. `src/lib/voiceUtils.ts` (shared envelope/filter/pan scheduling)
 2. `src/lib/audioEngine.ts` (live playback)
@@ -169,7 +171,8 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 
 ## Keyboard Shortcuts
 
-- `Space` — Play/stop
+- `Space` — Play/stop when focus is not on an interactive control
+- `Enter` / `Space` — Trigger focused pad or toggle focused sequencer step
 - `S` — Stop
 - `T` — Tap tempo
 - `1`–`8` — Switch pad bank (main keyboard)
@@ -239,7 +242,7 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - **Folder drop**: dropping a folder recursively reads all audio files using `webkitGetAsEntry`. If files look like a drum kit (≥40% match known categories), a confirm dialog offers to map them to a standard 16-pad MPC-style layout (kick→1, snare→2, clap→3, CH→4, OH→5, perc→6, toms→7-9, crash→10, ride→11, shaker→12, cowbell→13, conga→14, snap→15, other→16). Uses `autosamplePadIndex` for ordering on pad assignment. Folder name is used as group label (instead of common filename prefix).
 
 ### Extended Library View
-- **Mini waveforms**: each sample row shows a 14px-tall waveform preview using the dormant `MiniWaveform` component and pre-computed `libraryWavePeaks` (112 buckets, cached in IndexedDB)
+- **Mini waveforms**: visible sample rows show a 14px-tall waveform preview using `MiniWaveform` and pre-computed `libraryWavePeaks` (112 buckets, cached in IndexedDB); peak decoding and canvas rendering are deferred for offscreen rows
 - **Pad assignment badges**: small inline badges (e.g. `B1·3`) show which pads reference each sample; clicking navigates to that pad (switches bank + selects pad + opens PadEditor tab). Built from `selectSampleToPadMap` selector (reverse map: sampleId → Pad[])
 - **Library inspector** (`LibraryInspector.tsx`): detail panel showing waveform canvas (300 buckets, decoded on demand), play/stop preview, audio properties (duration, sample rate, channels, format, size), pad assignment list, imported kit settings (choke group, pan, level, filter, play mode), WAV metadata tags, and action buttons. Opens via ⓘ button or right-click on sample row. `libraryInspectorSampleId` state tracks which sample is inspected
 - **Kit preview grid** (`KitPreviewGrid.tsx`): 4×4 pad grid for imported drumkits (MPC/Battery/LCDK/Preset). Shows sample names by `autosamplePadIndex`, click to audition. Triggered by ▦ button on group head. `kitPreviewRunId` state tracks which kit is previewing
@@ -386,6 +389,7 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 ### Audio Input Monitor
 - Toggle + device dropdown + bus selector in Mixer panel
 - `startInputMonitor`/`stopInputMonitor` in audioEngine.ts
+- Pending `getUserMedia` requests are invalidated when monitoring is stopped or restarted; stale streams have their tracks stopped instead of attaching later
 - `getUserMedia` with `echoCancellation: false`, `noiseSuppression: false`, `autoGainControl: false`
 
 ### Preset Kits
@@ -432,6 +436,8 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - **`saveProjectLight` skips `normalizeProject`**: The hot path only calls `touchProject` (sets `updatedAt`), preserving sub-object reference identity for the snapshot guard. `normalizeProject` only runs on initial load/import.
 - **Effect param updates are graph-safe**: `updateEffectNodeParams` writes to existing AudioParams via `setTargetAtTime(value, now, 0.01)` — no node disconnection, no clicks. Full graph rebuild only happens on structural changes (type/enabled/sidechain source/reverb decay).
 - **Transport visual state bypasses immer**: `playheadStep` and `sequencedPadHits` are managed by `transportVisualStore` (a lightweight pub/sub) instead of Zustand's immer middleware. Components subscribe via `useSyncExternalStore`. This eliminates ~90 immer produces/sec during active playback.
+- **Mixer edit render isolation**: the App shell subscribes to render-critical project flags, while `ProjectAudioSync` owns mixer subscriptions; memoized panels and narrow pad/top-bar selectors prevent fader drags from re-rendering unrelated panels or the 128-pad grid.
+- **Library waveform work is viewport-driven**: sample rows use `IntersectionObserver`; only nearby rows decode or mount mini-waveform canvases, while offscreen rows use `content-visibility` containment.
 - **Performance stats overlay**: Toggle via "Show Performance Stats" button in Sequencer help panel. Shows FPS, tick count, late notes, max drift, P95 drift.
 
 ## Coding Notes

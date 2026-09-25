@@ -103,7 +103,7 @@ function ColorPicker({ color, onChange }: { color: string; onChange: (c: string)
   )
 }
 
-export function Sequencer() {
+export const Sequencer = memo(function Sequencer() {
   const project = useStore((s) => s.project)
   const isPlaying = useStore((s) => s.isPlaying)
   const playbackScope = useStore((s) => s.playbackScope)
@@ -683,4 +683,4 @@ export function Sequencer() {
       <Timeline show={showTimeline} />
     </section>
   )
-}
+})

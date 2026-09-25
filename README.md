@@ -12,6 +12,7 @@ A browser-based sampler/sequencer built with React, TypeScript, and the Web Audi
 - **Multisample** support: round-robin, random, velocity-layer, and stacked modes
 - **Per-pad settings**: gain, pitch (semitones + fine cents), playback mode (one-shot/ADSR/AHR), trim, MC-909 style AMP envelope (vertical faders, ADSR/AHR curve visualization), filter (LP12/LP24/HP/BP/LPHP) with per-knob exponential frequency mapping, per-pad pan (with random pan mode), mix bus routing, choke groups (1–8), normalize, crop, base note, MIDI out
 - **Multi-pad batch editing** — Ctrl+click to toggle, Shift+click to range-select pads; batch-edit gain, mode, bus, choke, filter, pan, mute
+- **Keyboard-accessible pads** — Enter/Space on a focused pad starts the voice and releases held notes on keyup
 - **Pad naming** — editable pad names with reset to default
 - **Pad drag** — move, copy, or swap pads across banks (hover bank tabs to switch)
 - **Bank naming** — double-click bank buttons to rename
@@ -19,7 +20,7 @@ A browser-based sampler/sequencer built with React, TypeScript, and the Web Audi
 - **Sample assign modes** — replace existing sample or add as multisample layer
 - **Record to pad** — record button on empty pads opens recording dialog targeted to that pad
 - **Waveform editor** with zoom, trim handles, and auto-scroll (gain-scaled display, layer-aware)
-- **Sample library** with drag-and-drop import, search, sort, preview playback, chop, chromatic spread, collapsible sidebar, projects section, mini waveform previews, pad assignment badges, sample inspector panel, kit preview grid, expanded browse mode
+- **Sample library** with drag-and-drop import, search, sort, preview playback, chop, chromatic spread, collapsible sidebar, projects section, viewport-loaded mini waveform previews, pad assignment badges, sample inspector panel, kit preview grid, expanded browse mode
 - **Sample inspector** — click ⓘ or right-click a sample to view waveform, audio properties (duration, sample rate, channels), pad assignments (clickable to navigate), imported kit settings, and metadata tags
 - **Kit preview grid** — preview imported drumkits (MPC/Battery/LCDK/Preset) as a 4×4 pad grid; click pads to audition samples
 - **Expanded browse mode** — toggle ⊞ button to widen the library panel for better browsing with inspector side-by-side
@@ -31,6 +32,7 @@ A browser-based sampler/sequencer built with React, TypeScript, and the Web Audi
 
 ### Sequencer
 - **Step sequencer** with per-step velocity, gate length, and pitch offset
+- **Keyboard-accessible sequencer steps** — Enter/Space toggles a focused step; the Space transport shortcut stays out of focused controls
 - **Inline piano roll** for any pad — 2-octave grid (click-to-toggle notes, Shift+drag velocity, drag note edges to adjust length), octave scroll, aligned with sequencer step columns
 - **Configurable resolution** — 1/16 or 1/32 note steps per pattern
 - **Configurable step count** per pattern
@@ -137,7 +139,8 @@ Runs TypeScript type checking followed by Vite production build.
 
 | Key | Action |
 |-----|--------|
-| `Space` | Play / Stop |
+| `Space` | Play / Stop (unless an interactive control has focus) |
+| `Enter` / `Space` | Trigger focused pad / toggle focused sequencer step |
 | `S` | Stop |
 | `T` | Tap tempo |
 | `1`–`8` | Switch pad bank (main keyboard) |
@@ -167,6 +170,8 @@ Single-page app with all state in a Zustand store assembled from slice factories
 - **Transport visual state bypasses immer** — `playheadStep` and pad hit flashes use a lightweight pub/sub store to avoid expensive state updates during playback
 - **Effect param updates are graph-safe** — knob changes write to existing AudioParams via `setTargetAtTime` (no graph teardown, no clicks)
 - **Snapshot rebuild is guarded** — mixer/effect changes don't trigger playback snapshot reconstruction
+- **Mixer edits are render-isolated** — mixer synchronization is separate from the app shell; unrelated panels and the pad grid skip fader-driven renders
+- **Library waveform work is viewport-driven** — peak decoding and waveform canvases are limited to nearby rows
 
 ## Browser Support
 

@@ -75,7 +75,14 @@ export const SequencerStep = memo(function SequencerStep({
           }
           void s.toggleStep(step, padId)
         }}
-        onClick={(event) => event.preventDefault()}
+        onClick={(event) => {
+          event.preventDefault()
+          if (event.detail !== 0) return
+          const s = store.getState()
+          if (s.selectedPadId !== padId) store.setState({ selectedPadId: padId })
+          store.setState({ selectedGateNote: exactEvent ? { padId, eventId: exactEvent.id } : null })
+          void s.toggleStep(step, padId)
+        }}
         style={exactEvent ? { opacity: 0.45 + exactEvent.velocity / 180 } : undefined}
         title={
           exactEvent

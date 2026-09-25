@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, type RefObject } from 'react'
+import { useRef, useEffect, useCallback, memo, type RefObject } from 'react'
 import type { FilterType, MultiSampleMode, Pad, PadMode, PadSettings, BusId, SampleLayer } from '../types'
 import { BUS_IDS } from '../types'
 import {
@@ -181,7 +181,7 @@ function StackedTimeline({ layers, padSettings, sampleMap: sm }: { layers: Sampl
   )
 }
 
-export function PadEditor({ waveformRef, waveformCanvasRef, dragTargetRef }: PadEditorProps) {
+export const PadEditor = memo(function PadEditor({ waveformRef, waveformCanvasRef, dragTargetRef }: PadEditorProps) {
   const selectedPad = useStore(selectSelectedPad)
   const selectedPadIds = useStore((s) => s.selectedPadIds)
   const selectedLayer = useStore(selectSelectedLayer)
@@ -190,7 +190,7 @@ export function PadEditor({ waveformRef, waveformCanvasRef, dragTargetRef }: Pad
   const trimDraft = useStore((s) => s.trimDraft)
   const waveformZoom = useStore((s) => s.waveformZoom)
   const sampleMap = useStore((s) => s.sampleMap)
-  const project = useStore((s) => s.project)
+  const projectPads = useStore((s) => s.project?.pads)
 
   const {
     updatePadSettings,
@@ -212,7 +212,7 @@ export function PadEditor({ waveformRef, waveformCanvasRef, dragTargetRef }: Pad
 
   // Batch editing mode
   const isBatchMode = selectedPadIds.length > 0
-  const batchPads = isBatchMode && project ? project.pads.filter((p) => selectedPadIds.includes(p.id)) : null
+  const batchPads = isBatchMode && projectPads ? projectPads.filter((p) => selectedPadIds.includes(p.id)) : null
   const batchSettings = batchPads && batchPads.length > 0 ? batchPads[0].settings : null
 
   const toggleCollapse = () => useStore.setState((s) => ({ padEditorCollapsed: !s.padEditorCollapsed }))
@@ -677,4 +677,4 @@ export function PadEditor({ waveformRef, waveformCanvasRef, dragTargetRef }: Pad
       )}
     </section>
   )
-}
+})
