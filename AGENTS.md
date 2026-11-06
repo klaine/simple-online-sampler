@@ -13,6 +13,7 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - Install: `npm install`
 - Dev server: `npm run dev`
 - Build/typecheck: `npm run build`
+- CI: `.github/workflows/ci.yml` runs `npm run lint -- --quiet` (errors only) + `npm run build` on PRs and non-main pushes. Keep lint at zero errors.
 - Deploy: static GitHub Pages via `.github/workflows/deploy.yml` (push to `main`). Vite `base: './'` — never hardcode root-absolute (`/foo`) URLs in code, `index.html`, `manifest.json` or `sw.js`; use `import.meta.env.BASE_URL` (or `%BASE_URL%` in `index.html`) and relative paths. No backend, no analytics.
 
 ## Architecture
@@ -42,6 +43,7 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - ADSR envelope model: attack ramps to peak gain, decay ramps to sustain level (peak * sustain), release ramps to zero
 - **Bus/master gain/pan changes use `setTargetAtTime` with 5ms tau** — no instantaneous `.value =` writes (prevents clicks on mute/solo)
 - **Effect param changes use `setTargetAtTime` with 10ms tau** via `updateBusEffectParams`/`updateMasterEffectParams` — no graph rebuild for knob turns
+- **Service worker** (`public/sw.js`): `__BUILD_ID__` is stamped at build time by the `swBuildId` plugin in `vite.config.ts` (new cache per deploy, old purged on activate); `/assets/*` (content-hashed) is cache-first, everything else network-first with cache fallback.
 - **Sample preview** plays through `AudioContext` via master bus (`playPreview`/`stopPreview` in audioEngine) — no `HTMLAudioElement` (avoids glitches during sequencer playback)
 - **Audio buffer size**: configurable (128/256/512/768/1024) via settings popover; `setBufferSize()` tears down and rebuilds AudioContext; persisted in localStorage
 - **Shared voice utilities** (`voiceUtils.ts`): `mergeLayerSettings`, `resolveFilterType`, `resolveLayer`, `createFilterChain`, `scheduleAmplitudeEnvelope`, `createPanNode` — consumed by both `audioEngine.ts` (live) and `audioExport.ts` (offline) to prevent drift
@@ -104,6 +106,7 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - `audioExport.ts` — Offline audio render (WAV + MP3) with swing, layer resolution, per-pad filter, choke groups, ADSR envelope shaping, bus routing + effects (~400 lines). `renderProjectAudio()` returns WAV or MP3 based on `format` option. `renderPadAudio()` renders a single pad with all settings for drag-out.
 - `mp3Encode.ts` — MP3 encoding via lamejs (320kbps CBR): `encodeMp3()` converts Float32 channels → MP3 Blob, `audioBufferToChannels()` extracts channel data from AudioBuffer
 - `voiceUtils.ts` — Shared voice utilities: `mergeLayerSettings`, `resolveFilterType`, `resolveLayer`, `createFilterChain`, `scheduleAmplitudeEnvelope`, `createPanNode` — consumed by both `audioEngine.ts` (live) and `audioExport.ts` (offline) to prevent drift
+- `decodeUtils.ts` — UI-only decode helpers: `decodeBlobForDisplay` (shared `OfflineAudioContext`, no per-call `AudioContext`), `readWavSampleRate` (native rate from RIFF `fmt ` chunk — `decodeAudioData` reports the context rate, not the file's), `readAudioInfo`. Waveform/inspector prefer `audioEngine.getBuffer(id)` (already decoded) and only fall back to these.
 - `wavEncode.ts` — Shared WAV encoding: `encodeWav` (AudioBuffer), `encodeWavFromChannels` (raw Float32)
 - `transportScheduler.ts` — Step scheduler with swing offset
 - `playbackSnapshot.ts` — Snapshot builder (carries swing, pads, sequences — NOT mixer data)
@@ -158,6 +161,8 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - Piano roll note length: drag left/right edges of note blocks to adjust `gate` (steps). Left edge moves start step + adjusts gate to keep end fixed. Store actions: `setPianoRollNoteGate`, `setPianoRollNoteStartAndGate`.
 - Envelope time faders: MC-909 style vertical faders with logarithmic power curve (exponent ≈ 2.322), range 0–5s, display auto-formats as ms/s.
 - Filter frequency knobs: exponential mapping (`freqScale`) — equal knob travel per octave, auto-formats as Hz/kHz.
+- Chromatic release: `ActiveVoice.semitoneOffset` records the offset a voice was triggered with; `audioEngine.releasePad(padId, semitoneOffset?)` releases only matching held voices (omit the offset to release all, as for drum pads). Computer-keyboard (`_activeComputerKeys`) and Launchpad (`_activeChromaticNotes`) store the pad id + offset at note-on so note-off releases the right voice even if the selected pad changed.
+- Voice eviction (`evictIfNeeded`) removes the voice from `activeVoices` immediately but defers node teardown ~20ms so the 5ms fade-out isn't cut (same reason as choke).
 - Focused pad keyboard activation: Enter/Space triggers the pad on keydown and releases held voices on keyup; focused sequencer steps toggle from Enter/Space activation.
 - The global Space transport shortcut does not override focused interactive controls.
 **When changing playback logic, update:**

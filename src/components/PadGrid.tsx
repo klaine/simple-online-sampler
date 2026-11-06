@@ -364,7 +364,7 @@ onDragEnd={() => {
                       _padDragOutPadId = pad.id
                       const latestProject = useStore.getState().project
                       if (!latestProject) return
-                      const blob = await renderPadAudio(latestProject, pad, (audioEngine as any).buffers)
+                      const blob = await renderPadAudio(latestProject, pad, audioEngine.getBuffers())
                       _padDragOutObjectUrl = URL.createObjectURL(blob)
                       _padDragOutBlob = blob
                     }

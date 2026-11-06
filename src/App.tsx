@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback, useState, lazy, Suspense } from 'react'
 import './App.css'
 import { audioEngine } from './lib/audioEngine'
 import { db } from './lib/db'
+import { decodeBlobForDisplay } from './lib/decodeUtils'
 import { buildMidiForSequence, buildMidiForSongChain } from './lib/midiExport'
 import { renderProjectAudio } from './lib/audioExport'
 import type { ExportFormat } from './lib/audioExport'
@@ -64,7 +65,9 @@ const COMPUTER_KEY_NOTE_MAP: Record<string, number> = {
   KeyT: 19, Digit6: 20, KeyY: 21, Digit7: 22, KeyU: 23,
 }
 // Track active computer keyboard notes (code → MIDI note) to prevent repeats and handle note-off
-const _activeComputerKeys = new Map<string, number>()
+/** key code -> the pad/note/offset that key triggered, so note-off releases exactly that voice
+ *  even if the selected pad changed while the key was held. */
+const _activeComputerKeys = new Map<string, { padId: string; midiNote: number; semitoneOffset: number }>()
 
 // Numpad 1-0 → pad indices 0-9 in current bank (MPC-style layout)
 const NUM_PAD_KEY_MAP: Record<string, number> = {
@@ -540,8 +543,8 @@ function App() {
             audioEngine.unlockSync()
             void audioEngine.playPad(pad, velocity, { semitoneOffset })
           },
-          releaseChromatic: (padId, _semitoneOffset) => {
-            audioEngine.releasePad(padId)
+          releaseChromatic: (padId, semitoneOffset) => {
+            audioEngine.releasePad(padId, semitoneOffset)
           },
         })
       }
@@ -691,9 +694,9 @@ function App() {
     }
     let cancelled = false
     const decode = async () => {
-      const context = new AudioContext()
       try {
-        const buffer = await context.decodeAudioData(await selectedSample.blob.arrayBuffer())
+        // Prefer the buffer the engine already decoded for playback; fall back to a shared display decode
+        const buffer = audioEngine.getBuffer(selectedSample.id) ?? await decodeBlobForDisplay(selectedSample.blob)
         const channel = buffer.getChannelData(0)
         // Cache full-res channel for zoom
         _waveformChannelCache = { sampleId: selectedSample.id, channel: new Float32Array(channel) }
@@ -709,8 +712,6 @@ function App() {
         if (!cancelled) useStore.setState({ waveformPeaks: peaks })
       } catch {
         if (!cancelled) useStore.setState({ waveformPeaks: [] })
-      } finally {
-        void context.close().catch(() => undefined)
       }
     }
     void decode()
@@ -1028,10 +1029,9 @@ function App() {
             if (_activeComputerKeys.has(event.code)) return // key repeat, ignore
 
             const midiNote = ckState.computerKeyboardOctave * 12 + 12 + noteOffset // C3 = MIDI 48 when octave=3
-            _activeComputerKeys.set(event.code, midiNote)
-
             const baseNote = (selectedPadForCk.settings.baseNote ?? 60) + (selectedPadForCk.settings.semitones ?? 0)
             const semitoneOffset = midiNote - baseNote
+            _activeComputerKeys.set(event.code, { padId: selectedPadForCk.id, midiNote, semitoneOffset })
 
             audioEngine.playPad(selectedPadForCk, 0.85, {
               semitoneOffset,
@@ -1183,17 +1183,14 @@ function App() {
     const onKeyUp = (event: KeyboardEvent) => {
       // Computer keyboard note-off
       if (_activeComputerKeys.has(event.code)) {
-        const midiNote = _activeComputerKeys.get(event.code)!
+        const { padId, midiNote, semitoneOffset } = _activeComputerKeys.get(event.code)!
         _activeComputerKeys.delete(event.code)
         const s = useStore.getState()
-        const pad = s.selectedPadId ? s.project?.pads.find((p) => p.id === s.selectedPadId) : null
-        if (pad) {
-          audioEngine.releasePad(pad.id)
-          useStore.getState().feedCaptureBuffer(pad.id, 0, 'off', midiNote)
-          // Update gate length for recording
-          if (s.isPlaying && s.seqRecordArmed) {
-            s.recordPadRelease(pad.id, midiNote)
-          }
+        audioEngine.releasePad(padId, semitoneOffset)
+        s.feedCaptureBuffer(padId, 0, 'off', midiNote)
+        // Update gate length for recording
+        if (s.isPlaying && s.seqRecordArmed) {
+          s.recordPadRelease(padId, midiNote)
         }
       }
 

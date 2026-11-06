@@ -1,7 +1,9 @@
 /// <reference lib="webworker" />
 const sw = /** @type {ServiceWorkerGlobalScope} */ (/** @type {unknown} */ (self))
 
-const CACHE_NAME = 'online-sampler-v5'
+// __BUILD_ID__ is replaced at build time (vite.config.ts) so every deploy gets a fresh cache
+// and the activate handler purges the previous one. In dev it stays literal, which is harmless.
+const CACHE_NAME = 'online-sampler-__BUILD_ID__'
 
 // Install: skip waiting immediately
 sw.addEventListener('install', () => {
@@ -26,6 +28,20 @@ sw.addEventListener('fetch', (event) => {
 
   // Skip preset ZIP files (large, don't cache in SW)
   if (url.pathname.endsWith('.zip')) return
+
+  // Vite's /assets/* files are content-hashed (immutable): serve cache-first, no network wait
+  if (url.pathname.includes('/assets/')) {
+    event.respondWith(
+      caches.match(event.request).then((cached) => cached || fetch(event.request).then((resp) => {
+        if (resp.ok) {
+          const clone = resp.clone()
+          caches.open(CACHE_NAME).then((c) => c.put(event.request, clone))
+        }
+        return resp
+      }))
+    )
+    return
+  }
 
   event.respondWith(
     fetch(event.request)

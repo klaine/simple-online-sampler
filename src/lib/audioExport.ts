@@ -123,7 +123,7 @@ const buildScheduledEvents = (project: Project, options: RenderOptions): Schedul
 export const renderPadAudio = async (
   project: Project,
   pad: Pad,
-  decodedBuffers?: Map<string, AudioBuffer>,
+  decodedBuffers?: ReadonlyMap<string, AudioBuffer>,
 ): Promise<Blob> => {
   // Build a synthetic single-note event
   const syntheticEvent: SequenceEvent = {
@@ -237,7 +237,7 @@ export const renderPadAudio = async (
         const ms = mergeLayerSettings(pad.settings, layer)
         const offsetSec = (layer.stackOffsetMs ?? 0) / 1000
         return buildNoteEntry(scheduled[0], ms, sourceBuffer, offsetSec)
-      }).filter(Boolean) as any[]
+      }).filter((n): n is NonNullable<typeof n> => n !== null)
     }
     const resolved = resolveLayer(pad, 127, exportRrCounter)
     if (!resolved) return []
@@ -255,7 +255,9 @@ export const renderPadAudio = async (
   // Sidechain worklet (if needed by master)
   const masterNeedsSC = project.masterBus?.effects.some(s => s.type === 'sidechain-compressor' && s.enabled)
   if (masterNeedsSC && 'audioWorklet' in offline) {
-    try { await offline.audioWorklet.addModule(getSCWorkletUrl()) } catch {}
+    try { await offline.audioWorklet.addModule(getSCWorkletUrl()) } catch {
+      console.warn('[audioExport] Failed to register sidechain worklet on OfflineAudioContext — falling back to regular compressor')
+    }
   }
 
   const masterGain = offline.createGain()

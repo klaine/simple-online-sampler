@@ -191,7 +191,7 @@ let _getSelectedPadId: (() => string | null) | null = null
 // Track flash state for pads
 const _flashTimers = new Map<number, ReturnType<typeof setTimeout>>()
 // Track active chromatic notes for release
-const _activeChromaticNotes = new Map<number, number>() // LP note → semitoneOffset
+const _activeChromaticNotes = new Map<number, { shift: number; padId: string }>() // LP note → shift + pad it triggered
 // Cached pad lookup
 let _padByIdCache: Map<string, Pad> | null = null
 let _padsByBankSlotCache: Map<string, Pad> | null = null
@@ -603,9 +603,11 @@ function handleMidiMessage(event: MIDIMessageEvent): void {
     }
     // Chromatic pad release
     const chromaticOffset = noteToChromaticOffset(note)
-    const chromaticPadId = _getSelectedPadId?.() ?? _lastTriggeredPadId
+    const active = _activeChromaticNotes.get(note)
+    // Release the pad this note actually triggered (selection may have changed while held)
+    const chromaticPadId = active?.padId ?? _getSelectedPadId?.() ?? _lastTriggeredPadId
     if (chromaticOffset !== null && _releaseChromaticCb && chromaticPadId) {
-      const storedShift = _activeChromaticNotes.get(note) ?? _chromaticShift
+      const storedShift = active?.shift ?? _chromaticShift
       _activeChromaticNotes.delete(note)
       _releaseChromaticCb(chromaticPadId, chromaticOffset + storedShift)
       return
@@ -653,7 +655,7 @@ function handleMidiMessage(event: MIDIMessageEvent): void {
     const pad = getPadById(chromaticPadId)
     if (pad) {
       const shiftedOffset = chromaticOffset + _chromaticShift
-      _activeChromaticNotes.set(note, _chromaticShift)
+      _activeChromaticNotes.set(note, { shift: _chromaticShift, padId: chromaticPadId })
       _triggerChromaticCb(pad, velocity / 127, shiftedOffset)
       flashChromaticPad(chromaticOffset)
     }

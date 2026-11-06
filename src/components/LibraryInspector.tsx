@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, memo } from 'react'
 import { useStore, selectSampleToPadMap } from '../store'
 import type { Pad, SampleAsset } from '../types'
+import { audioEngine } from '../lib/audioEngine'
+import { decodeBlobForDisplay, readAudioInfo } from '../lib/decodeUtils'
 
 interface InspectorProps {
   sample: SampleAsset
@@ -30,9 +32,7 @@ const InspectorWaveform = memo(function InspectorWaveform({ sample }: { sample: 
     let cancelled = false
     const decode = async () => {
       try {
-        const ctx = new AudioContext()
-        const buffer = await ctx.decodeAudioData(await sample.blob.arrayBuffer())
-        void ctx.close().catch(() => undefined)
+        const buffer = audioEngine.getBuffer(sample.id) ?? await decodeBlobForDisplay(sample.blob)
         if (cancelled) return
         const channel = buffer.getChannelData(0)
         const bucketCount = 300
@@ -113,16 +113,8 @@ export function LibraryInspector({ sample, onDismiss, onNavigateToPad }: Inspect
     let cancelled = false
     const getInfo = async () => {
       try {
-        const ctx = new AudioContext()
-        const buffer = await ctx.decodeAudioData(await sample.blob.arrayBuffer())
-        void ctx.close().catch(() => undefined)
-        if (!cancelled) {
-          setAudioInfo({
-            duration: buffer.duration,
-            sampleRate: buffer.sampleRate,
-            channels: buffer.numberOfChannels,
-          })
-        }
+        const info = await readAudioInfo(sample.blob)
+        if (!cancelled) setAudioInfo(info)
       } catch {
         if (!cancelled) setAudioInfo(null)
       }

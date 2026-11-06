@@ -28,6 +28,8 @@ interface ActiveVoice {
   chokeGroup: number
   disposed: boolean
   release?: number
+  /** Chromatic semitone offset this voice was triggered with (0 for normal hits) */
+  semitoneOffset: number
 }
 
 // ---------------------------------------------------------------------------
@@ -580,6 +582,11 @@ export class AudioEngine {
     return this.buffers.has(sampleId)
   }
 
+  /** Read-only view of all decoded buffers (for offline single-pad render). */
+  getBuffers(): ReadonlyMap<string, AudioBuffer> {
+    return this.buffers
+  }
+
   getBuffer(sampleId: string): AudioBuffer | undefined {
     return this.buffers.get(sampleId)
   }
@@ -950,6 +957,7 @@ export class AudioEngine {
       chokeGroup,
       disposed: false,
       release: settings.envelope.release,
+      semitoneOffset: options?.semitoneOffset ?? 0,
     }
     this.activeVoices.push(voice)
 
@@ -1030,6 +1038,7 @@ export class AudioEngine {
       chokeGroup,
       disposed: false,
       release: settings.envelope.release,
+      semitoneOffset: options?.semitoneOffset ?? 0,
     }
     this.activeVoices.push(voice)
 
@@ -1094,8 +1103,11 @@ export class AudioEngine {
     }
   }
 
-  releasePad(padId: string): void {
-    const holdVoices = this.activeVoices.filter((voice) => voice.padId === padId && voice.hold)
+  /** Release held voices of a pad. With `semitoneOffset`, only the voices triggered with that chromatic
+   *  offset are released (so releasing one key of a chord doesn't cut the others). */
+  releasePad(padId: string, semitoneOffset?: number): void {
+    const holdVoices = this.activeVoices.filter((voice) =>
+      voice.padId === padId && voice.hold && (semitoneOffset === undefined || voice.semitoneOffset === semitoneOffset))
     holdVoices.forEach((voice) => {
       const releaseSec = Math.max(0.02, voice.release ?? 0.02)
       const ctx = this.getContext()
@@ -1181,12 +1193,10 @@ export class AudioEngine {
       } else {
         try { candidate.source.stop() } catch { /* already stopped */ }
       }
-      try { candidate.source.disconnect() } catch { /* noop */ }
-      try { candidate.pan.disconnect() } catch { /* noop */ }
-      candidate.disposed = true
-      this.releaseGain(candidate.gain)
-      this.releaseFilters(candidate.filters)
+      // Remove from the active list now (so the loop terminates and polyphony is freed) but defer the
+      // node teardown until the fade has finished — disconnecting immediately would cut it and click.
       this.activeVoices.splice(candidateIdx, 1)
+      window.setTimeout(() => this.disposeVoice(candidate), 20)
     }
   }
 

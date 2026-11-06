@@ -78,7 +78,7 @@ function isRiffWave(data: Uint8Array, offset: number): boolean {
 // --- FastLZ Level 2 decompressor (NI variant) ---
 
 function fastLzDecompress(src: Uint8Array, maxOut = 10 * 1024 * 1024): Uint8Array | null {
-  let outLen = Math.min(maxOut, Math.max(src.length * 4, 65536))
+  const outLen = Math.min(maxOut, Math.max(src.length * 4, 65536))
   let out = new Uint8Array(outLen)
   let outPos = 0
   let p = 0

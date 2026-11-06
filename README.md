@@ -132,7 +132,7 @@ The app is fully static (no backend): projects and samples live in the browser's
 
 ## Tech Stack
 
-- **React 18** + TypeScript
+- **React 19** + TypeScript
 - **Vite** for dev server and build
 - **Zustand** + immer for state management
 - **Web Audio API** (raw — no Tone.js)
