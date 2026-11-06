@@ -44,7 +44,7 @@ export async function importFileAsSample(
 
 const PRESET_KITS = ['TR7x7ISH_Kit.zip', 'TR8x8ISH_Kit.zip', 'TR9x9ISH_Kit.zip']
 
-/** Load factory preset drumkit ZIPs from /public on first launch.
+/** Load factory preset drumkit ZIPs from the app's public folder (BASE_URL-relative) on first launch.
  *  Returns array of { runId, bankIndex } for pad assignment. */
 export async function loadPresetKits(
   _getState: () => AppState,
@@ -54,7 +54,7 @@ export async function loadPresetKits(
   for (let ki = 0; ki < PRESET_KITS.length; ki++) {
     const filename = PRESET_KITS[ki]
     try {
-      const resp = await fetch(`/${filename}`)
+      const resp = await fetch(`${import.meta.env.BASE_URL}${filename}`)
       if (!resp.ok) continue
       const buf = await resp.arrayBuffer()
       const JSZip = (await import('jszip')).default

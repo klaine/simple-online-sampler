@@ -13,6 +13,7 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - Install: `npm install`
 - Dev server: `npm run dev`
 - Build/typecheck: `npm run build`
+- Deploy: static GitHub Pages via `.github/workflows/deploy.yml` (push to `main`). Vite `base: './'` — never hardcode root-absolute (`/foo`) URLs in code, `index.html`, `manifest.json` or `sw.js`; use `import.meta.env.BASE_URL` (or `%BASE_URL%` in `index.html`) and relative paths. No backend, no analytics.
 
 ## Architecture
 
@@ -393,11 +394,11 @@ Browser-based sampler/sequencer — React + TypeScript + Vite, Zustand + immer s
 - `getUserMedia` with `echoCancellation: false`, `noiseSuppression: false`, `autoGainControl: false`
 
 ### Preset Kits
-- On first launch (no samples in IndexedDB), `loadPresetKits()` fetches ZIP files from `/public`: `TR7x7ISH_Kit.zip`, `TR8x8ISH_Kit.zip`, `TR9x9ISH_Kit.zip`
+- On first launch (no samples in IndexedDB), `loadPresetKits()` fetches ZIP files from `public/` via `import.meta.env.BASE_URL` (subpath-safe): `TR7x7ISH_Kit.zip`, `TR8x8ISH_Kit.zip`, `TR9x9ISH_Kit.zip`
 - Each ZIP is imported as an autosample group with `autosamplePreset: true`
 - After loading, kits are auto-assigned to pads: TR7x7ISH → Bank 1, TR8x8ISH → Bank 2, TR9x9ISH → Bank 3 (via `assignGroupToPads`)
 - Preset groups show a "Preset" badge in the SampleLibrary sidebar (same pattern as MPC badge)
-- `PRESET_KITS` array in `src/store/index.ts` defines which ZIPs to load
+- `PRESET_KITS` array in `src/store/importHelpers.ts` defines which ZIPs to load
 - Stable `runId` per kit (`preset-<kitname>`) prevents duplicate groups on partial re-loads
 - `_hydratePromise` module-level guard prevents React Strict Mode double-invoke from duplicating presets
 - Preset flag preserved through project export/import via `PackageManifest.sampleMeta`

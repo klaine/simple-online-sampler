@@ -124,6 +124,12 @@ npm run build
 
 Runs TypeScript type checking followed by Vite production build.
 
+### Deploy (GitHub Pages)
+
+The app is fully static (no backend): projects and samples live in the browser's IndexedDB. The build uses a relative Vite `base` (`./`), so `dist/` works from any subpath or custom domain.
+
+`.github/workflows/deploy.yml` builds and publishes `dist/` on every push to `main`. One-time setup: repo **Settings → Pages → Source: GitHub Actions**.
+
 ## Tech Stack
 
 - **React 18** + TypeScript

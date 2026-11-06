@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 const sw = /** @type {ServiceWorkerGlobalScope} */ (/** @type {unknown} */ (self))
 
-const CACHE_NAME = 'online-sampler-v4'
+const CACHE_NAME = 'online-sampler-v5'
 
 // Install: skip waiting immediately
 sw.addEventListener('install', () => {
@@ -40,7 +40,7 @@ sw.addEventListener('fetch', (event) => {
       .catch(() => caches.match(event.request).then((cached) => {
         // Offline fallback: serve from cache, or return offline page for navigation
         if (cached) return cached
-        if (event.request.mode === 'navigate') return caches.match('/')
+        if (event.request.mode === 'navigate') return caches.match(sw.registration.scope)
         return new Response('', { status: 503 })
       }))
   )
