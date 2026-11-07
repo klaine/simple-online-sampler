@@ -677,7 +677,33 @@ export const Sequencer = memo(function Sequencer() {
           togglePianoRollExpanded={togglePianoRollExpanded}
           toggleSeqBankCollapsed={toggleSeqBankCollapsed}
         />
-        {bankGroups.every((g) => g.collapsed || g.pads.length === 0) && <p className="sequencer-status">No visible lanes. Expand a bank or disable "Hide Empty Lanes".</p>}
+        {bankGroups.every((g) => g.collapsed || g.pads.length === 0) && (
+          <div className="sequencer-empty">
+            {activeSequence && activeSequence.events.length === 0 ? (
+              <>
+                <strong>This pattern is empty</strong>
+                <p>Click steps to program a beat, record live with REC, or start from a groove.</p>
+              </>
+            ) : (
+              <>
+                <strong>No lanes visible</strong>
+                <p>Expand a bank above, or show all lanes.</p>
+              </>
+            )}
+            <div className="sequencer-empty-actions">
+              {activeSequence && activeSequence.events.length === 0 && (
+                <button type="button" className="primary" onClick={() => void useStore.getState().addStarterBeat()}>
+                  Add starter beat
+                </button>
+              )}
+              {hideEmptyLanes && (
+                <button type="button" onClick={() => useStore.setState({ hideEmptyLanes: false })}>
+                  Show all lanes
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
       {showGateResizeTip && <p className="gate-tip">Tip: drag note edges to resize gate note length.</p>}
       <Timeline show={showTimeline} />

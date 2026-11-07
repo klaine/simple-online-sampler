@@ -2,8 +2,10 @@ import { uid, clampSequenceLength } from '../../lib/utils'
 import { selectActiveSequence, selectCurrentBankPads, selectVisibleSequence } from '../selectors'
 import { showConfirm } from '../confirmDialog'
 import { mutableRefs } from '../refs'
-import type { Project, SequenceResolution } from '../../types'
+import type { Project, SequenceEvent, SequenceResolution } from '../../types'
 import type { StoreContext } from '../context'
+import type { DrumCategory } from '../../lib/drumKitMap'
+import { classifyPadSample } from '../../lib/padDisplay'
 
 const historySnapshotFrom = (state: Project, sequenceId: string | null): import('../types').SequencerHistorySnapshot => ({
   sequences: state.sequences,
@@ -146,6 +148,52 @@ export const createSequencerActions = (ctx: StoreContext) => ({
         seq.id === activeSeq.id
           ? { ...seq, events: [...seq.events.filter((e) => e.padId !== targetPadId), ...cloned] }
           : seq,
+      ),
+    })
+  },
+
+  addStarterBeat: async (bank?: number) => {
+    const s = ctx.get()
+    const activeSeq = selectActiveSequence(s)
+    if (!s.project || !activeSeq) return
+    const targetBank = bank ?? s.activeBank
+    const padByCat = new Map<DrumCategory, string>()
+    for (const pad of s.project.pads) {
+      if (pad.bank !== targetBank || !pad.settings.sampleId) continue
+      const sample = s.sampleMap.get(pad.settings.sampleId)
+      const cat = classifyPadSample(sample?.name ?? pad.name)
+      if (!padByCat.has(cat)) padByCat.set(cat, pad.id)
+    }
+    const kick = padByCat.get('kick')
+    const snare = padByCat.get('snare') ?? padByCat.get('clap')
+    const hat = padByCat.get('closed-hat') ?? padByCat.get('shaker')
+    const openHat = padByCat.get('open-hat')
+    if (!kick && !snare && !hat) {
+      s.addToast('No kick, snare or hi-hat found in this bank', 'info')
+      return
+    }
+    // One bar (16 steps) of a simple groove, repeated across the pattern length
+    const bar: { padId: string | undefined; step: number; velocity: number }[] = [
+      ...[0, 7, 10].map((step) => ({ padId: kick, step, velocity: step === 0 ? 120 : 104 })),
+      ...[4, 12].map((step) => ({ padId: snare, step, velocity: 112 })),
+      ...[0, 2, 4, 6, 8, 10, 12, 14]
+        .filter((step) => !(openHat && step === 14))
+        .map((step) => ({ padId: hat, step, velocity: step % 4 === 0 ? 100 : 72 })),
+      { padId: openHat, step: 14, velocity: 90 },
+    ]
+    const events: SequenceEvent[] = []
+    for (let offset = 0; offset < activeSeq.lengthSteps; offset += 16) {
+      for (const e of bar) {
+        const step = offset + e.step
+        if (!e.padId || step >= activeSeq.lengthSteps) continue
+        events.push({ id: uid(), step, padId: e.padId, velocity: e.velocity, gate: 1, semitones: 0 })
+      }
+    }
+    s.pushSequencerHistory(s.project, activeSeq.id)
+    await s.saveProject({
+      ...s.project,
+      sequences: s.project.sequences.map((seq) =>
+        seq.id === activeSeq.id ? { ...seq, events: [...seq.events, ...events] } : seq,
       ),
     })
   },

@@ -47,12 +47,17 @@ export const createProjectActions = (ctx: StoreContext) => ({
         if (allSamples.length === 0) {
           const loaded = await loadPresetKits(ctx.get, ctx.set)
           for (const { runId, bank } of loaded) {
-            await ctx.get().assignGroupToPads(runId, bank, true)
+            await ctx.get().assignGroupToPads(runId, bank, true, true)
+          }
+          // Give brand-new users something to hear: a starter groove on Bank 1 in Pattern 1
+          if (loaded.some((k) => k.bank === 0)) {
+            const first = ctx.get().project?.sequences[0]
+            if (first && first.events.length === 0) await ctx.get().addStarterBeat(0)
           }
           // One-time welcome hint for brand-new users
           if (loaded.length > 0 && !localStorage.getItem('welcomeToastShown')) {
             localStorage.setItem('welcomeToastShown', '1')
-            ctx.get().addToast('Welcome! Preset kits are loaded on Banks 1–3 — tap a pad to play. See ? in the sequencer for tips.', 'info')
+            ctx.get().addToast('Welcome! Preset kits are on Banks 1–3 and Pattern 1 has a starter beat — press Space to play.', 'info')
           }
         }
         await ctx.get().refreshProjectList()

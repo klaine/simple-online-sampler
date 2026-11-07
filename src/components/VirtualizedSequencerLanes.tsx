@@ -4,6 +4,7 @@ import type { SequencerBankGroup } from '../store/types'
 import { useStore } from '../store'
 import { SequencerStep } from './SequencerStep'
 import { PianoRollLane } from './PianoRollLane'
+import { padDisplayName } from '../lib/padDisplay'
 
 const BANK_HEADER_HEIGHT = 28
 const LANE_HEIGHT = 32
@@ -67,6 +68,7 @@ export const VirtualizedSequencerLanes = memo(function VirtualizedSequencerLanes
   togglePianoRollExpanded,
   toggleSeqBankCollapsed,
 }: VirtualizedSequencerLanesProps) {
+  const sampleMap = useStore((s) => s.sampleMap)
   const [startIndex, setStartIndex] = useState(0)
   const [endIndex, setEndIndex] = useState(Math.max(0, bankGroups.length - 1))
 
@@ -185,12 +187,13 @@ export const VirtualizedSequencerLanes = memo(function VirtualizedSequencerLanes
                   <button
                     type="button"
                     className="lane-label"
+                    title={pad.name}
                     onClick={() => {
                       useStore.setState({ selectedPadId: pad.id })
                       void triggerPad(pad, 0.9)
                     }}
                   >
-                    {pad.slot + 1} - {pad.name}
+                    {pad.slot + 1} · {padDisplayName(pad.name, pad.settings.sampleId ? sampleMap.get(pad.settings.sampleId) : undefined)}
                   </button>
                   <button
                     type="button"

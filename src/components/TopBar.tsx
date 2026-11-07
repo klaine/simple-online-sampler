@@ -549,7 +549,7 @@ export const TopBar = memo(function TopBar({ isPhone }: { isPhone?: boolean }) {
           </div>
 
            {/* Seq record cluster */}
-           <div className="tb-cluster tb-rec">
+           <div className={`tb-cluster tb-rec ${seqRecordArmed ? 'is-armed' : ''}`}>
              <button
                type="button"
                className={`seq-rec-btn ${seqRecordArmed ? 'armed' : ''}`}
