@@ -62,6 +62,7 @@ export async function startPcmCapture(deviceId?: string | null, existingCtx?: Au
   if (deviceId) audioConstraints.deviceId = { exact: deviceId }
 
   const constraints: MediaStreamConstraints = { audio: audioConstraints }
+  if (!navigator.mediaDevices?.getUserMedia) throw new Error('Microphone access needs a secure (https) connection')
   const stream = await navigator.mediaDevices.getUserMedia(constraints)
 
   const ownCtx = !existingCtx

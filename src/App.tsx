@@ -634,7 +634,7 @@ function App() {
   useEffect(() => {
     const enumerate = async () => {
       try {
-        const devices = await navigator.mediaDevices.enumerateDevices()
+        const devices = await navigator.mediaDevices?.enumerateDevices() ?? []
         const outputs = devices
           .filter((d) => d.kind === 'audiooutput')
           .map((d) => ({ id: d.deviceId, name: d.label || `Output ${d.deviceId.slice(0, 6)}` }))
@@ -644,9 +644,12 @@ function App() {
         useStore.setState({ audioOutputs: outputs, audioInputs: inputs })
       } catch { /* ignore */ }
     }
-    enumerate()
-    navigator.mediaDevices.addEventListener('devicechange', enumerate)
-    return () => navigator.mediaDevices.removeEventListener('devicechange', enumerate)
+    // mediaDevices is undefined on insecure (http) origins and some in-app browsers
+    const md = navigator.mediaDevices
+    if (!md) return
+    void enumerate()
+    md.addEventListener?.('devicechange', enumerate)
+    return () => md.removeEventListener?.('devicechange', enumerate)
   }, [])
 
   // --- Audio output device selection ---
