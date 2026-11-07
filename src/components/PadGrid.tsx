@@ -13,6 +13,7 @@ import {
   selectVisibleSequence,
 } from '../store'
 import { MetadataTagChips } from './SampleLibrary'
+import { padColorFamily, padDisplayName } from '../lib/padDisplay'
 import { renderPadAudio } from '../lib/audioExport'
 
 let _padDragOutObjectUrl: string | null = null
@@ -308,6 +309,9 @@ export const PadGrid = memo(function PadGrid() {
           const sample = pad.settings.sampleId ? sampleMap.get(pad.settings.sampleId) : undefined
           const selected = pad.id === selectedPadId
           const multiSelected = selectedPadIds.includes(pad.id)
+          const padColor = sample ? padColorFamily(sample.name) : 'empty'
+          const displayName = padDisplayName(pad.name, sample)
+          const renamed = !!sample && padDisplayName(sample.name, sample) !== displayName
           return (
             <div
               key={pad.id}
@@ -315,6 +319,8 @@ export const PadGrid = memo(function PadGrid() {
               tabIndex={0}
               aria-label={`${pad.name}, ${sample?.name ? `sample ${sample.name}` : 'empty pad'}`}
               data-pad-id={pad.id}
+              data-pad-color={padColor}
+              title={sample ? sample.name : undefined}
               className={`pad ${selected ? 'selected' : ''} ${multiSelected ? 'multi-selected' : ''} ${pad.id === padHoldRecordingPadId ? 'hold-recording' : ''} ${pad.settings.mute ? 'muted-pad' : ''}`}
               draggable={!!pad.settings.sampleId}
                             onDragStart={(e) => {
@@ -901,10 +907,12 @@ onDragEnd={() => {
                 addToast(`Assigned ${clamped} sample${clamped !== 1 ? 's' : ''} to pads`, 'success')
               }}
             >
-              <span>{pad.slot + 1}</span>
-              <strong>{pad.name}</strong>
-              <small>{midiToName(pad.midiNote)}</small>
-              <em>{sample ? sample.name : 'Drop sample'}</em>
+              <div className="pad-head">
+                <span>{pad.slot + 1}</span>
+                <small>{midiToName(pad.midiNote)}</small>
+              </div>
+              <strong>{sample ? displayName : ''}</strong>
+              {(!sample || renamed) && <em>{sample ? sample.name : 'Drop sample'}</em>}
               {sample && <MetadataTagChips sample={sample} max={1} />}
               {!pad.settings.sampleId && (
                 <button

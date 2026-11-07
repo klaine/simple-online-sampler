@@ -105,7 +105,8 @@ A browser-based sampler/sequencer built with React, TypeScript, and the Web Audi
 - **Editable project name** in the TopBar
 - **Multiple projects** — create, switch, duplicate, and delete projects (samples shared globally)
 - **Initialize project** button to reset to defaults
-- **Preset drum kits** — 3 factory kits (TR-7x7, TR-8x8, TR-9x9) auto-loaded and assigned to Banks 1–3 on first launch
+- **Preset drum kits** — 3 factory kits (TR-7x7, TR-8x8, TR-9x9) auto-loaded and assigned to Banks 1–3 on first launch, with a starter groove in Pattern 1 so the first Play makes sound
+- **Colour-coded pads** — pads are tinted by drum type (kick, snare, hats, cymbals, toms, percussion) and show clean names (kit prefix and extension stripped)
 
 ## Getting Started
 

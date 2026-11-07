@@ -262,6 +262,8 @@ export interface AppState {
   redoSequencer: () => Promise<void>
   clearLane: (padId: string) => Promise<void>
   duplicateLaneToNext: (padId: string) => Promise<void>
+  /** Fill the active pattern with a simple kick/snare/hat groove from the given bank's drum pads */
+  addStarterBeat: (bank?: number) => Promise<void>
   laneToolFill: (padId: string, interval: number) => Promise<void>
   laneToolShift: (padId: string, direction: -1 | 1) => Promise<void>
   laneToolRandom: (padId: string) => Promise<void>
@@ -371,7 +373,7 @@ export interface AppState {
 
   groupSamples: (sampleIds: string[], label?: string) => void
   ungroupSample: (sampleId: string) => void
-  assignGroupToPads: (runId: string, startBank?: number, skipPatternPrompt?: boolean) => Promise<void>
+  assignGroupToPads: (runId: string, startBank?: number, skipPatternPrompt?: boolean, silent?: boolean) => Promise<void>
   importPatternsForGroup: (patternsJson: string, padIndexToId?: Map<number, string>, groupLabel?: string) => Promise<void>
   importPatternsForGroupByRunId: (runId: string) => Promise<void>
   renameAutosampleGroup: (runId: string, newLabel: string) => void

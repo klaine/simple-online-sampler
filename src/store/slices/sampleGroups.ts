@@ -45,7 +45,7 @@ export const createSampleGroupActions = (ctx: StoreContext) => ({
     if (sample) void db.putSample(sample)
   },
 
-  assignGroupToPads: async (runId: string, startBank?: number, skipPatternPrompt?: boolean) => {
+  assignGroupToPads: async (runId: string, startBank?: number, skipPatternPrompt?: boolean, silent?: boolean) => {
     const s = ctx.get()
     if (!s.project) return
     const groupSamples = s.samples.filter((sam) => sam.autosampleRunId === runId)
@@ -268,7 +268,7 @@ export const createSampleGroupActions = (ctx: StoreContext) => ({
     const updated = ctx.get().samples.filter((x) => x.autosampleRunId === runId)
     for (const sample of updated) void db.putSample(sample)
 
-    s.addToast(`Assigned ${noteGroups.length} note${noteGroups.length !== 1 ? 's' : ''} from group to ${assignMap.size} pads`)
+    if (!silent) s.addToast(`Assigned ${noteGroups.length} note${noteGroups.length !== 1 ? 's' : ''} from group to ${assignMap.size} pads`)
 
     // --- Import sequencer patterns from LCDK/imported kit data ---
     const patternSource = groupSamples.find((sam) => sam.autosamplePatterns)
