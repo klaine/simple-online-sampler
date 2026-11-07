@@ -43,8 +43,14 @@ sw.addEventListener('fetch', (event) => {
     return
   }
 
+  // Page navigations always revalidate with the server: GitHub Pages serves index.html with max-age=600,
+  // and a stale copy would point at hashed /assets/* files that a newer deploy has already removed.
+  const networkFetch = event.request.mode === 'navigate'
+    ? fetch(event.request.url, { cache: 'no-cache', credentials: 'same-origin' })
+    : fetch(event.request)
+
   event.respondWith(
-    fetch(event.request)
+    networkFetch
       .then((resp) => {
         // Cache successful responses for offline use
         if (resp.ok) {

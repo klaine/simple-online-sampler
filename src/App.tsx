@@ -1,8 +1,10 @@
 import { useEffect, useRef, useCallback, useState, lazy, Suspense } from 'react'
+import type { ReactNode } from 'react'
 import './App.css'
 import { audioEngine } from './lib/audioEngine'
 import { db } from './lib/db'
 import { decodeBlobForDisplay } from './lib/decodeUtils'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { buildMidiForSequence, buildMidiForSongChain } from './lib/midiExport'
 import { renderProjectAudio } from './lib/audioExport'
 import type { ExportFormat } from './lib/audioExport'
@@ -48,6 +50,18 @@ const ExportDialog = lazy(() => import('./components/ExportDialog').then((m) => 
 const RecordDialog = lazy(() => import('./components/RecordDialog').then((m) => ({ default: m.RecordDialog })))
 const AutosampleDialog = lazy(() => import('./components/AutosampleDialog').then((m) => ({ default: m.AutosampleDialog })))
 const ChopModal = lazy(() => import('./components/ChopModal').then((m) => ({ default: m.ChopModal })))
+
+/** Suspense + local error boundary: a dialog chunk that fails to load (e.g. stale deploy) must not unmount the whole app. */
+function LazyDialog({ name, children }: { name: string; children: ReactNode }) {
+  return (
+    <ErrorBoundary
+      scope="dialog"
+      onError={() => useStore.getState().addToast(`Couldn't load the ${name} dialog — reload the page and try again`, 'error')}
+    >
+      <Suspense fallback={null}>{children}</Suspense>
+    </ErrorBoundary>
+  )
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -228,6 +242,7 @@ function App() {
   const hydrateError = useStore((s) => s.hydrateError)
   const samples = useStore((s) => s.samples)
   const showExportDialog = useStore((s) => s.showExportDialog)
+  const chopModalOpen = useStore((s) => s.chopModalSampleId != null)
   const showImportDialog = useStore((s) => s.showImportDialog)
   const sampleAssignPrompt = useStore((s) => s.sampleAssignPrompt)
   const showRecordDialog = useStore((s) => s.showRecordDialog)
@@ -1532,7 +1547,7 @@ function App() {
       <ProjectAudioSync />
 
       {showExportDialog && (
-        <Suspense fallback={null}>
+        <LazyDialog name="Export">
           <ExportDialog
             onExportMidi={exportAllMidi}
             onExportSongChainMidi={() => void exportSongChainMidi()}
@@ -1542,7 +1557,7 @@ function App() {
             onExportAudioSong={(format) => void exportAudio('song', format)}
             songChainEmpty={songChainEmpty}
           />
-        </Suspense>
+        </LazyDialog>
       )}
 
       {showImportDialog && (
@@ -1609,10 +1624,10 @@ function App() {
         )}
 
       <Toasts />
-      {showRecordDialog && <Suspense fallback={null}><RecordDialog /></Suspense>}
-      {showAutosampleDialog && <Suspense fallback={null}><AutosampleDialog /></Suspense>}
+      {showRecordDialog && <LazyDialog name="Record"><RecordDialog /></LazyDialog>}
+      {showAutosampleDialog && <LazyDialog name="Autosample"><AutosampleDialog /></LazyDialog>}
       <ConfirmDialog />
-      <Suspense fallback={null}><ChopModal /></Suspense>
+      {chopModalOpen && <LazyDialog name="Chop"><ChopModal /></LazyDialog>}
     </main>
   )
 }
