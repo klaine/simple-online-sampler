@@ -407,7 +407,7 @@ function InputMonitorStrip() {
   useEffect(() => {
     const enumerate = async () => {
       try {
-        const devices = await navigator.mediaDevices.enumerateDevices()
+        const devices = await navigator.mediaDevices?.enumerateDevices() ?? []
         const inputs = devices
           .filter((d) => d.kind === 'audioinput')
           .map((d) => ({ id: d.deviceId, name: d.label || `Input ${d.deviceId.slice(0, 6)}` }))
@@ -416,9 +416,12 @@ function InputMonitorStrip() {
         // silently ignore
       }
     }
-    enumerate()
-    navigator.mediaDevices.addEventListener('devicechange', enumerate)
-    return () => navigator.mediaDevices.removeEventListener('devicechange', enumerate)
+    // mediaDevices is undefined on insecure (http) origins and some in-app browsers
+    const md = navigator.mediaDevices
+    if (!md) return
+    void enumerate()
+    md.addEventListener?.('devicechange', enumerate)
+    return () => md.removeEventListener?.('devicechange', enumerate)
   }, [])
 
   const handleToggle = async () => {
